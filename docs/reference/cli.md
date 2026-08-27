@@ -1,3 +1,12 @@
+---
+type: reference
+title: CLI reference
+description: The ten tea commands, their flags, and the output agents should rely on.
+resource: internal/cli/cli.go
+tags: [reference, cli, contract]
+timestamp: 2026-08-27
+---
+
 # CLI reference
 
 Ten commands. Every one accepts `--json` for machine-readable output; that is the
@@ -8,18 +17,11 @@ mode agents should use.
 Agent identity comes from `TEA_AGENT`, or `--agent`. It is a stable string you
 choose, not a generated id, so a restarted process keeps its identity.
 
-Exit codes carry meaning:
+Exit codes carry meaning and are part of the contract — see
+[exit-codes.md](exit-codes.md).
 
-| Code | Meaning |
-|---|---|
-| 0 | success |
-| 1 | usage or validation error |
-| 2 | conflict — lease held by someone else |
-| 3 | timeout — `wait` expired without a change |
-| 4 | store unavailable |
-
-Distinct codes matter because agents branch on them without parsing text.
-`claim` returning 2 is a normal, expected outcome, not a crash.
+Flags may appear before or after positional arguments; see
+[../lessons/flag-parsing.md](../lessons/flag-parsing.md) for why that is explicit.
 
 ---
 
@@ -152,3 +154,9 @@ tea threads         # all threads with status
 tea leases          # active leases and expiry
 tea ledger --tail 20
 ```
+
+## Related
+
+- [exit-codes.md](exit-codes.md) — what each code means and why they are distinct
+- [http-api.md](http-api.md) — the same operations over HTTP
+- [../domain/concepts.md](../domain/concepts.md) — what these commands manipulate

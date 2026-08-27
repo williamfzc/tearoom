@@ -58,8 +58,10 @@ the browser was a rule that lived in the CLI instead of the store: approving fro
 the console settled the gate but left the thread blocked forever. Rules that every
 client must obey now live under the store interface, where no client can skip them.
 
-See [`docs/design.md`](docs/design.md) for the full spec and
-[`docs/cli.md`](docs/cli.md) for the command reference.
+Documentation lives in [`docs/`](docs/index.md), organised by concern: the
+[five concepts](docs/domain/concepts.md), the [layer rules](docs/architecture/layers.md),
+the [CLI reference](docs/reference/cli.md), and the
+[lessons](docs/lessons/index.md) behind why some things look the way they do.
 
 ## Build
 

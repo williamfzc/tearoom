@@ -8,7 +8,7 @@ BIN     := bin
 WEB     := web
 WASMJS  := $(shell $(GO) env GOROOT)/misc/wasm/wasm_exec.js
 
-.PHONY: all build cli server wasm test test-wasm test-race smoke fmt vet clean check
+.PHONY: all build cli server wasm test test-wasm test-race smoke docs fmt vet clean check
 
 all: build
 
@@ -56,7 +56,12 @@ fmt:
 vet:
 	$(GO) vet ./...
 
-check: fmt vet test test-wasm smoke
+# Documentation rot is silent: a moved file leaves a link that still looks fine in
+# a diff. Cheap to check, so it runs with everything else.
+docs:
+	@./scripts/check-docs.sh
+
+check: fmt vet test test-wasm smoke docs
 
 clean:
 	rm -rf $(BIN) $(WEB)/tea.wasm $(WEB)/wasm_exec.js
