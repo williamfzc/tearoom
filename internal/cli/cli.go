@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/resolve"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
 	"github.com/williamfzc/tearoom/internal/view"
@@ -350,7 +351,7 @@ func (a *App) cmdInbox(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	b, err := a.buildBoard(st)
+	b, err := resolve.Board(context.Background(), st, a.now)
 	if err != nil {
 		return a.fail(err)
 	}
@@ -410,33 +411,13 @@ func (a *App) cmdContext(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	ctx := context.Background()
-	t, err := st.Thread(ctx, f.Arg(0))
+	// resolve owns the read sequence and the "live lease, pending gate" filtering.
+	// This command only decides how much of it to print.
+	d, err := resolve.Thread(context.Background(), st, f.Arg(0), a.now)
 	if err != nil {
 		return a.fail(err)
 	}
-	leases, err := st.Leases(ctx)
-	if err != nil {
-		return a.fail(err)
-	}
-	now := a.now()
-	var mine []*core.Lease
-	for _, l := range leases {
-		if l.Thread == t.ID && !l.Expired(now) {
-			mine = append(mine, l)
-		}
-	}
-	gates, err := st.Gates(ctx)
-	if err != nil {
-		return a.fail(err)
-	}
-	var gate *core.Gate
-	for _, g := range gates {
-		if g.Thread == t.ID && g.State == core.GatePending {
-			gate = g
-			break
-		}
-	}
+	t, mine, gate := d.Thread, d.Leases, d.Gate
 
 	if *full {
 		return a.emit(*asJSON, map[string]any{"thread": t, "leases": mine, "gate": gate}, func() {
@@ -711,34 +692,6 @@ func (a *App) listGates(args []string) int {
 	})
 }
 
-func (a *App) buildBoard(st core.Store) (*view.Board, error) {
-	ctx := context.Background()
-	ws, err := st.Workspace(ctx)
-	if err != nil {
-		return nil, err
-	}
-	agents, err := st.Agents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	threads, err := st.Threads(ctx)
-	if err != nil {
-		return nil, err
-	}
-	leases, err := st.Leases(ctx)
-	if err != nil {
-		return nil, err
-	}
-	gates, err := st.Gates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return view.Build(view.Input{
-		Workspace: ws, Agents: agents, Threads: threads,
-		Leases: leases, Gates: gates, Now: a.now(),
-	}), nil
-}
-
 func (a *App) cmdStatus(args []string) int {
 	f, asJSON, _ := fs("status")
 	if err := parse(f, args); err != nil {
@@ -748,7 +701,7 @@ func (a *App) cmdStatus(args []string) int {
 	if err != nil {
 		return a.fail(err)
 	}
-	b, err := a.buildBoard(st)
+	b, err := resolve.Board(context.Background(), st, a.now)
 	if err != nil {
 		return a.fail(err)
 	}

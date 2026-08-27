@@ -1,7 +1,12 @@
+// Server side of the transport: it publishes a core.Store as HTTP endpoints and,
+// optionally, serves the console assets beside them.
+//
+// It owns protocol concerns only — routing, decoding, status codes. State assembly
+// belongs to resolve, judgement to view, persistence to store; a handler that grew
+// any of those would be taking work from a layer that already owns it.
 package transport
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -9,8 +14,12 @@ import (
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/view"
+	"github.com/williamfzc/tearoom/internal/resolve"
 )
+
+// compactEvents is how many trailing events a compact context carries. Five is
+// enough to see how a thread got here without paying for its whole history.
+const compactEvents = 5
 
 // Server exposes a core.Store over HTTP. It holds a Store rather than a concrete
 // file store, so the same handler set works for a local single-tenant daemon and
@@ -45,7 +54,7 @@ func (s *Server) Handler() http.Handler {
 	// it runs the shared view package server-side and ships one resolved board, so
 	// the console never reimplements "who is stuck" in another language.
 	mux.HandleFunc("/api/board", s.wrap(func(r *http.Request) (any, error) {
-		return s.board(r.Context())
+		return resolve.Board(r.Context(), s.Store, s.now)
 	}))
 
 	mux.HandleFunc("/api/agents", s.wrap(func(r *http.Request) (any, error) {
@@ -84,7 +93,7 @@ func (s *Server) Handler() http.Handler {
 			return s.Store.AppendEvent(r.Context(), id, in.Agent, in.Body, in.Status, in.Evidence)
 		}
 		if id, ok := cutSuffix(rest, "/context"); ok {
-			return s.compact(r.Context(), id)
+			return resolve.Compact(r.Context(), s.Store, id, compactEvents, s.now)
 		}
 		return s.Store.Thread(r.Context(), rest)
 	}))
@@ -159,63 +168,6 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("/", s.Assets)
 	}
 	return mux
-}
-
-func (s *Server) board(ctx context.Context) (*view.Board, error) {
-	ws, err := s.Store.Workspace(ctx)
-	if err != nil {
-		return nil, err
-	}
-	agents, err := s.Store.Agents(ctx)
-	if err != nil {
-		return nil, err
-	}
-	threads, err := s.Store.Threads(ctx)
-	if err != nil {
-		return nil, err
-	}
-	leases, err := s.Store.Leases(ctx)
-	if err != nil {
-		return nil, err
-	}
-	gates, err := s.Store.Gates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return view.Build(view.Input{
-		Workspace: ws, Agents: agents, Threads: threads,
-		Leases: leases, Gates: gates, Now: s.now(),
-	}), nil
-}
-
-func (s *Server) compact(ctx context.Context, id string) (*view.Compact, error) {
-	t, err := s.Store.Thread(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	leases, err := s.Store.Leases(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var mine []*core.Lease
-	now := s.now()
-	for _, l := range leases {
-		if l.Thread == id && !l.Expired(now) {
-			mine = append(mine, l)
-		}
-	}
-	gates, err := s.Store.Gates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var gate *core.Gate
-	for _, g := range gates {
-		if g.Thread == id && g.State == core.GatePending {
-			gate = g
-			break
-		}
-	}
-	return view.CompactThread(t, mine, gate, 5), nil
 }
 
 func (s *Server) wrap(fn func(*http.Request) (any, error)) http.HandlerFunc {
