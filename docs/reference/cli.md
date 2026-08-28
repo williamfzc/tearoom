@@ -9,8 +9,13 @@ timestamp: 2026-08-27
 
 # CLI reference
 
-Ten commands. Every one accepts `--json` for machine-readable output; that is the
-mode agents should use.
+Fourteen commands today. Every one accepts `--json` for machine-readable output; that is
+the mode agents should use.
+
+Fourteen is four too many: `threads` and `leases` restate `status`, `inbox` is `status`
+narrowed, and `init` belongs to a human rather than an agent. The target is ten, and the
+audit that gets there is [convergence](../architecture/convergence.md). This page
+documents what exists, not what should.
 
 ## Conventions
 

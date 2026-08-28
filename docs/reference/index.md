@@ -12,7 +12,7 @@ The parts other programs depend on. Changing anything here is a breaking change.
 
 | Document | Contract |
 |---|---|
-| [cli.md](cli.md) | The ten commands and their flags |
+| [cli.md](cli.md) | The fourteen commands and their flags |
 | [exit-codes.md](exit-codes.md) | What each exit status means |
 | [http-api.md](http-api.md) | Endpoints exposed by `tea-server` |
 | [storage-layout.md](storage-layout.md) | On-disk shape of a workspace |

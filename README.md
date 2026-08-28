@@ -2,10 +2,14 @@
 
 Minimal coordination layer for multi-agent workspaces.
 
-Multiple AI coding agents working in the same repository need three things and
-almost nothing else: a place to talk about a specific goal, a way to not
-overwrite each other, and a way to stop and ask a human. Tearoom provides
-exactly those three primitives and deliberately refuses to become a chat app.
+Several AI coding agents working in one place need two things. They need to agree on
+**who may act** — who owns this task, who holds this file, when a human must decide. And
+they need control over **what it costs to find out what changed**, because an agent has no
+screen to glance at and pays tokens for every observation.
+
+Tearoom provides those and refuses to become a chat product. The full scope, and the tests
+a proposal has to pass, are in [`docs/product.md`](docs/product.md), which is authoritative
+over this file.
 
 ```
 tea post   "fix flaky auth test"     # open a thread
@@ -17,20 +21,26 @@ tea gate   "needs prod migration approval"
 
 ## Why not just use Slack / Lark with bots
 
-IM platforms are built for human attention: rich text, reactions, mentions,
-read receipts. For an agent all of that is noise it has to spend tokens parsing.
-More importantly, IM has no file leases, no atomic task claiming, and no way to
-pull a *summary* of a thread instead of its full history. Those have to exist at
-the protocol level; you cannot bolt them onto a chat product.
+Because the primitives have to exist at the protocol level and cannot be bolted onto a
+chat product. IM gives a bot no file leases, no atomic task claiming, no way to pull a
+*summary* of a thread instead of its whole history, and no way to refuse a stale write.
+
+The inverse claim — that agents simply need *less* than a chat system — is wrong, and worth
+being precise about. Agents need less presence and formatting, and considerably **more**
+attention control than IM offers a bot: notices separated from message bodies, the ability
+to mute a channel, intent that survives the end of a turn. See
+[agent experience](docs/domain/agent-experience.md).
 
 ## Design constraints
 
-These are load-bearing. Changing any of them changes what the product is.
+These are load-bearing. Changing any of them changes what the product is; the reasoning
+for each is in [`docs/product.md`](docs/product.md).
 
 - **Five concepts only** — Workspace, Agent, Thread, Lease, Gate. A feature that
   needs a sixth concept gets rejected by default.
-- **Ten agent commands, one job each** — an agent should learn the whole surface
-  from `--help` without reading docs.
+- **One job per command** — an agent should learn the whole surface from `--help` without
+  reading docs. Currently fourteen commands, four too many; see
+  [convergence](docs/architecture/convergence.md).
 - **Code never leaves the machine** — the store holds paths, summaries and
   decisions. Never file contents.
 - **No orchestration engine** — no DAGs, no conditional branching. Agents decide
@@ -44,6 +54,12 @@ These are load-bearing. Changing any of them changes what the product is.
 
 M0, working end to end: a CLI, an HTTP server, and a browser console that is
 compiled from the same Go source as the CLI.
+
+Two things are knowingly missing, and they are not small. **A stale write is accepted** —
+an agent reasoning from an out-of-date snapshot can record a false statement, verified with
+exit code 0. And **the whole attention axis is absent**: no notice tier, no mute, no intent
+that outlives a turn. Both are catalogued in
+[status](docs/architecture/status.md#known-gaps-not-decisions).
 
 The whole thing is one language on purpose. `internal/core` defines the store
 interface; the local file store and the HTTP client both implement it, so the CLI

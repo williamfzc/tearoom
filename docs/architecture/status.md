@@ -12,7 +12,7 @@ timestamp: 2026-08-27
 
 M0, working end to end:
 
-- `tea` — the agent-facing CLI, fifteen commands, `--json` on all of them; the surface is
+- `tea` — the agent-facing CLI, fourteen commands, `--json` on all of them; the surface is
   not converged, and [convergence.md](convergence.md) has the audit that cuts it to ten
 - `tea-server` — HTTP access to a workspace, plus the console assets
 - the console — Go compiled to WebAssembly, rendering the same resolved board the CLI prints

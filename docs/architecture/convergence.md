@@ -25,7 +25,7 @@ independent sub-problems**, and **use one general mechanism for every case rathe
 special one per case**, which removes the cost of reasoning about special cases at all.
 After that simplification its core is two RPCs.[^2]
 
-This CLI has fifteen top-level commands. It has not done that exercise.
+This CLI has fourteen top-level commands. It has not done that exercise.
 
 ## The standard
 
@@ -115,7 +115,7 @@ Reads converge to one entry point:
 | `context` | one thread, compacted by default |
 | `ledger` | the audit trail — different in kind, kept |
 
-`init` leaves the agent surface. `threads` and `leases` fold into `status`. **Fifteen
+`init` leaves the agent surface. `threads` and `leases` fold into `status`. **Fourteen
 becomes ten, and no user story dies.**
 
 ## The counter-constraint

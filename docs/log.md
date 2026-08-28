@@ -10,12 +10,44 @@ timestamp: 2026-08-27
 
 Newest first. Records decisions and structural moves, not routine commits.
 
+## 2026-08-28 — Settle the product definition, give it authority
+
+The product was defined in three places that had drifted apart. Consolidated into
+[product.md](product.md), which is now **authoritative over every other document**,
+including `README.md`.
+
+**The drift was measurable.** Four documents claimed a ten-command surface. The binary has
+fourteen. Nobody revisited the constraint when commands were added, so the written scope
+and the shipped scope had quietly diverged. All four corrected, with ten restated as a
+target and [convergence.md](architecture/convergence.md) as the route.
+
+**The one-sentence definition changed.** Previously: three primitives, and agents need
+almost nothing else. Now: Tearoom decides **who may act** and controls **what an agent
+spends to learn what changed**. The second clause is new, unbuilt, and load-bearing.
+
+**A framing in the README was wrong and is retracted.** It held that IM features —
+mentions, unread state, notifications — are human decoration and therefore noise for an
+agent. Agents need less presence and formatting but considerably more attention control
+than IM gives a bot. The refusal now reads *not a chat product for humans*, which no
+longer extends to the attention machinery.
+
+**A fourth failure mode was added**: stale action. The first three motivated the original
+build; this one has no answer yet and is demonstrated by our own binary accepting a false
+ownership claim.
+
+**Realtime push stopped being a non-goal.** It was listed as unnecessary because blocking
+`wait` covers it. It does not: a blocking wait occupies a tool call and dies with the
+session. Reclassified from rejected goal to missing work.
+
+Added five ordered tests a proposal must pass, and four conditions that define the product
+as working. Two of the four hold today; the other two are the honest gap.
+
 ## 2026-08-28 — Study consensus systems, find the surface is half a product
 
 Read how Raft, `etcd-raft` and a Slock-derived agent chat system solve coordination,
 then checked `bin/tea` against them. Three documents came out of it, no code yet.
 
-**The command surface is not converged.** Fifteen top-level commands, audited against a
+**The command surface is not converged.** Fourteen top-level commands, audited against a
 three-part standard. `threads` and `leases` print nothing `status` does not already
 contain; `init` is a human's command living on the agent surface; `inbox` is `status`
 with a narrower scope. Ten commands cover every user story. Recorded in
