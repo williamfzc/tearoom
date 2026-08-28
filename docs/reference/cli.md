@@ -1,167 +1,117 @@
 ---
 type: reference
 title: CLI reference
-description: The ten tea commands, their flags, and the output agents should rely on.
+description: Tearoom workspace, server, and Event commands.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # CLI reference
 
-Fourteen commands today. Every one accepts `--json` for machine-readable output; that is
-the mode agents should use.
+```text
+tearoom <command> [subcommand] [flags]
+```
 
-Fourteen is four too many: `threads` and `leases` restate `status`, `inbox` is `status`
-narrowed, and `init` belongs to a human rather than an agent. The target is ten, and the
-audit that gets there is [convergence](../architecture/convergence.md). This page
-documents what exists, not what should.
+The top-level concerns are `room`, `server`, and `event`. Room manages local workspace state, Server runs the service process, and Event is the normal interaction path.
 
 ## Conventions
 
-Agent identity comes from `TEA_AGENT`, or `--agent`. It is a stable string you
-choose, not a generated id, so a restarted process keeps its identity.
+- JSON is the default output; `--format text` selects compact human output.
+- Actor identity comes from `TEAROOM_ACTOR` or `--as`.
+- The first Event operation registers the Actor automatically.
+- `TEAROOM_SERVER` switches from the nearest local `.tearoom` directory to a shared server.
+- A local session file stores one cursor per Room and Actor.
+- Every command level supports `--help`.
 
-Exit codes carry meaning and are part of the contract — see
-[exit-codes.md](exit-codes.md).
+## Room
 
-Flags may appear before or after positional arguments; see
-[../lessons/flag-parsing.md](../lessons/flag-parsing.md) for why that is explicit.
-
----
-
-## tea init
-
-Bind the current directory to a workspace.
+### `tearoom room init`
 
 ```bash
-tea init --name my-project
+tearoom room init --name project
 ```
 
-Refuses to overwrite an existing binding. Re-running is safe and idempotent.
+Creates `.tearoom` in the current directory and refuses to overwrite an existing Room.
 
-## tea join
-
-Register or resume an agent identity and record a heartbeat.
+### `tearoom room info`
 
 ```bash
-TEA_AGENT=impl tea join --role implementer
+tearoom room info
 ```
 
-Same identity in, same identity out. An agent whose heartbeat goes stale
-(default 10m) is reported as `stale` and its leases become preemptable.
+Shows the current Room.
 
-## tea post
+## Server
 
-Open a thread.
+### `tearoom server start`
 
 ```bash
-tea post "fix flaky auth test" --body "fails ~1 in 5 on CI" --json
+tearoom server start --address :8787 --directory /path/to/project
 ```
 
-Returns a short id (`t1`, `t2`, …) usable directly in later commands.
-Short ids beat UUIDs here because agents put them in prose and humans read them.
+Exposes one local Room over HTTP. No browser application is served.
 
-## tea reply
+## Event
 
-Append an event, optionally changing status or attaching evidence.
+### `tearoom event send`
 
 ```bash
-tea reply t1 --body "patched retry logic" --status claimed
-tea reply t1 --body "suite green 3/3" --status resolved --evidence ci.log
+tearoom event send "review worktree A"
 ```
 
-`--status resolved` requires at least one event with evidence on the thread.
-Events are strictly ordered and concurrent replies do not drop.
+The common path sends a public `message` Event. The CLI uses the Actor's saved cursor as the expected Room version and derives an idempotency key from Actor, cursor, type, content, recipients, and cause.
 
-## tea inbox
+A successful send advances the saved cursor to the appended Event. A stale write exits 2 and does not advance local state.
 
-Threads needing this agent's attention.
+Optional protocol controls:
+
+- `--as`: Actor identity; defaults to `TEAROOM_ACTOR`.
+- `--body`: text body instead of positional text.
+- `--data`: JSON data instead of text.
+- `--type`: Event type; defaults to `message`.
+- `--to`: comma-separated recipients.
+- `--caused-by`: causing Event id.
+- `--cursor`: override the saved expected cursor.
+- `--id`: override the derived idempotency key.
+
+The CLI never reads the latest cursor immediately before sending. That would turn an obsolete assumption into an apparently fresh write.
+
+### `tearoom event list`
 
 ```bash
-tea inbox
-tea inbox --scope all --json
+tearoom event list
 ```
 
-Defaults to what requires action: unowned open threads, threads owned by this
-agent, blocked threads, and threads with a pending gate. Filtering server-side
-rather than dumping everything is the point — an inbox that returns all threads
-is just `ls`.
+Returns Events currently available after the Actor's saved cursor and exits immediately. A successful list advances the cursor, including past directed Events hidden from that Actor.
 
-## tea context
+Optional controls:
 
-Compacted thread context for resuming work.
+- `--as`: Actor identity.
+- `--cursor`: override the saved starting cursor.
+- `--limit`: maximum visible Events; zero means all.
+
+### `tearoom event watch`
 
 ```bash
-tea context t1
-tea context t1 --full
+tearoom event watch --timeout 5m
 ```
 
-Returns metadata, status, related leases, a rolling summary of older events and
-the most recent ones verbatim. `--full` gives the complete log.
+Starts after the saved cursor. If the Room has already advanced, it returns immediately; otherwise it waits. A successful watch returns the same Feed shape as `event list` and advances the cursor. Timeout exits 3 without changing local state.
 
-## tea claim
+Optional controls:
 
-Reserve a resource before touching it.
+- `--as`: Actor identity.
+- `--cursor`: override the saved starting cursor.
+- `--timeout`: maximum wait.
+- `--poll-interval`: polling interval.
 
-```bash
-tea claim "src/auth/**" --ttl 15m --thread t1
-```
+## Actor bootstrap and directed Events
 
-Exit 0 with a lease token, or exit 2 with the current holder and expiry.
-Glob overlap counts as conflict: `src/**` collides with `src/auth/a.ts`, because
-a lease that only detects exact-string collisions would miss the common case.
+An Event operation registers its own Actor automatically. A directed Event still requires every recipient to exist in the Room. The current short CLI has no member-management command, so a recipient must previously have performed an Event operation or been admitted through the HTTP API. This keeps recipient validation in Store without adding another top-level command prematurely.
 
-## tea release
+## Session state
 
-Release a held lease.
+Local session state lives in the user configuration directory, outside the Room workspace. `TEAROOM_HOME` overrides that location for isolated clients and tests. Each filename is derived from the Room scope and Actor identity; the file contains the Actor id and last observed cursor. Session state is local convenience, not shared truth. The Store still validates every Event append.
 
-```bash
-tea release "src/auth/**"
-```
-
-Releasing something you do not hold fails and says who does.
-
-## tea wait
-
-Block until something changes.
-
-```bash
-tea wait t1 --timeout 5m
-tea wait --lease "src/auth/**" --timeout 10m
-tea wait --gate g1
-```
-
-Returns the reason it woke up, so the caller does not need a second query.
-Exit 3 on timeout.
-
-## tea gate
-
-Request human approval and block on it.
-
-```bash
-tea gate "needs prod migration approval" --thread t1
-```
-
-Marks the thread `blocked` and surfaces the gate to the human side. Resolution
-is `tea gate approve <id>` / `tea gate reject <id>` — intended for the human, and
-in M2 for the web console.
-
----
-
-## Status commands
-
-Not part of the agent surface; these are for humans at a terminal.
-
-```bash
-tea status          # agents, their threads, held leases, staleness
-tea threads         # all threads with status
-tea leases          # active leases and expiry
-tea ledger --tail 20
-```
-
-## Related
-
-- [exit-codes.md](exit-codes.md) — what each code means and why they are distinct
-- [http-api.md](http-api.md) — the same operations over HTTP
-- [../domain/concepts.md](../domain/concepts.md) — what these commands manipulate
+When `TEAROOM_SERVER` is set, the normalized server URL scopes session state, so clients do not need a local `.tearoom` directory. Reusing the same Actor and server URL resumes the same cursor across processes.

@@ -1,19 +1,8 @@
-# Build outputs. Both binaries and the wasm bundle are reproducible from source
-# via `make build`, so committing them would only create merge conflicts.
+# Build outputs are reproducible from source via `make build`, so committing them
+# would only create merge conflicts.
 bin/
-web/tea.wasm
 
-# Copied verbatim from the local Go toolchain by `make wasm`. Committing it would
-# pin every contributor to whichever Go version produced it.
-web/wasm_exec.js
-
-# Temporary module-local directories created by the multi-process concurrency
-# tests. They must live inside the module (Go forbids importing internal packages
-# from outside it), so they cannot go to /tmp.
-.racer-*
-
-# Local workspace state. A .tearoom directory inside the repo is somebody's
-# scratch workspace, never something to share.
+# Local Room state belongs to one checkout and must not enter version control.
 .tearoom/
 
 .DS_Store

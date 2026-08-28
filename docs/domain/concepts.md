@@ -1,93 +1,69 @@
 ---
 type: domain
-title: The five concepts
-description: Canonical definitions of workspace, agent, thread, lease and gate, with the invariants each carries.
+title: Room, Actor, Event
+description: Canonical definitions of Tearoom's three domain entities and their invariants.
 resource: internal/core/core.go
 tags: [domain, concepts, invariants]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
-# The five concepts
+# Room, Actor, Event
 
-Defined in `internal/core`. This document is the canonical description; the code is
-the canonical implementation.
+The product has exactly three domain entities. Their authoritative scope is in [the product definition](../product.md); `internal/core` is the canonical implementation.
 
-## Workspace
+## Room
 
-A project or repository, and the unit of isolation. Bound to a directory through
-`.tearoom/config.json` but not strictly tied to it.
+A Room is a durable, named boundary containing actors and one ordered event stream. Local mode binds one Room to a `.tearoom` directory. Shared mode exposes that same Room over HTTP.
 
-Granularity is unsettled — see [open-questions.md](open-questions.md).
+A Room is deliberately more general than a task, thread, channel, repository, or game. Those are interpretations of its events.
 
-## Agent
+## Actor
 
-A durable identity with a role label and a heartbeat.
+An Actor is a stable participant identity with an optional role label. Identity comes from `TEAROOM_ACTOR` or `--as`, not from the process, so a later session can resume the same participant. Event operations register that identity automatically.
 
-**Identity comes from the token, not the process.** An agent that crashes and restarts
-is the same agent. This is what makes lease reclamation and staleness detection
-meaningful: without stable identity, a crash would look like a new participant and the
-lease it was holding could never be safely reclaimed.
+An Actor may be a human, a coding agent, another agent product, or a game role controller. The core does not distinguish them.
 
-## Thread
+## Event
 
-One goal, with an append-only event log and a fixed state machine:
+An Event is one immutable fact in the Room log. It carries:
 
+- a dense room sequence and event id;
+- the actor that appended it;
+- a type and optional body or JSON data;
+- optional recipients;
+- an optional causing event;
+- an idempotency key.
+
+Empty recipients mean public. Otherwise only the sender and named recipients receive the event from `Read`.
+
+## The write contract
+
+Every append supplies `Expected`, the cursor returned by the read on which the event is based.
+
+```text
+read -> cursor N
+reason or act
+append(expected=N)
 ```
-open ──▶ claimed ──▶ resolved
- │  ▲       │  ▲
- ▼  │       ▼  │
-blocked ────┘  │
- └─────────────┘
+
+If the Room has advanced to `N+1`, the append is rejected. The caller must read again and decide whether its event is still true. This turns stale context into an explicit conflict rather than a recorded falsehood.
+
+The idempotency key answers a different question: whether the same intended event has already landed. The same key and content return the original Event; the same key with different content is a conflict.
+
+## Application protocols
+
+Examples only; they add no domain entities:
+
+```text
+handoff.requested
+handoff.accepted
+task.claimed
+approval.requested
+approval.decided
+role.assigned
+phase.changed
+vote.cast
+message
 ```
 
-Transitions are free-form in both directions with one exception: reaching `resolved`
-requires at least one event carrying evidence. Claiming something is done is not the
-same as showing it.
-
-There are no custom states. A human scanning a board should not have to learn
-per-project vocabulary before they can tell whether work is moving.
-
-## Lease
-
-An advisory exclusive hold on a resource — a file glob, a port, a task name — with a
-mandatory TTL.
-
-**Advisory, not enforced.** An agent can ignore a lease and write anyway. Enforcing at
-the filesystem level would need a kernel hook or a FUSE mount: far heavier than a
-single binary to install, and still bypassable. The optional git pre-commit guard is
-the second line of defence.
-
-Two invariants matter more than the rest:
-
-- Two agents in separate processes calling `claim` at the same instant must not both
-  succeed. See [../architecture/layers.md](../architecture/layers.md) for where this is
-  enforced and [../lessons/cross-process-locking.md](../lessons/cross-process-locking.md)
-  for how it is tested.
-- An expired lease is not a lease. Filtering happens in `internal/resolve` so no
-  caller has to remember this.
-
-Default TTL is unsettled — see [open-questions.md](open-questions.md).
-
-## Gate
-
-A checkpoint requiring human approval. Blocks `wait` until settled.
-
-**There is no auto-approval on timeout.** A gate that approves itself after an hour is
-not a gate; auto-approval destroys the only reason the concept exists.
-
-Two rules that live in the store rather than in any client:
-
-- Opening a gate blocks its thread. Deciding it moves the thread out of blocked —
-  approved resumes as `claimed`, rejected returns to `open` so a different approach can
-  be tried.
-- Approval resumes the thread as the agent that **asked**, not the human who approved.
-  A human pressing a button is not volunteering to do the work.
-
-Both were originally implemented in the CLI, with consequences recorded in
-[../lessons/invariants-belong-in-the-store.md](../lessons/invariants-belong-in-the-store.md).
-
-## Related
-
-- [problem.md](problem.md) — the failure modes these concepts address
-- [boundaries.md](boundaries.md) — how each behaves under crash and contention
-- [../reference/cli.md](../reference/cli.md) — the commands that manipulate them
+Protocol rules belong in a protocol-specific layer or client until more than one caller proves they must become a shared store invariant.

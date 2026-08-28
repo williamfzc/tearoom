@@ -1,144 +1,110 @@
 ---
 type: product
 title: Product definition
-description: What Tearoom is, who it is for, what it refuses, and the tests that decide whether a proposal belongs. Authoritative over all other documents.
-tags: [product, scope, decision, authority]
+description: Authoritative definition of Tearoom's scope, model, invariants, and completion standard.
+tags: [product, scope, authority]
 timestamp: 2026-08-28
 ---
 
 # Product definition
 
-This document decides scope. Where any other document disagrees with it, this one wins
-and the other is wrong. It exists because the product was previously described in three
-places — `README.md`, `domain/problem.md`, `architecture/status.md` — which drifted apart
-until four documents claimed a ten-command surface that had grown to fourteen.
+This document decides scope. If another document disagrees, that document is wrong.
 
 ## One sentence
 
-**Tearoom is the coordination layer several AI agents share when they work in one
-place: it decides who may act, and it controls what an agent spends to learn what
-changed.**
+**Tearoom is a durable room where agents from any product exchange ordered events across sessions without a human relaying context.**
 
-Both halves are load-bearing. The first is built. The second is not, and until it is
-this product is incomplete rather than minimal — see
-[agent experience](domain/agent-experience.md).
+## The three entities
+
+- **Room** is the durable shared boundary and owns one ordered event sequence.
+- **Actor** is a stable participant identity independent of a process, session, model, or agent product.
+- **Event** is one immutable fact appended by an actor.
+
+There is no fourth core entity. A task, claim, approval, handoff, direct message, game phase, role assignment, or vote is an event type or a projection over events.
+
+`Room` is the name because this product is Tearoom. It also describes the user model directly: actors enter a room and events happen there.
 
 ## Who it is for
 
-In priority order. A feature that serves a later party at the expense of an earlier one
-is rejected.
+1. Agents exchanging work across process and session boundaries.
+2. Different agent products that need one neutral coordination surface.
+3. Humans inspecting or participating in the same event history.
 
-1. **An agent acting in the workspace.** The primary user. It reads via a CLI, has no
-   screen, and pays tokens for every observation.
-2. **The person responsible for the outcome.** Needs to see who is stuck and what is
-   waiting on them, and to answer when asked. Does not want a chat client.
-3. **The team that has to review afterwards.** Needs to reconstruct what happened and why
-   from a record, not from scrollback.
+The first two are the completion boundary. A dedicated human interface is optional.
 
-Nobody else. In particular Tearoom is not for humans to talk to each other.
+## Invariants
 
-## What is true of it
+- **One room, one sequence.** Events receive dense, increasing sequence numbers under one store lock.
+- **Append only.** Accepted events are never edited in place.
+- **Stable actors.** An actor identity survives process and session changes.
+- **Fresh writes.** Every append names the room cursor it was based on. A moved cursor is refused under the `Store` interface.
+- **Idempotent retries.** Repeating the same event with the same key returns the original event. Reusing a key for different content is refused.
+- **Selective visibility.** A public event is visible to every actor. A directed event is visible only to its sender and named recipients. This is filtering, not yet authenticated access control.
+- **One contract locally and remotely.** The file store and HTTP client implement the same `Store` interface.
+- **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
 
-These are the invariants. Breaking one changes what the product is, so each requires an
-explicit decision recorded in [the log](log.md).
+## What it enables
 
-- **A small fixed vocabulary.** Workspace, agent, thread, lease, gate. A proposal needing
-  a sixth concept must first show the five cannot express it.
-- **A converged command surface.** Every command maps to a decision an agent makes; no
-  command exists to save typing, and no two commands state the same fact. The current
-  fourteen violate this, and [convergence](architecture/convergence.md) is the correction.
-- **Rules live under the store.** Anything that must be true of the workspace is enforced
-  beneath the `Store` interface, not in a client. This was learned the hard way once
-  already: [invariants belong under the store](lessons/invariants-belong-in-the-store.md).
-- **Code never leaves the machine.** The store holds paths, summaries and decisions.
-  Never file contents.
-- **Failure is actionable, and never silent.** A refusal names the obstacle *and* the
-  remedy. An agent that believes it holds a lease it does not hold is worse than a crash.
-- **Facts, not orchestration.** No DAGs, no branching, no scheduler. Tearoom supplies
-  facts and primitives; agents decide what to do next.
+The core does not know these applications, but it can carry them:
+
+- repository and worktree handoffs;
+- task claims and progress reports;
+- review and approval protocols;
+- group chat and direct messages;
+- games such as Werewolf, including private role events;
+- any other protocol expressible as ordered facts among stable actors.
 
 ## What it refuses
 
-Stated as firmly as the goals, because scope creep here dissolves the product.
+- No built-in workflow engine, scheduler, DAG, or model router.
+- No task, lease, gate, thread, channel, or game entity in the kernel.
+- No browser or WebAssembly console in the current product.
+- No hidden compatibility model beside Room, Actor, and Event.
+- No silent success when the store is unavailable or a write is stale.
+- No claim that recipient filtering is security until server authentication exists.
 
-- Not an agent and not a model router. Coordination, not intelligence.
-- Not a code host or sandbox.
-- Not a workflow engine.
-- Not human-to-human chat.
-- Not a general IM platform. **But see the correction below — this refusal has been
-  applied too broadly.**
+## Command surface
 
-### The correction
+The CLI exposes three top-level concerns rather than every domain entity:
 
-The earlier framing said agents need *fewer* things than a chat system, and treated
-mentions, unread state and notifications as human decoration to be stripped out. That was
-wrong, and it is the one place where the original pitch has to change.
+```text
+room:   init, info
+server: start
+event:  send, list, watch
+```
 
-An agent does need a different set of things — but the set is not smaller. It needs
-**less** presence, formatting and prettiness, and **more** attention control than any IM
-platform offers a bot: a notice tier separate from message bodies, the ability to mute a
-channel it does not care about, intent that survives the end of a turn, and an identity
-that survives the end of a task. Mute matters more than rich text.
+- `room` owns the local workspace lifecycle.
+- `server` owns the independent serving process.
+- `event` owns the normal interaction loop.
+- Actor registration is automatic on the first Event operation; it is not a separate user task. A directed Event may target only Actors already known to the Room. The current CLI intentionally has no member-management command: a recipient must previously have performed an Event operation or been admitted by another Store client.
 
-So the refusal stands as *not a chat product for humans*. It does not extend to the
-attention machinery, which is required. Detail and sources in
-[agent experience](domain/agent-experience.md).
+The common path is intentionally short:
 
-## The failures it exists to prevent
+```bash
+tearoom room init
+tearoom event send "review worktree A"
+tearoom event list
+tearoom event watch
+```
 
-Four now, in increasing order of cost. The first three were the original motivation; the
-fourth was found by [studying consensus systems](lessons/borrowed-from-consensus.md) and
-confirmed against our own binary.
+`event list` returns currently available Events and exits. `event watch` waits for a later Event when none is currently available.
 
-| Failure | What it looks like | Answered by |
-|---|---|---|
-| **Broken handoff** | No way to report progress or wait on a precondition, so a human relays context by hand and work stops when they leave | threads, `wait` |
-| **Silent overwrite** | Two agents edit one file, the later write wins, nothing reports it | leases |
-| **No oversight trail** | No way to know what an agent did or why, so review is impossible and the work cannot be delegated | the ledger, the attention-first board |
-| **Stale action** | An agent reasons from a snapshot, the world moves, and it acts on a world that no longer exists — writing a duplicate, an obsolete claim, or a confident falsehood | **nothing yet** |
+The CLI keeps a local session cursor for each Room and Actor in the user's Tearoom configuration directory; client progress is not written into shared Room state. `event list` and `event watch` start after that cursor and advance it after a successful read. `event send` uses that saved cursor as its expected Room version. It must not silently fetch the latest cursor before writing, because doing so would disable stale-write protection.
 
-The fourth is not hypothetical here. Observed: an agent wrote *"nobody has this, I'll take
-it"* into a thread already owned by another agent, and the workspace accepted it with exit
-code 0.
+The CLI derives a stable request id from the Actor, saved cursor, and Event content. If a request outcome is uncertain, repeating the same command from the same cursor reaches the Store with the same idempotency key. Advanced protocol controls remain available through `--body`, `--data`, `--type`, `--to`, `--caused-by`, `--cursor`, and `--id`, but none is required for an ordinary public text Event.
 
-## Tests a proposal must pass
+Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous fallback: an identity must be explicit so session state and Event authorship remain stable.
 
-Applied in order. First failure rejects.
+## Completion standard
 
-1. **Does it prevent one of the four failures?** If not, it is somebody else's feature.
-2. **Can the five concepts express it?** If it needs a sixth, it must justify the sixth
-   first.
-3. **Does it correspond to a decision an agent makes?** Views, formats and conveniences
-   are flags at most.
-4. **Can the rule live under the store?** If it can only work by trusting the caller to
-   remember it, it is not finished.
-5. **Does it cost the agent tokens it did not choose to spend?** Anything that enlarges
-   what an agent must read by default needs a reason.
+Tearoom is working only when all of the following are executable tests:
 
-## How this is decided to be working
+- A later process in the same agent product resumes a stable actor and reads prior events.
+- A different agent product exchanges events through the same server.
+- Concurrent writers cannot assign the same room sequence.
+- A stale write is refused rather than recorded.
+- A repeated request does not create a duplicate event.
+- A directed event is not returned to unrelated actors.
+- The shipped `tearoom` binary performs all of the above through the documented `room`, `server`, and `event` commands without a browser component.
 
-Not "the tests pass" — that is a build property. The product works when:
-
-- Two agents complete a real task in one repository with **no human relay** and **no
-  overwritten work**.
-- A responsible human answers "who is stuck, and what needs me" from the board in
-  **under ten seconds**.
-- An action taken on a stale view is **refused rather than recorded**.
-- An agent in a busy workspace can stay on its own task without its context filling with
-  other agents' traffic.
-
-The first two are met at M0. The third and fourth are not, which is the honest current
-state of the product.
-
-## Where the rest of the documentation stands
-
-| Document | Role relative to this one |
-|---|---|
-| [domain/](domain/index.md) | The vocabulary and rules this definition assumes |
-| [architecture/](architecture/index.md) | How the code is arranged to keep these promises |
-| [reference/](reference/index.md) | What the surface currently *is*, including where it is not yet converged |
-| [lessons/](lessons/index.md) | Why some of these rules exist, with the evidence |
-| [log.md](log.md) | Every decision that changed this document |
-
-`README.md` is the entry point for a newcomer and must not restate this file. If the two
-disagree, `README.md` is wrong.
+`make check` is the repository-level proof of this standard.

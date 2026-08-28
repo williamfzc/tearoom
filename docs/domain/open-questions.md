@@ -1,45 +1,31 @@
 ---
 type: decision
 title: Open questions
-description: Decisions deliberately left unsettled at M0, with what each one blocks and what would settle it.
+description: Decisions deliberately left unsettled after the Room, Actor, Event convergence.
 tags: [domain, decision, open]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # Open questions
 
-Recorded rather than guessed. Each needs evidence, not an opinion.
+Each question needs usage evidence rather than a speculative abstraction.
 
-## Workspace-to-repository binding
+## Room placement
 
-One workspace per repository, or per branch?
+Should one repository normally contain one Room, or should a Room live above several repositories and worktrees? Local discovery currently binds one Room to one ancestor directory. The cross-product HTTP mode is not directory-bound for clients.
 
-Per branch would let two agents work on unrelated branches without contending for the
-same leases. It also multiplies workspaces and raises the question of what happens to
-an in-flight thread when its branch is deleted.
+## Protocol ownership
 
-Blocks: nothing at M0, since single-repo use works either way. Settle before multi-branch
-usage becomes common.
+Which event conventions deserve reusable libraries? Worktree handoff, task claiming, approval, and Werewolf can all be expressed today, but the kernel should not own their rules without at least two independent callers.
 
-## Default lease TTL
+## Attention indexing
 
-Too short interrupts a long edit; too long slows recovery after a crash.
+Do mute, mentions, and durable unread state belong in a derived index, or can clients remain cursor-only? The answer should be measured by token cost in busy Rooms.
 
-Needs measurement against how long real agent edits actually take. Guessing a number
-here would bake in a wrong default that later becomes hard to change.
+## Authentication
 
-## Open-sourcing the client
+How should a server bind credentials to Actor identities without making one vendor's agent runtime part of the core? Until decided, shared mode is for trusted networks only.
 
-Leaning yes for the CLI, no for the server. The CLI is the surface agents integrate
-against, and adoption depends on it being inspectable. The hosted store is where the
-paid value would sit.
+## Retention
 
-## Cold-start distribution
-
-Open-source traction, or the MCP ecosystem? These imply different first milestones and
-should not both be pursued at once.
-
-## Related
-
-- [concepts.md](concepts.md) — the definitions these questions would refine
-- [../architecture/status.md](../architecture/status.md) — what is built so far
+The Event log grows forever. Compaction, snapshots, and export require a rule that preserves replay and audit semantics without introducing editable history.

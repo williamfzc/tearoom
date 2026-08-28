@@ -1,51 +1,32 @@
 ---
 type: runbook
-title: Serving the console
-description: Running tea-server, pointing agents at it, and what the console will and will not do.
-resource: cmd/tea-server/main.go
-tags: [runbook, server, console]
-timestamp: 2026-08-27
+title: Serving a shared Room
+description: Expose one Room so independent sessions and agent products can exchange Events.
+resource: cmd/tearoom/main.go
+tags: [runbook, server, sessions, interoperability]
+timestamp: 2026-08-28
 ---
 
-# Serving the console
+# Serving a shared Room
+
+Create a local Room, then expose it from the same binary:
 
 ```bash
-tea-server --addr :8787 --web ./web
-# console on http://localhost:8787
+tearoom room init --name project
+tearoom server start --address 127.0.0.1:8787 --directory /path/to/project
 ```
 
-Point agents at it and nothing else changes:
+Point another session or agent product at it:
 
 ```bash
-export TEA_SERVER=http://localhost:8787
-tea claim "src/**" --ttl 15m
+export TEAROOM_SERVER=http://127.0.0.1:8787
+export TEAROOM_ACTOR=stable-name
+tearoom event list
+tearoom event send "hello from another session"
 ```
 
-The CLI behaves identically against a local directory or a remote server, because
-`transport.Client` implements the same `core.Store` interface the file store does. A
-conflict raised remotely still exits 2 and still names the holder and expiry.
+The stable Actor identity and its local cursor survive process and session changes. Client cursor files live in the user's Tearoom configuration directory, so a remote client does not need a local Room checkout. A different product may use the HTTP API directly and sees the same order, freshness, idempotency, and visibility rules.
 
-## What the console shows
+The service has no browser console and no authentication. Bind to localhost or a trusted network only.
 
-Attention first, and loudest. A human should be able to answer "what needs me?" without
-scanning healthy rows. When nothing is wrong it says so plainly instead of presenting a
-dashboard to interpret.
-
-## What the console will not do
-
-Its only write actions are approve and reject. This is a deliberate limit: adding
-messaging, assignment or editing would turn it into the chat application this project
-exists to avoid becoming.
-
-## Polling, not push
-
-The board is polled every three seconds. A human glances at this a few times an hour, so
-a websocket would buy nothing and cost reconnection logic on both ends.
-
-The console only rebuilds when state actually changes — see
-[../lessons/console-repaint.md](../lessons/console-repaint.md).
-
-## Related
-
-- [../reference/http-api.md](../reference/http-api.md) — the endpoints behind it
-- [building.md](building.md) — producing the wasm bundle it needs
+See [the HTTP API](../reference/http-api.md) for the wire contract.

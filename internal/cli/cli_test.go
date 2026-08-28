@@ -1,141 +1,193 @@
+// CLI tests protect command routing, help discovery, and machine-safe arguments.
 package cli
 
 import (
+	"bytes"
 	"flag"
 	"io"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/store"
 )
 
-// Go's flag package stops parsing at the first positional argument, so
-// `tea post "title" --json` silently swallowed --json as part of the title. Agents
-// write flags in whatever order reads naturally, so parse() reorders first. These
-// tests pin that behaviour down.
-
-func TestParseAcceptsFlagsAfterPositionals(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	asJSON := f.Bool("json", false, "")
-	body := f.String("body", "", "")
-
-	if err := parse(f, []string{"hello world", "--json", "--body", "b"}); err != nil {
-		t.Fatal(err)
-	}
-	if !*asJSON {
-		t.Error("--json after a positional was swallowed; agents hit this immediately")
-	}
-	if *body != "b" {
-		t.Errorf("body = %q, want b", *body)
-	}
-	if f.Arg(0) != "hello world" {
-		t.Errorf("positional = %q, want the title intact", f.Arg(0))
+func TestRootAndGroupHelp(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--help"}, "tearoom <command> [subcommand]"},
+		{[]string{"room", "--help"}, "tearoom room <command>"},
+		{[]string{"server", "--help"}, "tearoom server <command>"},
+		{[]string{"event", "--help"}, "tearoom event <command>"},
+		{[]string{"event", "send", "--help"}, "--body string"},
+	} {
+		var out bytes.Buffer
+		app := &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+		if code := app.Run(test.args); code != ExitOK {
+			t.Fatalf("%v exit = %d", test.args, code)
+		}
+		if !strings.Contains(out.String(), test.want) {
+			t.Fatalf("%v output %q does not contain %q", test.args, out.String(), test.want)
+		}
 	}
 }
 
-func TestParseAcceptsFlagsBeforePositionals(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	asJSON := f.Bool("json", false, "")
-	body := f.String("body", "", "")
-
-	// The conventional order must keep working after the reordering fix.
-	if err := parse(f, []string{"--body", "b", "--json", "second thread"}); err != nil {
-		t.Fatal(err)
-	}
-	if !*asJSON || *body != "b" || f.Arg(0) != "second thread" {
-		t.Errorf("json=%v body=%q arg=%q", *asJSON, *body, f.Arg(0))
+func TestRemovedCommandsAreRejected(t *testing.T) {
+	for _, args := range [][]string{{"actor"}, {"room", "get"}, {"room", "serve"}, {"event", "create"}} {
+		app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
+		if code := app.Run(args); code != ExitUsage {
+			t.Fatalf("%v exit = %d, want %d", args, code, ExitUsage)
+		}
 	}
 }
 
-func TestParseKeepsMultiWordPositionals(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	asJSON := f.Bool("json", false, "")
-
-	if err := parse(f, []string{"fix", "the", "flaky", "test", "--json"}); err != nil {
-		t.Fatal(err)
-	}
-	if !*asJSON {
-		t.Error("trailing --json lost")
-	}
-	if got := strings.Join(f.Args(), " "); got != "fix the flaky test" {
-		t.Errorf("positionals = %q", got)
+func TestOldRequestIDFlagIsRejected(t *testing.T) {
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"event", "send", "hello", "--request-id", "value"}); code != ExitUsage {
+		t.Fatalf("--request-id exit = %d, want %d", code, ExitUsage)
 	}
 }
 
-func TestParseRespectsDoubleDash(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	asJSON := f.Bool("json", false, "")
-
-	// After --, everything is literal. A title that happens to contain --json must
-	// survive verbatim, or agents cannot post about flags.
-	if err := parse(f, []string{"--", "a title with --json inside"}); err != nil {
+func TestEventSendAcceptsBodyAndID(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("TEAROOM_HOME", home)
+	if _, err := store.Init(dir, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if *asJSON {
-		t.Error("--json after -- was treated as a flag")
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"event", "send", "--as", "alice", "--body", "hello", "--id", "request-1"}); code != ExitOK {
+		t.Fatalf("event send exit = %d", code)
 	}
-	if f.Arg(0) != "a title with --json inside" {
-		t.Errorf("positional = %q", f.Arg(0))
+	if !strings.Contains(out.String(), `"body":"hello"`) || !strings.Contains(out.String(), `"key":"request-1"`) {
+		t.Fatalf("event send output = %s", out.String())
 	}
 }
 
-func TestParseHandlesValueFlagsWithEquals(t *testing.T) {
-	f := flag.NewFlagSet("claim", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	ttl := f.String("ttl", "", "")
-
-	if err := parse(f, []string{"src/**", "--ttl=30m"}); err != nil {
-		t.Fatal(err)
-	}
-	if *ttl != "30m" {
-		t.Errorf("ttl = %q, want 30m", *ttl)
-	}
-	if f.Arg(0) != "src/**" {
-		t.Errorf("resource = %q", f.Arg(0))
+func TestEventSendRejectsMultipleBodies(t *testing.T) {
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"event", "send", "hello", "--body", "other", "--as", "alice"}); code != ExitUsage {
+		t.Fatalf("event send exit = %d, want %d", code, ExitUsage)
 	}
 }
 
-func TestParseDoesNotEatPositionalAfterBoolFlag(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	asJSON := f.Bool("json", false, "")
-
-	// A bool flag takes no value, so the token after it is a positional, not its
-	// argument. Getting this wrong would silently drop the title.
-	if err := parse(f, []string{"--json", "my title"}); err != nil {
-		t.Fatal(err)
+func TestRequestIDDependsOnSavedCursorAndContent(t *testing.T) {
+	base := coreInput("a", 4, "hello")
+	first := deriveRequestID(base)
+	if first != deriveRequestID(base) {
+		t.Fatal("same input produced a different request id")
 	}
-	if !*asJSON || f.Arg(0) != "my title" {
-		t.Errorf("json=%v arg=%q", *asJSON, f.Arg(0))
+	base.Expected++
+	if first == deriveRequestID(base) {
+		t.Fatal("different cursor produced the same request id")
+	}
+	base.Expected--
+	base.Body = "other"
+	if first == deriveRequestID(base) {
+		t.Fatal("different content produced the same request id")
 	}
 }
 
-func TestParseValueFlagStillTakesItsValue(t *testing.T) {
-	f := flag.NewFlagSet("claim", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	ttl := f.String("ttl", "", "")
+func coreInput(actor string, cursor uint64, body string) core.AppendInput {
+	return core.AppendInput{Actor: actor, Expected: cursor, Type: "message", Body: body}
+}
 
-	// The space-separated form must not mistake 30m for a positional.
-	if err := parse(f, []string{"--ttl", "30m", "src/**"}); err != nil {
+func TestSessionPathScopesByServerAndActor(t *testing.T) {
+	t.Setenv("TEAROOM_HOME", t.TempDir())
+	app := &App{Dir: t.TempDir()}
+	t.Setenv("TEAROOM_SERVER", "http://room-a.example")
+	first, err := app.sessionPath("alice")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if *ttl != "30m" {
-		t.Errorf("ttl = %q", *ttl)
+	t.Setenv("TEAROOM_SERVER", "http://room-b.example")
+	second, err := app.sessionPath("alice")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if f.Arg(0) != "src/**" {
-		t.Errorf("resource = %q, want src/**", f.Arg(0))
+	t.Setenv("TEAROOM_SERVER", "http://room-a.example")
+	third, err := app.sessionPath("bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || first == third {
+		t.Fatalf("session paths are not independently scoped: %q %q %q", first, second, third)
+	}
+}
+
+func TestLocalSessionPathUsesRoomAndActor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("TEAROOM_HOME", home)
+	t.Setenv("TEAROOM_SERVER", "")
+	firstRoot := t.TempDir()
+	secondRoot := t.TempDir()
+	if _, err := store.Init(firstRoot, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Init(secondRoot, "second"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := (&App{Dir: firstRoot}).sessionPath("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := (&App{Dir: secondRoot}).sessionPath("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := (&App{Dir: firstRoot}).sessionPath("bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second || first == third || !strings.HasPrefix(first, home) {
+		t.Fatalf("local session paths are not independently scoped: %q %q %q", first, second, third)
+	}
+}
+
+func TestSessionRoundTrip(t *testing.T) {
+	path := t.TempDir() + "/nested/session.json"
+	want := session{Actor: "alice", Cursor: 7}
+	if err := writeSession(path, want); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("session mode = %o, want 600", info.Mode().Perm())
+	}
+	got, err := readSession(path, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("session = %+v, want %+v", got, want)
+	}
+}
+
+func TestParseAcceptsFlagsAfterText(t *testing.T) {
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	format := flags.String("format", "json", "")
+	cursor := flags.Uint64("cursor", 0, "")
+	if err := parse(flags, []string{"hello", "world", "--format", "text", "--cursor", "4"}); err != nil {
+		t.Fatal(err)
+	}
+	if *format != "text" || *cursor != 4 || strings.Join(flags.Args(), " ") != "hello world" {
+		t.Fatalf("format=%s cursor=%d args=%q", *format, *cursor, flags.Args())
 	}
 }
 
 func TestParseRejectsUnknownFlag(t *testing.T) {
-	f := flag.NewFlagSet("post", flag.ContinueOnError)
-	f.SetOutput(io.Discard) // silence usage text on expected errors
-	f.Bool("json", false, "")
-
-	// A typo must fail loudly rather than being treated as part of the title.
-	if err := parse(f, []string{"title", "--jsonn"}); err == nil {
-		t.Error("unknown flag accepted; a typo would silently change behaviour")
+	flags := flag.NewFlagSet("test", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	flags.String("format", "json", "")
+	if err := parse(flags, []string{"--fromat", "json"}); err == nil {
+		t.Fatal("unknown flag accepted")
 	}
 }

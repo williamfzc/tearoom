@@ -1,840 +1,710 @@
-// Package cli implements the tea command surface.
-//
-// Two rules shape everything here. Exit codes are part of the contract, because
-// agents branch on them without parsing prose — a rejected claim is exit 2, an
-// expected outcome, not a crash. And every command takes --json, because the
-// primary caller is a program, not a person.
+// Package cli exposes Tearoom as a small workspace and event command surface.
+// It owns local session convenience while Store owns every shared invariant.
 package cli
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/resolve"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
-	"github.com/williamfzc/tearoom/internal/view"
 )
 
-// Exit codes are contractual. Distinct codes let an agent decide between waiting,
-// switching tasks and bailing out without any text parsing.
 const (
 	ExitOK       = 0
 	ExitUsage    = 1
-	ExitConflict = 2 // lease held by someone else
-	ExitTimeout  = 3 // wait expired with no change
-	ExitStore    = 4 // store unreachable
+	ExitConflict = 2
+	ExitTimeout  = 3
+	ExitStore    = 4
 )
+
+const rootHelp = `tearoom — a durable room for agents
+
+Usage:
+  tearoom <command> [subcommand] [flags]
+
+Commands:
+  room      manage the local workspace
+  server    run a shared room service
+  event     send, list, and watch events
+
+Environment:
+  TEAROOM_ACTOR    stable actor identity
+  TEAROOM_SERVER   shared server URL; omit for the nearest local room
+  TEAROOM_TOKEN    bearer token for a server that requires one
+  TEAROOM_HOME     client state directory; defaults to the user config directory
+
+Use "tearoom <command> --help" for more information.
+`
+
+const roomHelp = `Manage the local room workspace.
+
+Usage:
+  tearoom room <command> [flags]
+
+Commands:
+  init    create a room in the current directory
+  info    show the current room
+`
+
+const serverHelp = `Run a shared room service.
+
+Usage:
+  tearoom server <command> [flags]
+
+Commands:
+  start   serve a local room over HTTP
+`
+
+const eventHelp = `Exchange ordered events.
+
+Usage:
+  tearoom event <command> [flags]
+
+Commands:
+  send    send a text or JSON event
+  list    list currently available events and exit
+  watch   wait for later events
+`
 
 type App struct {
 	Out io.Writer
 	Err io.Writer
-	// Dir is the working directory used to discover the workspace.
 	Dir string
-	// Now is injectable for tests.
-	Now func() time.Time
+}
+
+type session struct {
+	Actor  string `json:"actor"`
+	Cursor uint64 `json:"cursor"`
 }
 
 func New() *App {
-	wd, _ := os.Getwd()
-	return &App{Out: os.Stdout, Err: os.Stderr, Dir: wd, Now: time.Now}
+	dir, _ := os.Getwd()
+	return &App{Out: os.Stdout, Err: os.Stderr, Dir: dir}
 }
-
-func (a *App) now() time.Time {
-	if a.Now == nil {
-		return time.Now()
-	}
-	return a.Now()
-}
-
-const usage = `tea — coordination for multi-agent workspaces
-
-  tea init      bind this directory to a workspace
-  tea join      register or resume this agent's identity
-  tea post      open a thread
-  tea reply     append an event to a thread
-  tea inbox     threads needing this agent's attention
-  tea context   compacted thread context for resuming work
-  tea claim     reserve a resource before touching it
-  tea release   release a held lease
-  tea wait      block until something changes
-  tea gate      request human approval, or decide one
-
-  tea status    agents, threads, leases, what needs a human
-  tea threads   all threads
-  tea leases    active leases
-  tea ledger    audit trail
-
-Identity comes from TEA_AGENT or --agent. Set TEA_SERVER to use a remote store.
-Every command accepts --json.
-`
 
 func (a *App) Run(args []string) int {
-	if len(args) == 0 {
-		fmt.Fprint(a.Err, usage)
+	if len(args) == 0 || isHelp(args[0]) {
+		fmt.Fprint(a.Out, rootHelp)
+		return ExitOK
+	}
+	var err error
+	switch args[0] {
+	case "room":
+		err = a.runRoom(args[1:])
+	case "server":
+		err = a.runServer(args[1:])
+	case "event":
+		err = a.runEvent(args[1:])
+	case "help":
+		err = a.runHelp(args[1:])
+	default:
+		fmt.Fprintf(a.Err, "unknown command %q\n\n%s", args[0], rootHelp)
 		return ExitUsage
 	}
-	cmd, rest := args[0], args[1:]
-
-	switch cmd {
-	case "-h", "--help", "help":
-		fmt.Fprint(a.Out, usage)
+	if err == nil || errors.Is(err, flag.ErrHelp) {
 		return ExitOK
-	case "init":
-		return a.cmdInit(rest)
-	case "join":
-		return a.cmdJoin(rest)
-	case "post":
-		return a.cmdPost(rest)
-	case "reply":
-		return a.cmdReply(rest)
-	case "inbox":
-		return a.cmdInbox(rest)
-	case "context":
-		return a.cmdContext(rest)
-	case "claim":
-		return a.cmdClaim(rest)
-	case "release":
-		return a.cmdRelease(rest)
-	case "wait":
-		return a.cmdWait(rest)
-	case "gate":
-		return a.cmdGate(rest)
-	case "status":
-		return a.cmdStatus(rest)
-	case "threads":
-		return a.cmdThreads(rest)
-	case "leases":
-		return a.cmdLeases(rest)
-	case "ledger":
-		return a.cmdLedger(rest)
+	}
+	fmt.Fprintln(a.Err, err)
+	switch {
+	case errors.Is(err, core.ErrStaleWrite), errors.Is(err, core.ErrConflict):
+		return ExitConflict
+	case errors.Is(err, errTimeout):
+		return ExitTimeout
+	case errors.Is(err, core.ErrNoRoom), strings.Contains(err.Error(), "server unreachable"):
+		return ExitStore
 	default:
-		fmt.Fprintf(a.Err, "unknown command %q\n\n%s", cmd, usage)
 		return ExitUsage
 	}
 }
 
-// open resolves the store. TEA_SERVER switching between a local file store and a
-// remote one is the payoff of having a single Store interface: no command below
-// this line knows or cares which it got.
-func (a *App) open() (core.Store, error) {
-	if base := os.Getenv("TEA_SERVER"); base != "" {
-		return transport.NewClient(strings.TrimSuffix(base, "/"), os.Getenv("TEA_TOKEN")), nil
+func (a *App) runHelp(args []string) error {
+	if len(args) == 0 {
+		fmt.Fprint(a.Out, rootHelp)
+		return nil
+	}
+	switch args[0] {
+	case "room":
+		fmt.Fprint(a.Out, roomHelp)
+	case "server":
+		fmt.Fprint(a.Out, serverHelp)
+	case "event":
+		fmt.Fprint(a.Out, eventHelp)
+	default:
+		return fmt.Errorf("unknown command %q", args[0])
+	}
+	return nil
+}
+
+func (a *App) runRoom(args []string) error {
+	if len(args) == 0 || isHelp(args[0]) {
+		fmt.Fprint(a.Out, roomHelp)
+		return nil
+	}
+	switch args[0] {
+	case "init":
+		return a.roomInit(args[1:])
+	case "info":
+		return a.roomInfo(args[1:])
+	default:
+		return fmt.Errorf("unknown room command %q", args[0])
+	}
+}
+
+func (a *App) runServer(args []string) error {
+	if len(args) == 0 || isHelp(args[0]) {
+		fmt.Fprint(a.Out, serverHelp)
+		return nil
+	}
+	if args[0] != "start" {
+		return fmt.Errorf("unknown server command %q", args[0])
+	}
+	return a.serverStart(args[1:])
+}
+
+func (a *App) runEvent(args []string) error {
+	if len(args) == 0 || isHelp(args[0]) {
+		fmt.Fprint(a.Out, eventHelp)
+		return nil
+	}
+	switch args[0] {
+	case "send":
+		return a.eventSend(args[1:])
+	case "list":
+		return a.eventList(args[1:])
+	case "watch":
+		return a.eventWatch(args[1:])
+	default:
+		return fmt.Errorf("unknown event command %q", args[0])
+	}
+}
+
+func (a *App) roomInit(args []string) error {
+	const help = `Create a room in the current directory.
+
+Usage:
+  tearoom room init [flags]
+
+Flags:
+  --name string      room name; defaults to the directory name
+  --format string    json | text (default "json")
+  -h, --help         show help
+`
+	flags := newFlags("room init", a.Out, help)
+	name := flags.String("name", "", "")
+	format := flags.String("format", "json", "")
+	if err := parseNoArgs(flags, args); err != nil {
+		return err
+	}
+	if err := validateFormat(*format); err != nil {
+		return err
+	}
+	if os.Getenv("TEAROOM_SERVER") != "" {
+		return errors.New("room init is local; unset TEAROOM_SERVER")
+	}
+	file, err := store.Init(a.Dir, *name)
+	if err != nil {
+		return err
+	}
+	room, err := file.Room(context.Background())
+	if err != nil {
+		return err
+	}
+	return output(a.Out, room, *format, fmt.Sprintf("room %s created\n", room.Name))
+}
+
+func (a *App) roomInfo(args []string) error {
+	const help = `Show the current room.
+
+Usage:
+  tearoom room info [flags]
+
+Flags:
+  --format string    json | text (default "json")
+  -h, --help         show help
+`
+	flags := newFlags("room info", a.Out, help)
+	format := flags.String("format", "json", "")
+	if err := parseNoArgs(flags, args); err != nil {
+		return err
+	}
+	if err := validateFormat(*format); err != nil {
+		return err
+	}
+	st, err := a.openStore()
+	if err != nil {
+		return err
+	}
+	room, err := st.Room(context.Background())
+	if err != nil {
+		return err
+	}
+	return output(a.Out, room, *format, fmt.Sprintf("%s\n", room.Name))
+}
+
+func (a *App) serverStart(args []string) error {
+	const help = `Serve a local room over HTTP.
+
+Usage:
+  tearoom server start [flags]
+
+Flags:
+  --address string      listen address (default ":8787")
+  --directory string    directory containing the room (default ".")
+  -h, --help            show help
+`
+	flags := newFlags("server start", a.Out, help)
+	address := flags.String("address", ":8787", "")
+	directory := flags.String("directory", a.Dir, "")
+	if err := parseNoArgs(flags, args); err != nil {
+		return err
+	}
+	file, err := store.Open(*directory)
+	if err != nil {
+		return fmt.Errorf("open room under %s: %w", *directory, err)
+	}
+	server := &http.Server{Addr: *address, Handler: transport.NewServer(file).Handler(), ReadHeaderTimeout: 10 * time.Second}
+	fmt.Fprintf(a.Err, "tearoom serving %s on %s\n", file.Root(), *address)
+	return server.ListenAndServe()
+}
+
+func (a *App) eventList(args []string) error {
+	const help = `List currently available events and exit.
+
+The saved session cursor is used and advanced automatically.
+
+Usage:
+  tearoom event list [flags]
+
+Flags:
+  --as string        actor identity; defaults to TEAROOM_ACTOR
+  --cursor uint      override the saved cursor
+  --limit int        maximum visible events; 0 means all
+  --format string    json | text (default "json")
+  -h, --help         show help
+`
+	flags := newFlags("event list", a.Out, help)
+	as := flags.String("as", "", "")
+	cursor := flags.Uint64("cursor", 0, "")
+	limit := flags.Int("limit", 0, "")
+	format := flags.String("format", "json", "")
+	if err := parseNoArgs(flags, args); err != nil {
+		return err
+	}
+	if *limit < 0 {
+		return errors.New("--limit must be non-negative")
+	}
+	if err := validateFormat(*format); err != nil {
+		return err
+	}
+	st, actor, state, statePath, err := a.prepare(*as)
+	if err != nil {
+		return err
+	}
+	after := state.Cursor
+	if flagWasSet(flags, "cursor") {
+		after = *cursor
+	}
+	feed, err := st.Read(context.Background(), actor, after, *limit)
+	if err != nil {
+		return err
+	}
+	state.Cursor = feed.Cursor
+	if err := writeSession(statePath, state); err != nil {
+		return err
+	}
+	return outputFeed(a.Out, feed, *format)
+}
+
+func (a *App) eventSend(args []string) error {
+	const help = `Send an event.
+
+A plain text Event needs no protocol flags:
+  tearoom event send "review worktree A"
+
+The saved session cursor protects against stale writes. Advanced flags override
+Event protocol fields but do not fetch a newer cursor implicitly.
+
+Usage:
+  tearoom event send <text> [flags]
+  tearoom event send --body <text> [flags]
+  tearoom event send --data <json> [flags]
+
+Flags:
+  --as string            actor identity; defaults to TEAROOM_ACTOR
+  --body string          text body instead of positional text
+  --data string          JSON data instead of text
+  --type string          event type (default "message")
+  --to string            comma-separated recipients
+  --caused-by string     causing Event id
+  --cursor uint          override the saved expected cursor
+  --id string            override the derived idempotency key
+  --format string        json | text (default "json")
+  -h, --help             show help
+`
+	flags := newFlags("event send", a.Out, help)
+	as := flags.String("as", "", "")
+	body := flags.String("body", "", "")
+	data := flags.String("data", "", "")
+	typeName := flags.String("type", "message", "")
+	to := flags.String("to", "", "")
+	causedBy := flags.String("caused-by", "", "")
+	cursor := flags.Uint64("cursor", 0, "")
+	id := flags.String("id", "", "")
+	format := flags.String("format", "json", "")
+	if err := parse(flags, args); err != nil {
+		return err
+	}
+	if err := validateFormat(*format); err != nil {
+		return err
+	}
+	text := strings.Join(flags.Args(), " ")
+	provided := 0
+	for _, value := range []string{text, *body, *data} {
+		if value != "" {
+			provided++
+		}
+	}
+	if provided != 1 {
+		return errors.New("provide exactly one of positional text, --body, or --data")
+	}
+	if *body != "" {
+		text = *body
+	}
+	st, actor, state, statePath, err := a.prepare(*as)
+	if err != nil {
+		return err
+	}
+	expected := state.Cursor
+	if flagWasSet(flags, "cursor") {
+		expected = *cursor
+	}
+	input := core.AppendInput{Actor: actor, Expected: expected, Type: *typeName, Body: text, To: splitCSV(*to), CausedBy: *causedBy}
+	if *data != "" {
+		input.Data = json.RawMessage(*data)
+	}
+	input.Key = strings.TrimSpace(*id)
+	if input.Key == "" {
+		input.Key = deriveRequestID(input)
+	}
+	event, err := st.AppendEvent(context.Background(), input)
+	if err != nil {
+		return err
+	}
+	state.Cursor = event.Seq
+	if err := writeSession(statePath, state); err != nil {
+		return err
+	}
+	return output(a.Out, event, *format, fmt.Sprintf("event %s sent at cursor %d\n", event.ID, event.Seq))
+}
+
+var errTimeout = errors.New("watch timed out")
+
+func (a *App) eventWatch(args []string) error {
+	const help = `Wait for later events.
+
+The saved session cursor is used and advanced automatically.
+
+Usage:
+  tearoom event watch [flags]
+
+Flags:
+  --as string             actor identity; defaults to TEAROOM_ACTOR
+  --cursor uint           override the saved cursor
+  --timeout duration      maximum wait (default 5m)
+  --poll-interval duration  polling interval (default 250ms)
+  --format string         json | text (default "json")
+  -h, --help              show help
+`
+	flags := newFlags("event watch", a.Out, help)
+	as := flags.String("as", "", "")
+	cursor := flags.Uint64("cursor", 0, "")
+	timeout := flags.Duration("timeout", 5*time.Minute, "")
+	interval := flags.Duration("poll-interval", 250*time.Millisecond, "")
+	format := flags.String("format", "json", "")
+	if err := parseNoArgs(flags, args); err != nil {
+		return err
+	}
+	if *timeout <= 0 || *interval <= 0 {
+		return errors.New("--timeout and --poll-interval must be positive")
+	}
+	if err := validateFormat(*format); err != nil {
+		return err
+	}
+	st, actor, state, statePath, err := a.prepare(*as)
+	if err != nil {
+		return err
+	}
+	after := state.Cursor
+	if flagWasSet(flags, "cursor") {
+		after = *cursor
+	}
+	deadline := time.Now().Add(*timeout)
+	for {
+		feed, err := st.Read(context.Background(), actor, after, 0)
+		if err != nil {
+			return err
+		}
+		if feed.Cursor > after {
+			state.Cursor = feed.Cursor
+			if err := writeSession(statePath, state); err != nil {
+				return err
+			}
+			return outputFeed(a.Out, feed, *format)
+		}
+		if !time.Now().Before(deadline) {
+			return errTimeout
+		}
+		time.Sleep(*interval)
+	}
+}
+
+func (a *App) prepare(flagActor string) (core.Store, string, session, string, error) {
+	actor, err := actorID(flagActor)
+	if err != nil {
+		return nil, "", session{}, "", err
+	}
+	st, err := a.openStore()
+	if err != nil {
+		return nil, "", session{}, "", err
+	}
+	if _, err := st.UpsertActor(context.Background(), actor, ""); err != nil {
+		return nil, "", session{}, "", err
+	}
+	path, err := a.sessionPath(actor)
+	if err != nil {
+		return nil, "", session{}, "", err
+	}
+	state, err := readSession(path, actor)
+	if err != nil {
+		return nil, "", session{}, "", err
+	}
+	return st, actor, state, path, nil
+}
+
+func (a *App) openStore() (core.Store, error) {
+	if server := strings.TrimRight(strings.TrimSpace(os.Getenv("TEAROOM_SERVER")), "/"); server != "" {
+		return transport.NewClient(server, os.Getenv("TEAROOM_TOKEN")), nil
 	}
 	return store.Open(a.Dir)
 }
 
-// agentID resolves identity, which must be explicit. Defaulting to the username or
-// hostname would silently merge two agents on one machine into one identity, and
-// then leases would stop meaning anything.
-func agentID(flagVal string) (string, error) {
-	if flagVal != "" {
-		return flagVal, nil
-	}
-	if v := os.Getenv("TEA_AGENT"); v != "" {
-		return v, nil
-	}
-	return "", errors.New("no agent identity: set TEA_AGENT or pass --agent")
-}
-
-func (a *App) fail(err error) int {
-	var ce *core.ConflictError
-	switch {
-	case errors.As(err, &ce):
-		fmt.Fprintf(a.Err, "conflict: %s\n", ce.Error())
-		return ExitConflict
-	case errors.Is(err, core.ErrNoWorkspace):
-		fmt.Fprintln(a.Err, "no workspace here: run 'tea init' first")
-		return ExitStore
-	case errors.Is(err, core.ErrNeedEvidence):
-		fmt.Fprintln(a.Err, "refusing to resolve: attach evidence with --evidence first")
-		return ExitUsage
-	case strings.Contains(err.Error(), "unreachable"):
-		fmt.Fprintf(a.Err, "%v\n", err)
-		return ExitStore
-	default:
-		fmt.Fprintf(a.Err, "error: %v\n", err)
-		return ExitUsage
-	}
-}
-
-func (a *App) emit(asJSON bool, v any, human func()) int {
-	if asJSON {
-		enc := json.NewEncoder(a.Out)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(v); err != nil {
-			return a.fail(err)
-		}
-		return ExitOK
-	}
-	human()
-	return ExitOK
-}
-
-func fs(name string) (*flag.FlagSet, *bool, *string) {
-	f := flag.NewFlagSet(name, flag.ContinueOnError)
-	asJSON := f.Bool("json", false, "machine-readable output")
-	agent := f.String("agent", "", "agent identity (default $TEA_AGENT)")
-	return f, asJSON, agent
-}
-
-// parse works around Go's flag package stopping at the first positional argument.
-//
-// Without this, `tea post "fix login" --json` silently folds --json into the title
-// and returns human output, which an agent then fails to parse. Since the natural
-// way to write these commands is subject-first, flags are hoisted ahead of
-// positionals before parsing.
-func parse(f *flag.FlagSet, args []string) error {
-	var flags, positional []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			positional = append(positional, args[i+1:]...)
-			break
-		}
-		if !strings.HasPrefix(a, "-") {
-			positional = append(positional, a)
-			continue
-		}
-		flags = append(flags, a)
-		// A flag needing a value consumes the next token, unless it was given as
-		// --flag=value or is a boolean.
-		if !strings.Contains(a, "=") && needsValue(f, a) && i+1 < len(args) {
-			i++
-			flags = append(flags, args[i])
-		}
-	}
-	return f.Parse(append(flags, positional...))
-}
-
-// needsValue reports whether a flag takes a separate value token. Booleans do not,
-// so `--json t1` must not eat t1.
-func needsValue(f *flag.FlagSet, arg string) bool {
-	name := strings.TrimLeft(arg, "-")
-	fl := f.Lookup(name)
-	if fl == nil {
-		return false
-	}
-	bf, ok := fl.Value.(interface{ IsBoolFlag() bool })
-	return !(ok && bf.IsBoolFlag())
-}
-
-// --- commands ---
-
-func (a *App) cmdInit(args []string) int {
-	f, asJSON, _ := fs("init")
-	name := f.String("name", "", "workspace name")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	n := *name
-	if n == "" {
-		n = filepathBase(a.Dir)
-	}
-	st, err := store.Init(a.Dir, n)
-	if err != nil {
-		return a.fail(err)
-	}
-	ws, err := st.Workspace(context.Background())
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"workspace": ws, "path": st.Root()}, func() {
-		fmt.Fprintf(a.Out, "workspace %q ready at %s\n", ws.Name, st.Root())
-	})
-}
-
-func (a *App) cmdJoin(args []string) int {
-	f, asJSON, agent := fs("join")
-	role := f.String("role", "", "role label, e.g. implementer")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	ag, err := st.UpsertAgent(context.Background(), id, *role)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"agent": ag}, func() {
-		fmt.Fprintf(a.Out, "joined as %s", ag.ID)
-		if ag.Role != "" {
-			fmt.Fprintf(a.Out, " (%s)", ag.Role)
-		}
-		fmt.Fprintln(a.Out)
-	})
-}
-
-func (a *App) cmdPost(args []string) int {
-	f, asJSON, agent := fs("post")
-	body := f.String("body", "", "opening event body")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	title := strings.Join(f.Args(), " ")
-	if title == "" {
-		fmt.Fprintln(a.Err, "usage: tea post <title> [--body ...]")
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	t, err := st.CreateThread(context.Background(), id, title, *body)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"thread": t}, func() {
-		fmt.Fprintf(a.Out, "%s  %s\n", t.ID, t.Title)
-	})
-}
-
-func (a *App) cmdReply(args []string) int {
-	f, asJSON, agent := fs("reply")
-	body := f.String("body", "", "event body")
-	status := f.String("status", "", "new status: open|claimed|blocked|resolved")
-	var evidence multiFlag
-	f.Var(&evidence, "evidence", "evidence path or URL (repeatable)")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	if f.NArg() < 1 {
-		fmt.Fprintln(a.Err, "usage: tea reply <thread> --body ... [--status ...] [--evidence ...]")
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	t, err := st.AppendEvent(context.Background(), f.Arg(0), id, *body, core.ThreadStatus(*status), evidence)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"thread": t}, func() {
-		fmt.Fprintf(a.Out, "%s  %s  (%d events)\n", t.ID, t.Status, len(t.Events))
-	})
-}
-
-func (a *App) cmdInbox(args []string) int {
-	f, asJSON, agent := fs("inbox")
-	scope := f.String("scope", "mine", "mine|all")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	b, err := resolve.Board(context.Background(), st, a.now)
-	if err != nil {
-		return a.fail(err)
-	}
-
-	var picked []*view.ThreadState
-	for _, ts := range b.Threads {
-		if ts.Thread.Status == core.StatusResolved {
-			continue
-		}
-		// "Needs my action" is the whole point. An inbox that returns everything
-		// is just ls, and costs the agent tokens to filter itself.
-		mine := ts.Thread.Owner == id ||
-			(ts.Thread.Owner == "" && ts.Thread.Status == core.StatusOpen) ||
-			ts.Blocked || ts.WaitingOnHuman
-		if *scope == "all" || mine {
-			picked = append(picked, ts)
-		}
-	}
-	return a.emit(*asJSON, map[string]any{"threads": picked}, func() {
-		if len(picked) == 0 {
-			fmt.Fprintln(a.Out, "inbox empty")
-			return
-		}
-		for _, ts := range picked {
-			marks := []string{}
-			if ts.WaitingOnHuman {
-				marks = append(marks, "needs-human")
-			}
-			if ts.Stalled {
-				marks = append(marks, "stalled:"+ts.StalledBy)
-			}
-			owner := ts.Thread.Owner
-			if owner == "" {
-				owner = "-"
-			}
-			line := fmt.Sprintf("%-4s %-9s %-10s %s", ts.Thread.ID, ts.Thread.Status, owner, ts.Thread.Title)
-			if len(marks) > 0 {
-				line += "  [" + strings.Join(marks, " ") + "]"
-			}
-			fmt.Fprintln(a.Out, line)
-		}
-	})
-}
-
-func (a *App) cmdContext(args []string) int {
-	f, asJSON, _ := fs("context")
-	full := f.Bool("full", false, "return the entire event log")
-	keep := f.Int("keep", 5, "recent events to keep verbatim")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	if f.NArg() < 1 {
-		fmt.Fprintln(a.Err, "usage: tea context <thread> [--full]")
-		return ExitUsage
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	// resolve owns the read sequence and the "live lease, pending gate" filtering.
-	// This command only decides how much of it to print.
-	d, err := resolve.Thread(context.Background(), st, f.Arg(0), a.now)
-	if err != nil {
-		return a.fail(err)
-	}
-	t, mine, gate := d.Thread, d.Leases, d.Gate
-
-	if *full {
-		return a.emit(*asJSON, map[string]any{"thread": t, "leases": mine, "gate": gate}, func() {
-			a.printThread(t, mine, gate)
-		})
-	}
-	c := view.CompactThread(t, mine, gate, *keep)
-	return a.emit(*asJSON, c, func() {
-		fmt.Fprintf(a.Out, "%s  %s  %s\n", c.Thread.ID, c.Thread.Status, c.Thread.Title)
-		if c.Summary != "" {
-			fmt.Fprintf(a.Out, "  … %s\n", c.Summary)
-		}
-		for _, e := range c.Recent {
-			fmt.Fprintf(a.Out, "  #%d %-8s %s\n", e.Seq, e.Agent, e.Body)
-		}
-		for _, l := range c.Leases {
-			fmt.Fprintf(a.Out, "  lease %s held by %s\n", l.Resource, l.Holder)
-		}
-		if c.Gate != nil {
-			fmt.Fprintf(a.Out, "  gate %s pending: %s\n", c.Gate.ID, c.Gate.Reason)
-		}
-	})
-}
-
-func (a *App) printThread(t *core.Thread, leases []*core.Lease, gate *core.Gate) {
-	fmt.Fprintf(a.Out, "%s  %s  %s\n", t.ID, t.Status, t.Title)
-	for _, e := range t.Events {
-		fmt.Fprintf(a.Out, "  #%d %-8s %s\n", e.Seq, e.Agent, e.Body)
-		for _, ev := range e.Evidence {
-			fmt.Fprintf(a.Out, "        evidence: %s\n", ev)
-		}
-	}
-	for _, l := range leases {
-		fmt.Fprintf(a.Out, "  lease %s held by %s\n", l.Resource, l.Holder)
-	}
-	if gate != nil {
-		fmt.Fprintf(a.Out, "  gate %s pending: %s\n", gate.ID, gate.Reason)
-	}
-}
-
-func (a *App) cmdClaim(args []string) int {
-	f, asJSON, agent := fs("claim")
-	ttl := f.Duration("ttl", core.DefaultLeaseTTL, "lease duration")
-	thread := f.String("thread", "", "associate with a thread")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	if f.NArg() < 1 {
-		fmt.Fprintln(a.Err, "usage: tea claim <resource> [--ttl 15m] [--thread t1]")
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	l, err := st.Claim(context.Background(), id, f.Arg(0), *thread, *ttl)
-	if err != nil {
-		return a.fail(err) // conflict becomes exit 2, with holder and expiry
-	}
-	return a.emit(*asJSON, map[string]any{"lease": l}, func() {
-		fmt.Fprintf(a.Out, "held %s until %s\n", l.Resource, l.Expires.Local().Format("15:04:05"))
-	})
-}
-
-func (a *App) cmdRelease(args []string) int {
-	f, asJSON, agent := fs("release")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	if f.NArg() < 1 {
-		fmt.Fprintln(a.Err, "usage: tea release <resource>")
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	if err := st.Release(context.Background(), id, f.Arg(0)); err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"released": f.Arg(0)}, func() {
-		fmt.Fprintf(a.Out, "released %s\n", f.Arg(0))
-	})
-}
-
-// cmdWait polls rather than pushes. M0 chooses polling deliberately: a blocking
-// long-poll or websocket is more machinery for the same observable behaviour at
-// this scale, and the interval is invisible next to how long agent turns take.
-func (a *App) cmdWait(args []string) int {
-	f, asJSON, agent := fs("wait")
-	timeout := f.Duration("timeout", 5*time.Minute, "give up after this long")
-	interval := f.Duration("interval", 2*time.Second, "poll interval")
-	lease := f.String("lease", "", "wait until this resource is claimable")
-	gate := f.String("gate", "", "wait until this gate is decided")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
-	defer cancel()
-
-	var threadID string
-	var baseline int
-	if f.NArg() > 0 {
-		threadID = f.Arg(0)
-		t, err := st.Thread(ctx, threadID)
+func (a *App) sessionPath(actor string) (string, error) {
+	var scope string
+	if server := strings.TrimRight(strings.TrimSpace(os.Getenv("TEAROOM_SERVER")), "/"); server != "" {
+		scope = "server:" + server
+	} else {
+		root, err := store.Find(a.Dir)
 		if err != nil {
-			return a.fail(err)
+			return "", err
 		}
-		baseline = len(t.Events)
+		scope = "room:" + root
 	}
-	if threadID == "" && *lease == "" && *gate == "" {
-		fmt.Fprintln(a.Err, "usage: tea wait <thread> | --lease <resource> | --gate <id>")
-		return ExitUsage
-	}
-	me, _ := agentID(*agent)
-
-	for {
-		// Report *why* it woke, so the caller does not need a second query.
-		if threadID != "" {
-			t, err := st.Thread(ctx, threadID)
-			if err == nil && len(t.Events) > baseline {
-				last := t.Events[len(t.Events)-1]
-				return a.emit(*asJSON, map[string]any{"reason": "thread.event", "thread": t, "event": last}, func() {
-					fmt.Fprintf(a.Out, "%s: %s said %q (status %s)\n", t.ID, last.Agent, last.Body, t.Status)
-				})
-			}
-		}
-		if *gate != "" {
-			g, err := st.Gate(ctx, *gate)
-			if err == nil && g.State != core.GatePending {
-				return a.emit(*asJSON, map[string]any{"reason": "gate." + string(g.State), "gate": g}, func() {
-					fmt.Fprintf(a.Out, "gate %s %s by %s\n", g.ID, g.State, g.DecidedBy)
-				})
-			}
-		}
-		if *lease != "" {
-			leases, err := st.Leases(ctx)
-			if err == nil {
-				now := a.now()
-				blocked := false
-				for _, l := range leases {
-					if l.Expired(now) || l.Holder == me {
-						continue
-					}
-					if l.Resource == *lease {
-						blocked = true
-						break
-					}
-				}
-				if !blocked {
-					return a.emit(*asJSON, map[string]any{"reason": "lease.free", "resource": *lease}, func() {
-						fmt.Fprintf(a.Out, "%s is claimable\n", *lease)
-					})
-				}
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			fmt.Fprintln(a.Err, "timeout: nothing changed")
-			return ExitTimeout
-		case <-time.After(*interval):
-		}
-	}
+	sum := sha256.Sum256([]byte(scope + "\x00" + actor))
+	name := hex.EncodeToString(sum[:16]) + ".json"
+	return filepath.Join(sessionHome(), "sessions", name), nil
 }
 
-func (a *App) cmdGate(args []string) int {
-	// Subcommands first so `tea gate approve g1` does not read as a reason string.
-	if len(args) > 0 {
-		switch args[0] {
-		case "approve", "reject":
-			return a.decideGate(args[0], args[1:])
-		case "list":
-			return a.listGates(args[1:])
-		}
+func sessionHome() string {
+	if root := strings.TrimSpace(os.Getenv("TEAROOM_HOME")); root != "" {
+		return root
 	}
-	f, asJSON, agent := fs("gate")
-	thread := f.String("thread", "", "thread this gate blocks")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+	if root, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(root, "tearoom")
 	}
-	reason := strings.Join(f.Args(), " ")
-	if reason == "" {
-		fmt.Fprintln(a.Err, "usage: tea gate <reason> [--thread t1] | tea gate approve|reject <id>")
-		return ExitUsage
-	}
-	id, err := agentID(*agent)
-	if err != nil {
-		return a.fail(err)
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	ctx := context.Background()
-	g, err := st.CreateGate(ctx, id, reason, *thread)
-	if err != nil {
-		return a.fail(err)
-	}
-	// The store blocks the thread as part of CreateGate; doing it here too would
-	// duplicate the invariant and let the two paths drift.
-	return a.emit(*asJSON, map[string]any{"gate": g}, func() {
-		fmt.Fprintf(a.Out, "gate %s open, waiting on a human: %s\n", g.ID, g.Reason)
-	})
+	return filepath.Join(os.TempDir(), "tearoom")
 }
 
-func (a *App) decideGate(decision string, args []string) int {
-	f, asJSON, agent := fs("gate " + decision)
-	note := f.String("note", "", "note for the ledger")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+func readSession(path, actor string) (session, error) {
+	state := session{Actor: actor}
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return state, nil
 	}
-	if f.NArg() < 1 {
-		fmt.Fprintf(a.Err, "usage: tea gate %s <id> [--note ...]\n", decision)
-		return ExitUsage
-	}
-	by, err := agentID(*agent)
 	if err != nil {
-		by = "human" // a human at a terminal should not need to export TEA_AGENT
+		return state, err
 	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
+	if err := json.Unmarshal(data, &state); err != nil {
+		return state, fmt.Errorf("read session state: %w", err)
 	}
-	state := core.GateApproved
-	if decision == "reject" {
-		state = core.GateRejected
+	if state.Actor != actor {
+		return state, errors.New("session actor mismatch")
 	}
-	ctx := context.Background()
-	g, err := st.DecideGate(ctx, f.Arg(0), state, by, *note)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"gate": g}, func() {
-		fmt.Fprintf(a.Out, "gate %s %s\n", g.ID, g.State)
-	})
+	return state, nil
 }
 
-func (a *App) listGates(args []string) int {
-	f, asJSON, _ := fs("gate list")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+func writeSession(path string, state session) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
 	}
-	st, err := a.open()
+	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
-		return a.fail(err)
+		return err
 	}
-	gates, err := st.Gates(context.Background())
+	data = append(data, '\n')
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".session-*")
 	if err != nil {
-		return a.fail(err)
+		return err
 	}
-	return a.emit(*asJSON, map[string]any{"gates": gates}, func() {
-		if len(gates) == 0 {
-			fmt.Fprintln(a.Out, "no gates")
-			return
-		}
-		for _, g := range gates {
-			fmt.Fprintf(a.Out, "%-12s %-9s %-6s %s\n", g.ID, g.State, g.Thread, g.Reason)
-		}
-	})
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
-func (a *App) cmdStatus(args []string) int {
-	f, asJSON, _ := fs("status")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
-	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	b, err := resolve.Board(context.Background(), st, a.now)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, b, func() {
-		fmt.Fprintf(a.Out, "workspace %s\n\n", b.Workspace.Name)
-
-		// Attention goes first and is the only section that must be read. Burying
-		// it under healthy rows is how oversight tools become wallpaper.
-		if len(b.Attention) > 0 {
-			fmt.Fprintln(a.Out, "NEEDS ATTENTION")
-			for _, at := range b.Attention {
-				fmt.Fprintf(a.Out, "  [%s] %s\n      %s\n", at.Kind, at.Label, at.Detail)
-			}
-			fmt.Fprintln(a.Out)
-		} else {
-			fmt.Fprint(a.Out, "nothing needs a human\n\n")
-		}
-
-		fmt.Fprintln(a.Out, "AGENTS")
-		for _, as := range b.Agents {
-			state := "live"
-			if as.Stale {
-				state = "STALE"
-			}
-			fmt.Fprintf(a.Out, "  %-10s %-6s %-5s idle %-6s holding %d\n",
-				as.Agent.ID, as.Agent.Role, state, as.Idle, len(as.Holding))
-		}
-
-		fmt.Fprintln(a.Out, "\nTHREADS")
-		for _, ts := range b.Threads {
-			owner := ts.Thread.Owner
-			if owner == "" {
-				owner = "-"
-			}
-			fmt.Fprintf(a.Out, "  %-4s %-9s %-10s %s\n", ts.Thread.ID, ts.Thread.Status, owner, ts.Thread.Title)
-		}
-	})
+func deriveRequestID(input core.AppendInput) string {
+	copy := input
+	copy.Key = ""
+	data, _ := json.Marshal(copy)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:16])
 }
 
-func (a *App) cmdThreads(args []string) int {
-	f, asJSON, _ := fs("threads")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+func actorID(flagValue string) (string, error) {
+	value := strings.TrimSpace(flagValue)
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("TEAROOM_ACTOR"))
 	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
+	if value == "" {
+		return "", errors.New("actor identity is required: set TEAROOM_ACTOR or pass --as")
 	}
-	list, err := st.Threads(context.Background())
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"threads": list}, func() {
-		for _, t := range list {
-			owner := t.Owner
-			if owner == "" {
-				owner = "-"
-			}
-			fmt.Fprintf(a.Out, "%-4s %-9s %-10s %s\n", t.ID, t.Status, owner, t.Title)
-		}
-	})
+	return value, nil
 }
 
-func (a *App) cmdLeases(args []string) int {
-	f, asJSON, _ := fs("leases")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
 	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	list, err := st.Leases(context.Background())
-	if err != nil {
-		return a.fail(err)
-	}
-	now := a.now()
-	live := make([]*core.Lease, 0, len(list))
-	for _, l := range list {
-		if !l.Expired(now) {
-			live = append(live, l)
-		}
-	}
-	return a.emit(*asJSON, map[string]any{"leases": live}, func() {
-		if len(live) == 0 {
-			fmt.Fprintln(a.Out, "no active leases")
-			return
-		}
-		for _, l := range live {
-			fmt.Fprintf(a.Out, "%-24s %-10s expires %s\n",
-				l.Resource, l.Holder, l.Expires.Local().Format("15:04:05"))
-		}
-	})
+	return strings.Split(value, ",")
 }
 
-func (a *App) cmdLedger(args []string) int {
-	f, asJSON, _ := fs("ledger")
-	tail := f.Int("tail", 20, "entries to show")
-	if err := parse(f, args); err != nil {
-		return ExitUsage
+func outputFeed(out io.Writer, feed *core.Feed, format string) error {
+	if format == "json" {
+		return json.NewEncoder(out).Encode(feed)
 	}
-	st, err := a.open()
-	if err != nil {
-		return a.fail(err)
-	}
-	entries, err := st.Ledger(context.Background(), *tail)
-	if err != nil {
-		return a.fail(err)
-	}
-	return a.emit(*asJSON, map[string]any{"ledger": entries}, func() {
-		for _, e := range entries {
-			fmt.Fprintf(a.Out, "%s %-10s %-16s %s\n",
-				e.At.Local().Format("15:04:05"), e.Agent, e.Action, e.Target)
+	fmt.Fprintf(out, "cursor %d\n", feed.Cursor)
+	for _, event := range feed.Events {
+		target := ""
+		if len(event.To) > 0 {
+			target = " -> " + strings.Join(event.To, ",")
 		}
-	})
-}
-
-// multiFlag collects a repeatable string flag.
-type multiFlag []string
-
-func (m *multiFlag) String() string { return strings.Join(*m, ",") }
-func (m *multiFlag) Set(v string) error {
-	*m = append(*m, v)
+		fmt.Fprintf(out, "%d %s%s %s", event.Seq, event.Actor, target, event.Type)
+		if event.Body != "" {
+			fmt.Fprintf(out, ": %s", event.Body)
+		}
+		fmt.Fprintln(out)
+	}
 	return nil
 }
 
-func filepathBase(p string) string {
-	p = strings.TrimRight(p, "/")
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[i+1:]
+func output(out io.Writer, value any, format, text string) error {
+	if format == "json" {
+		return json.NewEncoder(out).Encode(value)
 	}
-	if p == "" {
-		return "workspace"
+	_, err := io.WriteString(out, text)
+	return err
+}
+
+func validateFormat(value string) error {
+	if value != "json" && value != "text" {
+		return fmt.Errorf("unsupported --format %q; use json or text", value)
 	}
-	return p
+	return nil
+}
+
+func parseNoArgs(flags *flag.FlagSet, args []string) error {
+	if err := parse(flags, args); err != nil {
+		return err
+	}
+	if flags.NArg() > 0 {
+		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
+	}
+	return nil
+}
+
+func isHelp(value string) bool { return value == "help" || value == "-h" || value == "--help" }
+
+func newFlags(name string, out io.Writer, help string) *flag.FlagSet {
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(out)
+	flags.Usage = func() { fmt.Fprint(out, help) }
+	return flags
+}
+
+func flagWasSet(flags *flag.FlagSet, name string) bool {
+	found := false
+	flags.Visit(func(current *flag.Flag) {
+		if current.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+// parse permits flags in any order while preserving -- as a literal boundary.
+func parse(flags *flag.FlagSet, args []string) error {
+	var options, positionals []string
+	literal := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if literal {
+			positionals = append(positionals, arg)
+			continue
+		}
+		if arg == "--" {
+			literal = true
+			continue
+		}
+		if isHelp(arg) {
+			flags.Usage()
+			return flag.ErrHelp
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			positionals = append(positionals, arg)
+			continue
+		}
+		name := strings.TrimLeft(strings.SplitN(arg, "=", 2)[0], "-")
+		defined := flags.Lookup(name)
+		if defined == nil {
+			return fmt.Errorf("flag provided but not defined: --%s", name)
+		}
+		options = append(options, arg)
+		if strings.Contains(arg, "=") || isBoolFlag(defined) {
+			continue
+		}
+		if i+1 >= len(args) {
+			return fmt.Errorf("flag needs an argument: --%s", name)
+		}
+		i++
+		options = append(options, args[i])
+	}
+	return flags.Parse(append(options, positionals...))
+}
+
+func isBoolFlag(value *flag.Flag) bool {
+	type boolFlag interface{ IsBoolFlag() bool }
+	flagValue, ok := value.Value.(boolFlag)
+	return ok && flagValue.IsBoolFlag()
 }

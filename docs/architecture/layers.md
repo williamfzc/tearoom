@@ -1,67 +1,44 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: The four layers of Tearoom, the responsibility each owns, and the rule that dependencies only ever point downward.
+description: Package responsibilities and the rule that shared invariants live below every client.
 resource: internal/
 tags: [architecture, boundaries, layering]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # Layers and dependency direction
 
-Four layers. Each supports the one above it and knows nothing about it.
+| Layer | Package | Owns |
+|---|---|---|
+| Foundation | `internal/core` | Room, Actor, Event, Store, typed errors |
+| Domain | `internal/store` | File layout, cross-process locking, append invariants |
+| Outside | `internal/transport` | HTTP encoding and remote Store implementation |
+| Outside | `internal/cli`, `cmd/tearoom` | Command routing, local session cursor, text/JSON output, process entry point |
 
-## The layers
+Dependencies point inward. `core` imports no project package. `store` and `transport` implement `core.Store`. `cli` depends on the interface and chooses a local or remote implementation.
 
-| Layer | Package | Owns | Must not |
-|---|---|---|---|
-| Foundation | `internal/core` | The five concepts, the `Store` contract, typed errors | Import anything from this project |
-| Domain | `internal/store`, `internal/view` | Persistence and locking; pure derivation of state | Know about HTTP, terminals, or flags |
-| Application | `internal/resolve` | Assembling raw reads into derived state | Hold product opinions or format output |
-| Outside | `internal/cli`, `internal/transport`, `cmd/` | Users, networks, files, processes, protocols | Contain rules that other clients also need |
+## Store boundary
 
-## The rule
+These rules are enforced inside every Store implementation, not remembered by callers:
 
-Dependencies point down. `view` may use `core`; `core` may never use `view`. Peers do
-not reach sideways: `cli` and `transport` are both clients of the same lower layers
-and must not import each other's internals.
+- joined Actor requirement;
+- recipient existence;
+- room cursor freshness;
+- idempotency key uniqueness;
+- dense sequence assignment;
+- append-only persistence;
+- visibility filtering.
 
-When two peers need the same behaviour, the answer is never to copy it. It moves down
-into a layer with a clear owner. Two implementations of one rule are not two
-opinions — they are one bug waiting for the second caller to expose it.
+The file Store checks and appends under one `flock`. The HTTP server delegates directly to Store, so a raw HTTP client cannot bypass rules that the CLI obeys.
 
-## Why `resolve` exists
+## Why there is no projection layer yet
 
-Every client needs the same five reads — workspace, agents, threads, leases, gates —
-in the same order before it can derive anything. `view` cannot do those reads, because
-it is pure by design: no I/O, no clock. So the sequence was written in the CLI, and
-then written again in the HTTP server.
+The previous model needed dedicated assembly and view packages because it stored several related entities and derived a board from them. The Room model has no built-in board. Reads return Events and a cursor directly, so those packages had no remaining responsibility and were removed rather than retained as empty architecture.
 
-That is one fact stated twice. `internal/resolve` now owns it, and both clients call
-it. It holds no product opinion of its own: judgement stays in `view`, persistence in
-`store`, presentation in the layer above.
-
-The clock is passed in as a `Clock` function rather than read from `time.Now`. That is
-what keeps the layer testable and lets the server and CLI share one implementation.
-
-## Verifying the rule
-
-The import graph is small enough to check directly:
-
-```bash
-for p in core store view resolve transport cli; do
-  echo "-- $p:"
-  grep -h "williamfzc/tearoom" internal/$p/*.go | grep -v _test |
-    sed 's/.*tearoom\///;s/"//' | sort -u | sed 's/^/     /'
-done
-```
-
-`core` should list nothing. `store` and `view` should list only `core`. If a lower
-layer ever names a higher one, the violation is real regardless of how convenient it
-looked.
+Application-specific projections should live outside the kernel until they have multiple callers and a stable owner.
 
 ## Related
 
-- [isomorphic-go.md](isomorphic-go.md) — why one language makes this layering pay off
-- [../lessons/invariants-belong-in-the-store.md](../lessons/invariants-belong-in-the-store.md) — the bug that established where rules live
-- [../domain/concepts.md](../domain/concepts.md) — the vocabulary the domain layer protects
+- [../domain/concepts.md](../domain/concepts.md)
+- [../lessons/invariants-belong-in-the-store.md](../lessons/invariants-belong-in-the-store.md)

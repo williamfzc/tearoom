@@ -1,54 +1,36 @@
-# CGO is off deliberately: it yields a static single binary, avoids linker
-# variation across machines, and is the right default for a tool people install
-# by dropping it on PATH.
-export CGO_ENABLED=0
-
 GO      ?= go
 BIN     := bin
-WEB     := web
-WASMJS  := $(shell $(GO) env GOROOT)/misc/wasm/wasm_exec.js
 
-.PHONY: all build cli server wasm test test-wasm test-race smoke docs fmt vet clean check
+# Release binaries stay static. macOS tests use the system linker because the Go
+# 1.22 internal linker can emit test executables without the LC_UUID required by
+# current macOS. Other platforms keep the ordinary Go test path.
+ifeq ($(shell uname -s),Darwin)
+TEST_ENV := CGO_ENABLED=1
+TEST_FLAGS := -ldflags=-linkmode=external
+endif
+
+.PHONY: all build cli test test-race smoke session-smoke docs fmt vet clean check
 
 all: build
 
-build: cli server wasm
+build: cli
 
 cli:
-	$(GO) build -o $(BIN)/tea ./cmd/tea
-
-server:
-	$(GO) build -o $(BIN)/tea-server ./cmd/tea-server
-
-# The console is Go compiled to WebAssembly, so the view logic in internal/view is
-# shared with the CLI rather than reimplemented in JavaScript.
-wasm:
-	GOOS=js GOARCH=wasm $(GO) build -o $(WEB)/tea.wasm ./cmd/tea-web
-	@cp "$(WASMJS)" $(WEB)/wasm_exec.js 2>/dev/null || \
-	 cp "$(shell $(GO) env GOROOT)/lib/wasm/wasm_exec.js" $(WEB)/wasm_exec.js
-
-# Frontend tests run in node under GOOS=js. env -i is required: the real
-# environment overflows the wasm command-line limit.
-NODEDIR := $(shell dirname "$(shell command -v node)")
-test-wasm:
-	@if [ -z "$(NODEDIR)" ] || [ ! -x "$(NODEDIR)/node" ]; then \
-		echo "skipping wasm tests: node not found"; \
-	else \
-		env -i PATH="/usr/bin:/bin:$(NODEDIR):$(dir $(shell command -v go))" HOME="$(HOME)" \
-			GOOS=js GOARCH=wasm GOCACHE="$(shell go env GOCACHE)" GOMODCACHE="$(shell go env GOMODCACHE)" \
-			go test -exec="$(shell go env GOROOT)/misc/wasm/go_js_wasm_exec" ./cmd/tea-web/; \
-	fi
+	CGO_ENABLED=0 $(GO) build -o $(BIN)/tearoom ./cmd/tearoom
 
 test:
-	$(GO) test ./...
+	$(TEST_ENV) $(GO) test $(TEST_FLAGS) ./...
 
-# The concurrency tests spawn real processes, so -race is worth the time here.
+# The store tests exercise concurrent writers under the same file lock.
 test-race:
-	$(GO) test -race ./...
+	$(TEST_ENV) $(GO) test $(TEST_FLAGS) -race ./...
 
 # End-to-end check of the M0 hypothesis: two agents hand off with no human relay.
 smoke: cli
 	@./scripts/smoke.sh
+
+session-smoke: cli
+	@./scripts/session-smoke.sh
 
 fmt:
 	$(GO) fmt ./...
@@ -61,7 +43,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test test-wasm smoke docs
+check: fmt vet test smoke session-smoke docs
 
 clean:
-	rm -rf $(BIN) $(WEB)/tea.wasm $(WEB)/wasm_exec.js
+	rm -rf $(BIN)

@@ -1,31 +1,18 @@
 ---
 type: index
 title: Lessons
-description: Mistakes that cost something to find, with the evidence that produced them and the rule each one established.
+description: Durable rules learned while building the Room kernel.
 tags: [index, lessons]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # Lessons
 
-Each of these was found by using the tool, not by reading it — except the last, which
-came from reading how consensus systems solved the same problem, then checking our
-binary against them. They are recorded because the rule each one established is easy
-to violate again.
-
-| Document | Rule it established |
+| Document | Rule |
 |---|---|
-| [invariants-belong-in-the-store.md](invariants-belong-in-the-store.md) | A rule every client must obey belongs below the store interface |
-| [cross-process-locking.md](cross-process-locking.md) | Test concurrency with processes, and verify the test can fail |
-| [console-repaint.md](console-repaint.md) | A polling UI must not rebuild state that did not change |
-| [flag-parsing.md](flag-parsing.md) | Accept arguments in the order callers actually write them |
-| [borrowed-from-consensus.md](borrowed-from-consensus.md) | A rule left to the caller to remember is a rule that will be broken |
+| [invariants-belong-in-the-store.md](invariants-belong-in-the-store.md) | A shared rule lives below every client |
+| [cross-process-locking.md](cross-process-locking.md) | Verify filesystem coordination with independent processes |
+| [flag-parsing.md](flag-parsing.md) | Accept the argument order callers naturally emit |
+| [borrowed-from-consensus.md](borrowed-from-consensus.md) | Order once, require freshness, and make retries idempotent |
 
-## Why these are documented and most things are not
-
-A lesson earns a place here when the cost of relearning it is high and the mistake
-looks reasonable at the time. Routine bugs do not qualify — the fix is the record.
-
-Two of these four were found by a second client appearing (the browser console), and
-one by deliberately breaking a passing test to see whether it noticed. Both are
-techniques worth reusing, not just anecdotes.
+These are retained because the wrong implementation can look correct until a second client or process appears.

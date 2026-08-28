@@ -1,4 +1,4 @@
-// Command tea is the agent-facing CLI.
+// Command tearoom is the single entry point for local and shared rooms.
 package main
 
 import (

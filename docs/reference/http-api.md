@@ -1,58 +1,43 @@
 ---
 type: reference
 title: HTTP API
-description: Endpoints exposed by tea-server, including the resolved board the console renders.
+description: The Store contract exposed by tearoom server start.
 resource: internal/transport/server.go
 tags: [reference, contract, http, api]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # HTTP API
 
-Served by `tea-server`. Every response is JSON. Errors carry a status code that maps
-onto the CLI's [exit codes](exit-codes.md), so a remote conflict is still a conflict.
+`tearoom server start` exposes one Room. Responses are JSON and the remote client implements the same `core.Store` contract as the local file store.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/workspace` | Workspace identity |
-| GET | `/api/board` | The whole workspace, already resolved |
-| GET | `/api/agents` | All agents |
-| POST | `/api/agents` | Register or refresh an agent (`{ID, Role}`) |
-| GET | `/api/threads` | All threads |
-| POST | `/api/threads` | Create a thread (`{Agent, Title, Body}`) |
-| GET | `/api/threads/{id}` | One raw thread |
-| GET | `/api/threads/{id}/context` | Compacted context for that thread |
-| POST | `/api/threads/{id}/events` | Append an event (`{Agent, Body, Status, Evidence}`) |
-| GET | `/api/leases` | All leases |
-| POST | `/api/leases` | Claim (`{Agent, Resource, Thread, TTL}`) |
-| POST | `/api/leases/release` | Release (`{Agent, Resource}`) |
-| GET | `/api/gates` | All gates |
-| POST | `/api/gates` | Open a gate (`{Agent, Reason, Thread}`) |
-| GET | `/api/gates/{id}` | One gate |
-| POST | `/api/gates/{id}/decide` | Settle a gate (`{State, By, Note}`) |
-| GET | `/api/ledger` | Audit trail, newest first |
-| POST | `/api/ledger` | Append a ledger entry |
+| `GET` | `/api/room` | Read Room identity |
+| `GET` | `/api/actors` | List Actors |
+| `POST` | `/api/actors` | Join or refresh an Actor with `{ID, Role}` |
+| `GET` | `/api/events?actor=a&after=12&limit=20` | Read a visible Feed |
+| `POST` | `/api/events` | Append one `core.AppendInput` |
 
-When `--web` is given, anything not under `/api/` serves the console assets.
+## Append body
 
-## Why `/api/board` exists
+```json
+{
+  "actor": "alice",
+  "expected": 12,
+  "type": "handoff.requested",
+  "body": "review worktree A",
+  "data": {"path": "../project-review"},
+  "to": ["bob"],
+  "caused_by": "e10",
+  "key": "handoff-a-12"
+}
+```
 
-This endpoint is the reason there is a server at all rather than just a CLI. It runs
-`view.Build` server-side and ships one already-resolved board, so the console never
-reimplements "who is stuck" in another language.
+`expected` and `key` are required. The cursor is checked and the next sequence assigned under the same Store lock. A stale request receives HTTP 409 with `kind: stale_write`, `expected`, and `actual`.
 
-The client decodes it back into the same Go struct the server encoded. See
-[../architecture/isomorphic-go.md](../architecture/isomorphic-go.md).
+## Trust boundary
 
-## Note on the transport client
-
-`transport.Client` implements `core.Store`, so code above the interface cannot tell a
-local directory from a remote server. Setting `TEA_SERVER` changes nothing about how
-`tea` behaves — see [../operations/serving.md](../operations/serving.md).
-
-## Related
-
-- [cli.md](cli.md) — the same operations from a terminal
-- [exit-codes.md](exit-codes.md) — how HTTP statuses map to exit codes
+The current server has no authentication. Use it only on a trusted machine or network; recipient filtering is not a security boundary without authenticated Actor identity.

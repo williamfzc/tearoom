@@ -11,7 +11,7 @@ timestamp: 2026-08-27
 | Document | Concern |
 |---|---|
 | [building.md](building.md) | Build targets, the test suites, and two toolchain traps |
-| [serving.md](serving.md) | Running the server and pointing agents at it |
+| [serving.md](serving.md) | Running the server and pointing Actors at one Room |
 
 ## The one thing to remember
 

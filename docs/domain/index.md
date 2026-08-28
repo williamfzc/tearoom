@@ -1,27 +1,20 @@
 ---
 type: index
 title: Domain
-description: The five concepts Tearoom is built from and the rules that govern them.
+description: Tearoom's three entities and the rules that govern them.
 tags: [index, domain]
-timestamp: 2026-08-27
+timestamp: 2026-08-28
 ---
 
 # Domain
 
-The vocabulary of the product. Five concepts, and a standing rule that a sixth must
-prove the existing five cannot express it.
+The vocabulary is Room, Actor, and Event. Application protocols add event types, not core entities.
 
 | Document | Concern |
 |---|---|
-| [concepts.md](concepts.md) | Workspace, agent, thread, lease, gate — definitions and invariants |
-| [problem.md](problem.md) | The three failure modes this product exists to prevent |
-| [boundaries.md](boundaries.md) | What happens at the edges: crashes, unreachable stores, deadlocks |
-| [agent-experience.md](agent-experience.md) | Attention, time and context as budgets — the axis not yet built |
-| [security.md](security.md) | What is stored, what is refused, and what revocation must guarantee |
+| [concepts.md](concepts.md) | The three entities and append contract |
+| [problem.md](problem.md) | The failures the Room prevents |
+| [boundaries.md](boundaries.md) | Stale views, retries, contention, and hidden events |
+| [agent-experience.md](agent-experience.md) | Cursor-based attention and remaining cost controls |
+| [security.md](security.md) | Current trust boundary and required hardening |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |
-
-## Why the count is fixed
-
-Every added concept multiplies the states a human has to hold in their head while
-scanning a board. The value of a small fixed vocabulary is that someone joining a
-project does not have to learn its private dialect first.
