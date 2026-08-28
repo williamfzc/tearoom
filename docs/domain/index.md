@@ -16,6 +16,7 @@ prove the existing five cannot express it.
 | [concepts.md](concepts.md) | Workspace, agent, thread, lease, gate — definitions and invariants |
 | [problem.md](problem.md) | The three failure modes this product exists to prevent |
 | [boundaries.md](boundaries.md) | What happens at the edges: crashes, unreachable stores, deadlocks |
+| [agent-experience.md](agent-experience.md) | Attention, time and context as budgets — the axis not yet built |
 | [security.md](security.md) | What is stored, what is refused, and what revocation must guarantee |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |
 

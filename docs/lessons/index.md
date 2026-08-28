@@ -8,8 +8,10 @@ timestamp: 2026-08-27
 
 # Lessons
 
-Each of these was found by using the tool, not by reading it. They are recorded
-because the rule each one established is easy to violate again.
+Each of these was found by using the tool, not by reading it — except the last, which
+came from reading how consensus systems solved the same problem, then checking our
+binary against them. They are recorded because the rule each one established is easy
+to violate again.
 
 | Document | Rule it established |
 |---|---|
@@ -17,6 +19,7 @@ because the rule each one established is easy to violate again.
 | [cross-process-locking.md](cross-process-locking.md) | Test concurrency with processes, and verify the test can fail |
 | [console-repaint.md](console-repaint.md) | A polling UI must not rebuild state that did not change |
 | [flag-parsing.md](flag-parsing.md) | Accept arguments in the order callers actually write them |
+| [borrowed-from-consensus.md](borrowed-from-consensus.md) | A rule left to the caller to remember is a rule that will be broken |
 
 ## Why these are documented and most things are not
 

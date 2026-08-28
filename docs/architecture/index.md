@@ -13,6 +13,7 @@ How the code is arranged and which direction dependencies are allowed to run.
 | Document | Concern |
 |---|---|
 | [layers.md](layers.md) | The four layers, what each owns, and the one-way rule |
+| [convergence.md](convergence.md) | The standard a command must meet to exist, and what the audit cut |
 | [isomorphic-go.md](isomorphic-go.md) | Why the console is Go compiled to WebAssembly rather than JavaScript |
 | [status.md](status.md) | What exists at M0 and what is deliberately missing |
 
