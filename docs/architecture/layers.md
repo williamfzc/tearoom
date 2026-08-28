@@ -32,6 +32,8 @@ These rules are enforced inside every Store implementation, not remembered by ca
 
 The file Store checks and appends under one `flock`. The HTTP server delegates directly to Store, so a raw HTTP client cannot bypass rules that the CLI obeys.
 
+A relational Store may later sit beside the file Store. Its ORM models and migrations remain inside persistence and implement `core.Store`; no upper layer depends on them. See [persistence.md](persistence.md).
+
 ## Why there is no projection layer yet
 
 The previous model needed dedicated assembly and view packages because it stored several related entities and derived a board from them. The Room model has no built-in board. Reads return Events and a cursor directly, so those packages had no remaining responsibility and were removed rather than retained as empty architecture.

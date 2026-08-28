@@ -23,7 +23,9 @@ timestamp: 2026-08-28
 - Browser or WebAssembly console.
 - Built-in Thread, Lease, Gate, task, workflow, or game entities.
 - Realtime push; `event watch` polls.
-- Hosted multi-tenant service.
+- Hosted multi-tenant service and management interface.
+- GitHub login, Room ownership, membership, Agent credentials, and billing.
+- ORM-backed SQLite and PostgreSQL Store implementations.
 - Authentication and hostile-network security.
 - Log compaction and snapshots.
 
@@ -32,7 +34,8 @@ timestamp: 2026-08-28
 1. Use one Room across several real worktrees and measure whether cursor-only reads are sufficient.
 2. Implement one task protocol and one game protocol outside the kernel to test whether the three entities remain enough.
 3. Measure irrelevant Event volume before adding subscriptions, mute, or indexing.
-4. Define authentication before exposing a Room beyond a trusted machine or network.
+4. Add the relational Store behind `core.Store`, beginning with SQLite and validating the same migrations on PostgreSQL.
+5. Build the hosted identity boundary described in [../domain/hosted-identity.md](../domain/hosted-identity.md) before exposing Rooms to untrusted clients.
 
 ## Completion proof
 

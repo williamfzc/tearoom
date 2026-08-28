@@ -19,6 +19,8 @@ timestamp: 2026-08-28
 
 Client session cursors are deliberately not stored in `.tearoom`. They live in the user's Tearoom configuration directory with owner-only permissions and are scoped by Room and Actor, so one shared Room does not mix private client progress into its durable state.
 
+This document describes the current file Store, not the only permitted backend. The planned relational Store uses SQLite locally and PostgreSQL for hosted deployments while preserving the same `core.Store` contract. See [../architecture/persistence.md](../architecture/persistence.md).
+
 ## Atomic append
 
 The file Store holds an exclusive `flock` while it:

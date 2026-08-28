@@ -17,4 +17,5 @@ The vocabulary is Room, Actor, and Event. Application protocols add event types,
 | [boundaries.md](boundaries.md) | Stale views, retries, contention, and hidden events |
 | [agent-experience.md](agent-experience.md) | Cursor-based attention and remaining cost controls |
 | [security.md](security.md) | Current trust boundary and required hardening |
+| [hosted-identity.md](hosted-identity.md) | GitHub sign-in, Room ownership, and Agent credentials |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |

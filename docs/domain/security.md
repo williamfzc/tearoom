@@ -24,10 +24,14 @@ The public Store contract has no edit or delete operation for Events. The local 
 
 ## Required before hostile or hosted use
 
+- GitHub-backed human accounts and explicit Room ownership;
+- separate, revocable credentials for agents and integrations;
 - authenticated Actor identity;
 - per-Room admission and revocation;
 - transport security;
 - at-rest protection appropriate to Event content;
 - tamper-evident history and recovery policy.
+
+The intended hosted identity boundary is described in [hosted-identity.md](hosted-identity.md).
 
 Self-hosting remains possible because callers depend on the Store contract rather than one backend.

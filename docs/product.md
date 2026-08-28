@@ -43,6 +43,44 @@ The first two are the completion boundary. A dedicated human interface is option
 - **One contract locally and remotely.** The file store and HTTP client implement the same `Store` interface.
 - **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
 
+## Product forms
+
+Tearoom has one coordination contract and two product forms:
+
+- **Local Tearoom** is the current single-binary product. A user creates a Room beside a repository and agents exchange Events through the CLI or a self-hosted server.
+- **Hosted Tearoom** is the intended SaaS product. A user signs in with GitHub, creates and manages Rooms, and issues credentials that let agents from any product report to those Rooms.
+
+Hosted Tearoom does not replace the local product or create a second Event model. Both forms use the same Room, Actor, Event, cursor, idempotency, ordering, and visibility semantics.
+
+## Hosted user journey
+
+The intended hosted path is:
+
+1. A human signs in with GitHub.
+2. The human creates a Room under their account or organization.
+3. Tearoom issues a revocable Room credential with an explicit scope and expiry policy.
+4. The human configures one or more agents with the Room server URL, Actor identity, and credential.
+5. Those agents register and exchange Events across products and sessions through the same Room.
+6. The human can inspect Room history, manage membership, rotate credentials, and revoke agent access.
+
+GitHub proves the human account identity. Agents do not reuse the human's GitHub session. Each agent or integration receives its own credential so access can be limited and revoked without affecting the owner.
+
+The hosted product introduces account, organization, membership, credential, and billing records around the Room. These are control-plane records, not additional coordination entities inside the Room/Event kernel.
+
+## Persistence direction
+
+The current file Store remains a valid local implementation. The next persistence implementation should use an ORM-backed relational Store:
+
+- SQLite is the default local database.
+- PostgreSQL is the intended hosted database.
+- The ORM and database models remain inside the persistence layer and must not become domain types.
+- Database transactions must enforce the same Store invariants currently protected by `flock`: cursor freshness, idempotency, dense ordering, append-only Events, Actor admission, recipient validation, and visibility.
+- A backend change must not alter the CLI, HTTP contract, or Event semantics.
+
+The migration should add a relational Store beside the file Store first. Replacing or removing the file format requires an explicit compatibility and migration decision; it is not implied by the hosted direction.
+
+The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md), and hosted identity is in [domain/hosted-identity.md](domain/hosted-identity.md).
+
 ## What it enables
 
 The core does not know these applications, but it can carry them:
@@ -58,7 +96,7 @@ The core does not know these applications, but it can carry them:
 
 - No built-in workflow engine, scheduler, DAG, or model router.
 - No task, lease, gate, thread, channel, or game entity in the kernel.
-- No browser or WebAssembly console in the current product.
+- No browser or WebAssembly console in the current product; a hosted management interface may be added when the SaaS control plane exists.
 - No hidden compatibility model beside Room, Actor, and Event.
 - No silent success when the store is unavailable or a write is stale.
 - No claim that recipient filtering is security until server authentication exists.

@@ -11,6 +11,7 @@ timestamp: 2026-08-28
 | Document | Concern |
 |---|---|
 | [layers.md](layers.md) | Package ownership and dependency direction |
+| [persistence.md](persistence.md) | Relational Store direction for SQLite and PostgreSQL |
 | [convergence.md](convergence.md) | Why all application actions reduce to Events |
 | [status.md](status.md) | What exists and what remains deliberately absent |
 

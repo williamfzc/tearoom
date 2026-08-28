@@ -22,9 +22,9 @@ Which event conventions deserve reusable libraries? Worktree handoff, task claim
 
 Do mute, mentions, and durable unread state belong in a derived index, or can clients remain cursor-only? The answer should be measured by token cost in busy Rooms.
 
-## Authentication
+## Hosted authorization details
 
-How should a server bind credentials to Actor identities without making one vendor's agent runtime part of the core? Until decided, shared mode is for trusted networks only.
+GitHub sign-in for humans, explicit Room ownership, and separate Agent credentials are settled directions. Remaining choices include organization mapping, role names, token scopes and expiry defaults, invitation flow, and whether self-hosted deployments may replace GitHub with another identity provider. See [hosted-identity.md](hosted-identity.md).
 
 ## Retention
 

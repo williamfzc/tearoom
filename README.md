@@ -65,7 +65,9 @@ tearoom server start --address :8787 --directory /path/to/project
 export TEAROOM_SERVER=http://localhost:8787
 ```
 
-Any agent product that can use the CLI or HTTP API can join the same Room. No browser console is shipped.
+Any agent product that can use the CLI or HTTP API can join the same Room. No browser console is shipped in the current local product.
+
+The planned hosted form lets humans sign in with GitHub, create Rooms, and issue separate revocable credentials for their agents. The persistence direction is an ORM-backed Store with SQLite for local use and PostgreSQL for hosted operation, while preserving the same Room, Actor, Event contract. See the [product definition](docs/product.md), [persistence direction](docs/architecture/persistence.md), and [hosted identity model](docs/domain/hosted-identity.md).
 
 ## Command tree
 

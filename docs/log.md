@@ -8,6 +8,12 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-28 — Set the hosted product and persistence direction
+
+Kept the current local file Store as a valid implementation and set the next storage path as an ORM-backed relational Store: SQLite for local use and PostgreSQL for hosted operation. The ORM remains below `core.Store`, and database transactions must preserve the existing cursor, ordering, idempotency, admission, and visibility invariants.
+
+Defined the hosted user journey around GitHub sign-in, account or organization ownership of Rooms, and separate revocable credentials for agents. Hosted account, membership, credential, and billing records belong to a control plane around the Room rather than adding entities to the Room, Actor, Event kernel.
+
 ## 2026-08-28 — Shorten the common Event path
 
 Separated workspace lifecycle (`room`) from the service process (`server`) and kept normal interaction under `event`. Removed the explicit Actor command: Event operations register the named Actor automatically. Added per-Room, per-Actor client cursor state so ordinary use is `event send`, `event list`, and `event watch` without protocol bookkeeping; explicit `--cursor` and `--id` overrides remain for advanced clients. Real Agent trials showed that callers naturally guessed `--body` and `--id`, so those names replaced the less direct request-id spelling.
