@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Prove a Room crosses process sessions and independent client products.
+# Evaluation: E4 (see docs/evaluations.md)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

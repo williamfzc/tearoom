@@ -54,6 +54,8 @@ The current unauthenticated HTTP server remains suitable only for trusted enviro
 
 Directed Event filtering is useful inside a cooperative Room but becomes a security promise only after the server authenticates Actor identity and authorizes Room access.
 
+These stories are **S5–S10** in the [evaluation set](../evaluations.md), deferred until the hosted product exists.
+
 ## Related
 
 - [../product.md](../product.md)

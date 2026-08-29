@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Drive the shipped binary through the short event path and advanced overrides.
+# Evaluation: E2 (see docs/evaluations.md)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

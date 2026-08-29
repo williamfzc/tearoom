@@ -47,3 +47,5 @@ The rules of the road are exactly the product invariants:
 ## Why not new entities
 
 A task, a claim, an artifact, and a verdict are event types and projections, not core entities. The loop above is the product's "what it enables" claim ([product.md](../product.md)) in executable form: no workflow engine, scheduler, or DAG inside the kernel.
+
+This story is **S2** in the [evaluation set](../evaluations.md); its proof is evaluation E5 (`harness-demo`).

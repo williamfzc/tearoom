@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Drive the shipped binary against the SQLite backend: same invariants as
 # smoke.sh, proving the relational Store answers the same contract end to end.
+# Evaluation: E3 (see docs/evaluations.md)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

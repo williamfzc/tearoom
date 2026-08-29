@@ -4,6 +4,7 @@
 # a Room with no human relay. The loop is a protocol over Events — watch for
 # handoff, caused-by for chaining, directed Events for private reviewer notes —
 # not new kernel machinery. See docs/domain/harness-workflow.md.
+# Evaluation: E5 (see docs/evaluations.md)
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

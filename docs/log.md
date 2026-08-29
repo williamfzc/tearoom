@@ -8,6 +8,10 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Establish the bidirectional evaluation set
+
+Added [evaluations.md](evaluations.md), the single registry mapping every user story to the evaluations that prove it: stories S1–S10 with explicit statuses (`proven`, `open`, `deferred`), evaluations E1–E7 (`shipped`, `planned`), and two mapping tables the new `make check-evals` verifier requires to agree with each other and with the statuses. Shipped suites now carry a machine-checkable `# Evaluation:` marker, and story documents name their registry IDs. Everything previously scattered as prose — the untested game protocol (S3), the unmeasured cross-worktree Room (S4), the deferred hosted stories (S5–S10), PostgreSQL validation — is now marked, tracked, and checkable in one place.
+
 ## 2026-08-29 — Add the harness workflow user story
 
 Added [domain/harness-workflow.md](domain/harness-workflow.md): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. [scripts/harness-demo.sh](../scripts/harness-demo.sh) runs the story against the shipped binary inside `make check`; it closes the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.

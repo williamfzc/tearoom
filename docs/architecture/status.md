@@ -39,10 +39,12 @@ timestamp: 2026-08-28
 4. Validate the SQLite schema and migrations on PostgreSQL before a hosted release.
 5. Build the hosted identity boundary described in [../domain/hosted-identity.md](../domain/hosted-identity.md) before exposing Rooms to untrusted clients.
 
+Items 1 and 2 are the open stories S4 and S3 in the [evaluation set](../evaluations.md), item 5 is the deferred stories S5–S10, and items 3–4 are tracked there as pending evidence rather than stories.
+
 ## Near-term priorities
 
 [../competitive-analysis.md](../competitive-analysis.md) set three: a server-held wait for `event watch` (shipped as long-poll), the relational Store beginning with SQLite (shipped as `--store sqlite`), and one cross-agent skill over the CLI before any MCP server (shipped as the Tearoom skill).
 
 ## Completion proof
 
-`make check` runs unit tests, the shipped-binary smoke suites for both backends, same-product and cross-product session handoffs, the harness workflow scenario, stale raw HTTP rejection, and documentation validation.
+`make check` runs unit tests, the shipped-binary smoke suites for both backends, same-product and cross-product session handoffs, the harness workflow scenario, stale raw HTTP rejection, the evaluation-set consistency check, and documentation validation.

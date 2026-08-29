@@ -18,6 +18,7 @@ Tearoom is a durable Room where stable Actors exchange ordered Events across ses
 |---|---|
 | [product.md](product.md) | Scope, local and hosted product forms, invariants, refusals, and completion standard |
 | [competitive-analysis.md](competitive-analysis.md) | Market landscape, Tearoom's differentiation, and the near-term priorities it justifies |
+| [evaluations.md](evaluations.md) | User stories, the evaluations that prove them, and the bidirectional map between the two |
 | [domain/](domain/index.md) | Room, Actor, Event, and boundary behaviour |
 | [architecture/](architecture/index.md) | Layer ownership and the converged surface |
 | [reference/](reference/index.md) | CLI, HTTP, exit, and storage contracts |

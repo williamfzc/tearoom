@@ -9,7 +9,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo docs fmt vet clean check
+.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo check-evals docs fmt vet clean check
 
 all: build
 
@@ -42,6 +42,11 @@ session-smoke: cli
 harness-demo: cli
 	@./scripts/harness-demo.sh
 
+# The evaluation set must stay a bidirectional story<->proof map: a marker
+# removed from a script or a row removed from the registry fails the check.
+check-evals:
+	@./scripts/check-evals.sh
+
 fmt:
 	$(GO) fmt ./...
 
@@ -53,7 +58,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test smoke smoke-sqlite session-smoke harness-demo docs
+check: fmt vet test smoke smoke-sqlite session-smoke harness-demo check-evals docs
 
 clean:
 	rm -rf $(BIN)

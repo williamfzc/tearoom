@@ -150,4 +150,4 @@ Tearoom is working only when all of the following are executable tests:
 - A directed event is not returned to unrelated actors.
 - The shipped `tearoom` binary performs all of the above through the documented `room`, `server`, and `event` commands without a browser component.
 
-`make check` is the repository-level proof of this standard.
+`make check` is the repository-level proof of this standard. This standard is story **S1** in the [evaluation set](evaluations.md), which maps every user story to the evaluations that prove it.
