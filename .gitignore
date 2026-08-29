@@ -9,4 +9,7 @@ bin/
 web/dist/
 web/node_modules/
 
+# Wrangler's local state (login session, Pages metadata).
+.wrangler/
+
 .DS_Store
