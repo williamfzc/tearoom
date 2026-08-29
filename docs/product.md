@@ -52,6 +52,8 @@ Tearoom has one coordination contract and two product forms:
 
 Hosted Tearoom does not replace the local product or create a second Event model. Both forms use the same Room, Actor, Event, cursor, idempotency, ordering, and visibility semantics.
 
+The live instance (as of 2026-08-29): the hosted API runs free at `[redacted deployment address]` (Render + Neon, Singapore) and the management UI at `[redacted deployment address]` (Cloudflare Pages). The runbook is [operations/deploy.md](operations/deploy.md).
+
 ## Hosted user journey
 
 The intended hosted path is:
