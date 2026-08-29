@@ -8,6 +8,12 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Decide watch's wait moves to the client; settle the free deployment
+
+Re-examined the server-held long-poll: coordination tolerates seconds of latency, so the long-poll was over-engineering. `event watch` keeps its batch semantics and its place in the skill and the demos; the wait moves to the CLI — the same `Read` + interval loop the local mode already runs. The hosted server is therefore a stateless read/append/register API; Phase 1's `wait` parameter and per-room broadcaster remain only as an optional self-hosted-LAN optimization.
+
+With the server stateless, the deployment settles ([hosted-plan.md](architecture/hosted-plan.md)): **Render free tier** hosts the Go service — 750 free instance hours/month exceed the longest month's 744, spun-down time does not consume hours, and client polling keeps the instance awake in practice, so it is genuinely 24/7 at $0. **Neon free** holds the database (Render's free PostgreSQL expires 30 days after creation by design). **Cloudflare Pages** hosts the management UI — a React + Vite static SPA calling `/api/hosted/*` with a Bearer token, the only free static host with unlimited bandwidth and no commercial-use ban (Vercel's Hobby plan forbids commercial use; Netlify's 300 build minutes are too few). Visual direction: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type. An all-Cloudflare rewrite stays out of scope until the product proves itself.
+
 ## 2026-08-29 — Ship hosted Phase 1: the multi-tenant server
 
 Implemented the first executable slice of the hosted product ([hosted-plan.md](architecture/hosted-plan.md)): a control plane and a per-room event API in front of the unchanged Room/Actor/Event kernel, all in `make check`.

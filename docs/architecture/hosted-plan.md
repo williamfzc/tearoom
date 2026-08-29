@@ -20,9 +20,11 @@ timestamp: 2026-08-29
 
 **Credentials are opaque, bound, hashed tokens.** A credential is `tr_` + 192 random bits, bound to (room, actor, capabilities, expiry), stored only as its sha256 hash, plaintext shown once at issue, individually revocable. Capabilities: `read`, `append`, `manage`. A credential is one agent's identity — the server requires every request to declare that exact actor, so a credential can never be used as a room-level key.
 
-**URL shape.** Management at `/api/hosted/*` (admin bearer). The event API at `/r/<room-id>/api/*`; a middleware resolves the Bearer credential → (room, actor, capabilities) and rejects mismatches **before** delegating the stripped request to that room's own `transport.Server` instance. Each instance carries its own long-poll `Broadcaster`, so wakeups never cross rooms. Wrong-room credentials answer 401, never 403 — a token cannot probe which rooms exist.
+**URL shape.** Management at `/api/hosted/*` (admin bearer). The event API at `/r/<room-id>/api/*`; a middleware resolves the Bearer credential → (room, actor, capabilities) and rejects mismatches **before** delegating the stripped request to that room's own `transport.Server` instance (one server per room, so wakeups never cross rooms). Wrong-room credentials answer 401, never 403 — a token cannot probe which rooms exist.
 
 **PostgreSQL is the hosted database.** The same models and migrations target both SQLite (local) and PostgreSQL (hosted); `relational.OpenURL` picks the dialector by DSN. Driver-specific pragmas live only in the local open path.
+
+**Watch's wait lives in the client.** `event watch` keeps its batch-return semantics without depending on server state: the CLI polls on an interval, exactly as it already does for local Rooms, so the hosted server is a stateless read/append/register surface. Phase 1's server-held `wait` (per-room `Broadcaster`) remains in the code as an optional optimization for self-hosted LANs; the deployment shapes below do not rely on it.
 
 ## Phase 1 — shipped 2026-08-29
 
@@ -55,6 +57,7 @@ TEAROOM_SERVER=http://localhost:8787/r/<id> TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=a
 - **Organizations (S9)**: membership scoping — a member inspects only their rooms; unrelated accounts cannot discover or read a room. The `Membership` model and `MembershipOf` already scope management; orgs add a tenant layer above accounts.
 - **Credential rotation (S10)**: expiry is already per-credential; rotation adds an operator workflow (issue → migrate → revoke) without touching Room or Actor identity.
 - **Invitation flow**: issue credentials to named actors with a TTL, mirroring the existing API.
+- **Management UI**: the front end from the [deployment shape](#deployment-shapes) — a static React + Vite SPA on Cloudflare Pages (rooms, memberships, credentials, room history against `/api/hosted/*`), styled Vercel/Claude-style minimal: restrained layout, generous whitespace, precise type.
 
 ## Phase 3 — operation
 
@@ -64,27 +67,31 @@ TEAROOM_SERVER=http://localhost:8787/r/<id> TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=a
 
 ## Deployment shapes
 
-Phase 1 code runs as one process; the shape follows what is stateful:
+The server is deliberately stateless: `event watch` waits in the CLI (client polling, the same loop local mode already runs), so hosted serving is a plain read/append/register API and everything stateful lives in one shared database. The free shapes therefore close:
 
 ```
-Cloudflare — DNS · TLS · CDN · DDoS · static admin UI · R2   (stateless, free)
-        │ reverse proxy
-tearoom hosted serve  — per-room broadcaster registry,      (stateful, one instance)
-                        60s-held watch long-polls, GORM pool
+Cloudflare Pages — management UI (React/Vite SPA, static assets; $0, unlimited bandwidth)
+        │ fetch /api/hosted/* (Bearer; CORS allows the Pages origin)
+Render (free)    — `tearoom hosted serve`, one stateless instance (Go, unchanged)
         │ postgres://
-Neon (free tier) — ctl_* control plane + coordination tables (the shared database)
+Neon (free)      — ctl_* control plane + coordination tables (the shared database)
 ```
 
-The service itself is deliberately stateful in memory: the per-room `Broadcaster` and held watch connections are the product's handoff mechanism. Nothing stops a second instance behind a sticky load balancer, but the memory state is real and single-instance is the default. Cheapest early shape: the developer's own machine behind a `cloudflared` tunnel (Cloudflare gives DNS, TLS, CDN for free), Neon as the database; a VPS later. The gateway layers — DNS, TLS, CDN, rate limiting, the static management UI, R2 for exports — are the genuinely stateless parts and belong to Cloudflare in any shape.
+**Render's free tier is the service's home, and it is genuinely 24/7.** The 750 free instance hours per workspace exceed the longest month (31 × 24 = 744 hours), spun-down time does not consume hours, and client polling keeps the instance awake in practice — as long as any agent polls at least every 15 minutes, the instance never sleeps and never pays a cold start. A quiet night spins it down and the first morning request pays one 30–60 s cold start, which coordination tolerates. The database always lives on Neon: Render's free PostgreSQL expires 30 days after creation by design.
+
+- **Management UI** — Cloudflare Pages, the only free static host with unlimited bandwidth and no commercial-use ban (Vercel's Hobby plan forbids commercial use; Netlify's 300 build minutes are too few; Render's own static hosting shares the workspace's 5 GB/month egress with the API). A React + Vite SPA calling `/api/hosted/*` with the admin Bearer token. Visual direction: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type, cool but clean; never decorative.
+- **Comfort upgrade** — Fly.io shared-cpu-1x at ≈ $2/month when the free tier pinches (no cold starts, no hour accounting, no CORS).
+- **Superseded** — the earlier "stateful instance behind Cloudflare" shape (per-room broadcasters, held long-polls) and the developer's own machine behind a `cloudflared` tunnel. A self-hosted LAN server may still use the server-held wait as an optimization; the hosted product does not.
 
 ## Considered: the all-Cloudflare shape
 
-The free tiers are real (2026): Workers 100K requests/day (10 ms CPU, 1 MB body), D1 5 GB / 5M rows read / 100K rows written per day, R2 10 GB. It is rejected for the current product, not because of quotas:
+The free tiers are real (2026): Workers 100K requests/day (10 ms CPU, 1 MB body), D1 5 GB / 5M rows read / 100K rows written per day, R2 10 GB, Pages unlimited bandwidth. The watch-semantics objection is gone — client polling works against any HTTP surface. What still holds:
 
-- **Watch semantics.** `event watch` is the agent handoff mechanism: a server-held long-poll capped at 60 s, woken by a per-room in-process `Broadcaster`. Workers is a request-lifecycle model — a request cannot hold a 60-second wait on an in-process channel, and the broadcaster registry has no home in a stateless runtime. Porting watch to Queues/Durable Objects (whose free-tier availability is itself uncertain) is a rewrite of half the transport layer.
-- **The database.** D1 is SQLite behind a worker-binding API, not a DSN GORM can open. Switching to it throws away the Phase 1 property that one schema and one transaction contract run over SQLite locally and PostgreSQL hosted; and 100K rows written/day is a daily limit for an active coordination room, not a headroom figure.
+- **The Go server does not run on Workers.** It is a request-lifecycle runtime for JS/TS; `transport`, `relational`, `control`, and `hosted` would be rewritten in another language, and the verification chain rebuilt with them (unit batteries plus the nine demo suites in `make check`). The Phase 1 property that one schema and one transaction contract run over SQLite locally and PostgreSQL hosted would split into two implementations with drift risk.
+- **The database access is not portable.** D1 is SQLite behind a worker-binding API, not a DSN GORM can open; Neon would need its serverless driver and a re-verification of the append transaction over HTTP.
+- **The request budget is small.** 100K requests/day is 2–3 agents polling every 5 s; 10 ms CPU per request sits at the edge of an append transaction.
 
-What Cloudflare contributes today, free and conflict-free: DNS, TLS, CDN, DDoS protection, the static management UI, and R2 for event exports. Reconsider the all-Cloudflare shape if watch ever degrades to polling (the CLI's local mode already polls) or if a serverless event API becomes acceptable.
+What Cloudflare contributes today, free and conflict-free: Pages for the management UI, plus DNS, TLS, CDN, and R2 for event exports. Reconsider the rewrite if the product proves itself and the server surface stays a thin CRUD — the migration list is small then, but it is a rewrite, not a configuration change.
 
 ## Decisions recorded
 
@@ -98,3 +105,6 @@ What Cloudflare contributes today, free and conflict-free: DNS, TLS, CDN, DDoS p
 | Wrong-room tokens | 401 | a token must not probe room existence |
 | Registration | any live credential may register its own actor | identity, not content; a read-only agent can still join |
 | Dev mode | env-gated admin token | real OAuth needs a browser flow; Phase 2 replaces it |
+| Watch's wait | client polling (CLI, as local mode already does) | coordination tolerates seconds of latency; keeps the hosted server stateless |
+| Hosted service home | Render free tier + Neon | 750 instance hours ≥ the longest month's 744; polling keeps it awake; Neon holds the data |
+| Management UI | static React/Vite SPA on Cloudflare Pages | the only free static host with unlimited bandwidth and no commercial-use ban |

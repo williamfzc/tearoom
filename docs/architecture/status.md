@@ -17,7 +17,7 @@ timestamp: 2026-08-28
 - Idempotent appends and directed Event filtering.
 - HTTP client and server implementing the same Store contract.
 - Executable same-product and cross-product multi-session scenarios.
-- Server-held wait for `event watch`: a long-poll request wakes on the first visible Event and costs nothing while a Room is quiet.
+- Server-held wait for `event watch`: a long-poll request wakes on the first visible Event and costs nothing while a Room is quiet. **Re-decided 2026-08-29**: the wait moves to the client — the CLI polls on an interval, exactly as local mode already does, so hosted serving stays stateless; the server long-poll remains only as an optional LAN optimization ([hosted-plan.md](hosted-plan.md)).
 - Relational Store behind `core.Store`: GORM models, versioned migrations, and one append transaction that enforces the same cursor, idempotency, admission, and visibility invariants as `flock` — shipped on SQLite, selected per Room by `--store sqlite` and dispatched from `.tearoom/store.json`.
 - Multi-tenant hosted server (Phase 1, [hosted-plan.md](hosted-plan.md)): a control plane (`ctl_` tables: accounts, memberships, credentials) in front of the unchanged coordination schema; per-room `relational.Store` value objects over one shared database; credentials as hashed, bound, revocable tokens; the event API at `/r/<room-id>/api/*` gated by a Bearer middleware; management routes under `/api/hosted/*` gated by a dev admin token until the GitHub OAuth exchange lands.
 
