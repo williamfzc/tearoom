@@ -55,7 +55,7 @@ func TestEventSendAcceptsBodyAndID(t *testing.T) {
 	dir := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("TEAROOM_HOME", home)
-	if _, err := store.Init(dir, "test"); err != nil {
+	if _, err := store.Init(dir, "test", store.BackendFile); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -125,10 +125,10 @@ func TestLocalSessionPathUsesRoomAndActor(t *testing.T) {
 	t.Setenv("TEAROOM_SERVER", "")
 	firstRoot := t.TempDir()
 	secondRoot := t.TempDir()
-	if _, err := store.Init(firstRoot, "first"); err != nil {
+	if _, err := store.Init(firstRoot, "first", store.BackendFile); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Init(secondRoot, "second"); err != nil {
+	if _, err := store.Init(secondRoot, "second", store.BackendFile); err != nil {
 		t.Fatal(err)
 	}
 	first, err := (&App{Dir: firstRoot}).sessionPath("alice")

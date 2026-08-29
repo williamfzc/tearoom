@@ -199,11 +199,13 @@ Usage:
 
 Flags:
   --name string      room name; defaults to the directory name
+  --store string     file | sqlite (default "file")
   --format string    json | text (default "json")
   -h, --help         show help
 `
 	flags := newFlags("room init", a.Out, help)
 	name := flags.String("name", "", "")
+	storeName := flags.String("store", string(store.BackendFile), "")
 	format := flags.String("format", "json", "")
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
@@ -211,18 +213,32 @@ Flags:
 	if err := validateFormat(*format); err != nil {
 		return err
 	}
-	if os.Getenv("TEAROOM_SERVER") != "" {
-		return errors.New("room init is local; unset TEAROOM_SERVER")
-	}
-	file, err := store.Init(a.Dir, *name)
+	backend, err := parseBackend(*storeName)
 	if err != nil {
 		return err
 	}
-	room, err := file.Room(context.Background())
+	if os.Getenv("TEAROOM_SERVER") != "" {
+		return errors.New("room init is local; unset TEAROOM_SERVER")
+	}
+	st, err := store.Init(a.Dir, *name, backend)
+	if err != nil {
+		return err
+	}
+	room, err := st.Room(context.Background())
 	if err != nil {
 		return err
 	}
 	return output(a.Out, room, *format, fmt.Sprintf("room %s created\n", room.Name))
+}
+
+func parseBackend(value string) (store.Backend, error) {
+	backend := store.Backend(strings.ToLower(strings.TrimSpace(value)))
+	switch backend {
+	case store.BackendFile, store.BackendSQLite:
+		return backend, nil
+	default:
+		return "", fmt.Errorf("unsupported --store %q; use file or sqlite", value)
+	}
 }
 
 func (a *App) roomInfo(args []string) error {
@@ -271,12 +287,16 @@ Flags:
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
 	}
-	file, err := store.Open(*directory)
+	st, err := store.Open(*directory)
 	if err != nil {
 		return fmt.Errorf("open room under %s: %w", *directory, err)
 	}
-	server := &http.Server{Addr: *address, Handler: transport.NewServer(file).Handler(), ReadHeaderTimeout: 10 * time.Second}
-	fmt.Fprintf(a.Err, "tearoom serving %s on %s\n", file.Root(), *address)
+	server := &http.Server{Addr: *address, Handler: transport.NewServer(st).Handler(), ReadHeaderTimeout: 10 * time.Second}
+	root := *directory
+	if r, ok := st.(interface{ Root() string }); ok {
+		root = r.Root()
+	}
+	fmt.Fprintf(a.Err, "tearoom serving %s on %s\n", root, *address)
 	return server.ListenAndServe()
 }
 

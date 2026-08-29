@@ -34,6 +34,12 @@ tearoom room init --name project
 
 Creates `.tearoom` in the current directory and refuses to overwrite an existing Room.
 
+```bash
+tearoom room init --store sqlite
+```
+
+`--store` selects the storage backend. `file` (the default) uses the flock-protected JSON layout; `sqlite` uses a GORM-backed SQLite database. The choice is recorded in `.tearoom/store.json` and later read automatically by every command and by `server start`.
+
 ### `tearoom room info`
 
 ```bash

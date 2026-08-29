@@ -40,7 +40,7 @@ The first two are the completion boundary. A dedicated human interface is option
 - **Fresh writes.** Every append names the room cursor it was based on. A moved cursor is refused under the `Store` interface.
 - **Idempotent retries.** Repeating the same event with the same key returns the original event. Reusing a key for different content is refused.
 - **Selective visibility.** A public event is visible to every actor. A directed event is visible only to its sender and named recipients. This is filtering, not yet authenticated access control.
-- **One contract locally and remotely.** The file store and HTTP client implement the same `Store` interface.
+- **One contract locally and remotely.** The file Store, the SQLite Store, and the HTTP client implement the same `Store` interface.
 - **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
 
 ## Product forms
@@ -69,15 +69,15 @@ The hosted product introduces account, organization, membership, credential, and
 
 ## Persistence direction
 
-The current file Store remains a valid local implementation. The next persistence implementation should use an ORM-backed relational Store:
+The file Store remains a valid local implementation, and the relational Store now ships beside it on SQLite:
 
-- SQLite is the default local database.
-- PostgreSQL is the intended hosted database.
+- SQLite is the default local database, chosen per Room with `--store sqlite` and recorded in `.tearoom/store.json`.
+- PostgreSQL is the intended hosted database; the schema and migration discipline are shared, and PostgreSQL validation is pending.
 - The ORM and database models remain inside the persistence layer and must not become domain types.
-- Database transactions must enforce the same Store invariants currently protected by `flock`: cursor freshness, idempotency, dense ordering, append-only Events, Actor admission, recipient validation, and visibility.
+- Database transactions enforce the same Store invariants that `flock` protects in the file Store: cursor freshness, idempotency, dense ordering, append-only Events, Actor admission, recipient validation, and visibility.
 - A backend change must not alter the CLI, HTTP contract, or Event semantics.
 
-The migration should add a relational Store beside the file Store first. Replacing or removing the file format requires an explicit compatibility and migration decision; it is not implied by the hosted direction.
+The relational Store was added beside the file Store rather than replacing it. Replacing or removing the file format requires an explicit compatibility and migration decision; it is not implied by the hosted direction.
 
 The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md), and hosted identity is in [domain/hosted-identity.md](domain/hosted-identity.md).
 
@@ -88,6 +88,7 @@ The core does not know these applications, but it can carry them:
 - repository and worktree handoffs;
 - task claims and progress reports;
 - review and approval protocols;
+- harness workflows in which a planner, a generator, and an evaluator run a plan/generate/evaluate loop over one Room ([domain/harness-workflow.md](domain/harness-workflow.md));
 - group chat and direct messages;
 - games such as Werewolf, including private role events;
 - any other protocol expressible as ordered facts among stable actors.

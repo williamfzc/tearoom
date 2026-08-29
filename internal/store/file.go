@@ -1,10 +1,10 @@
-// Package store implements core.Store as one file-backed room.
-// All mutations run under flock; events are durable append-only JSON lines.
+// Package store owns the .tearoom layout, selects the backend a room uses,
+// and implements core.Store as one file-backed room. All file mutations run
+// under flock; events are durable append-only JSON lines.
 package store
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -49,14 +49,6 @@ func Find(start string) (string, error) {
 	}
 }
 
-func Open(start string) (*File, error) {
-	root, err := Find(start)
-	if err != nil {
-		return nil, err
-	}
-	return OpenAt(root)
-}
-
 func OpenAt(root string) (*File, error) {
 	f := &File{root: root, now: time.Now}
 	if _, err := f.Room(context.Background()); err != nil {
@@ -65,19 +57,9 @@ func OpenAt(root string) (*File, error) {
 	return f, nil
 }
 
-func Init(dir, name string) (*File, error) {
-	root := filepath.Join(dir, Dir)
-	if _, err := os.Stat(root); err == nil {
-		return nil, fmt.Errorf("room already exists at %s", root)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if strings.TrimSpace(name) == "" {
-		name = filepath.Base(dir)
-	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
-		return nil, err
-	}
+// initFile lays out a file-backed Room under an existing, empty root.
+// Callers (Init in open.go) own the root directory and the name default.
+func initFile(root, name string) (*File, error) {
 	f := &File{root: root, now: time.Now}
 	room := core.Room{ID: "room", Name: name, Created: f.now().UTC()}
 	if err := f.writeJSON("room.json", room); err != nil {
@@ -207,7 +189,7 @@ func (f *File) AppendEvent(_ context.Context, input core.AppendInput) (*core.Eve
 	input.Actor = strings.TrimSpace(input.Actor)
 	input.Type = strings.TrimSpace(input.Type)
 	input.CausedBy = strings.TrimSpace(input.CausedBy)
-	input.To = normalizeRecipients(input.To)
+	input.To = core.NormalizeRecipients(input.To)
 	if input.Actor == "" || input.Type == "" || strings.TrimSpace(input.Key) == "" {
 		return nil, errors.New("actor, event type, and idempotency key are required")
 	}
@@ -233,7 +215,7 @@ func (f *File) AppendEvent(_ context.Context, input core.AppendInput) (*core.Eve
 	err = f.scanEvents(func(event core.Event) (bool, error) {
 		head = event.Seq
 		if event.Key == input.Key {
-			if sameEvent(event, input) {
+			if core.SameEvent(event, input) {
 				copy := event
 				duplicate = &copy
 				return false, nil
@@ -354,40 +336,6 @@ func (f *File) writeJSON(name string, value any) error {
 		return err
 	}
 	return os.Rename(tmp, f.path(name))
-}
-
-func normalizeRecipients(values []string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		for _, part := range strings.Split(value, ",") {
-			part = strings.TrimSpace(part)
-			if part != "" && !seen[part] {
-				seen[part] = true
-				out = append(out, part)
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sameEvent(event core.Event, input core.AppendInput) bool {
-	return event.Actor == input.Actor && event.Type == input.Type && event.Body == input.Body &&
-		event.CausedBy == input.CausedBy && event.Key == input.Key &&
-		bytes.Equal(event.Data, input.Data) && equalStrings(event.To, input.To)
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 var _ core.Store = (*File)(nil)

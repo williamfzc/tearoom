@@ -8,7 +8,7 @@ timestamp: 2026-08-28
 
 # Persistence direction
 
-Tearoom should gain a relational Store, not become an ORM-shaped product. The canonical contract remains `core.Store`; database records and ORM APIs belong behind that boundary.
+Tearoom has a relational Store, and it must not become an ORM-shaped product. The canonical contract remains `core.Store`; database records and ORM APIs belong behind that boundary. The SQLite backend is shipped; PostgreSQL validation is pending.
 
 ## Target deployment matrix
 
@@ -27,7 +27,7 @@ Use one ORM-supported schema where SQLite and PostgreSQL semantics genuinely agr
 - The file Store remains an independent implementation until a separate migration decision removes it.
 - CLI and HTTP depend on `core.Store`, never on the ORM or concrete database models.
 
-The ORM is replaceable infrastructure. Its model types must not be exported as product entities.
+The ORM is replaceable infrastructure. Its model types must not be exported as product entities. The shipped SQLite backend uses GORM with the pure-Go `glebarez/sqlite` dialector, keeping release binaries static (`CGO_ENABLED=0`).
 
 ## Relational shape
 

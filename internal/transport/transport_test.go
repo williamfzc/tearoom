@@ -14,10 +14,11 @@ import (
 
 func newPair(t *testing.T) (*Client, *store.File) {
 	t.Helper()
-	file, err := store.Init(t.TempDir(), "test")
+	st, err := store.Init(t.TempDir(), "test", store.BackendFile)
 	if err != nil {
 		t.Fatal(err)
 	}
+	file := st.(*store.File)
 	server := httptest.NewServer(NewServer(file).Handler())
 	t.Cleanup(server.Close)
 	return NewClient(server.URL, ""), file

@@ -3,10 +3,13 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -76,6 +79,32 @@ func (e Event) VisibleTo(actor string) bool {
 	return false
 }
 
+// NormalizeRecipients trims, splits on commas, deduplicates, and sorts. Every
+// Store backend stores and compares recipients in this single canonical form.
+func NormalizeRecipients(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" && !seen[part] {
+				seen[part] = true
+				out = append(out, part)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// SameEvent reports whether an existing event matches a retried append well
+// enough that the retry returns the original instead of conflicting.
+func SameEvent(event Event, input AppendInput) bool {
+	return event.Actor == input.Actor && event.Type == input.Type && event.Body == input.Body &&
+		event.CausedBy == input.CausedBy && event.Key == input.Key &&
+		bytes.Equal(event.Data, input.Data) && equalStrings(event.To, input.To)
+}
+
 // AppendInput carries every condition required for one atomic append.
 type AppendInput struct {
 	Actor    string          `json:"actor"`
@@ -112,4 +141,16 @@ type Store interface {
 // A store that lacks it makes a waiter fall back to periodic full reads.
 type Probe interface {
 	Changed(ctx context.Context) (bool, error)
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

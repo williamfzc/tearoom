@@ -8,6 +8,14 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Add the harness workflow user story
+
+Added [domain/harness-workflow.md](domain/harness-workflow.md): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. [scripts/harness-demo.sh](../scripts/harness-demo.sh) runs the story against the shipped binary inside `make check`; it closes the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.
+
+## 2026-08-29 — Ship the relational Store on SQLite
+
+Added the ORM-backed relational Store behind `core.Store`, shipped on SQLite: `tearoom room init --store sqlite` creates a GORM-managed `room.db` (pure-Go `glebarez/sqlite` dialector, so release binaries stay static), the choice is recorded in `.tearoom/store.json`, and every command and the server dispatch on it. The append contract that `flock` enforces in the file Store — cursor freshness, idempotency, dense ordering, admission, recipient validation, visibility — is enforced by one append transaction: lock the Room head, validate, resolve the idempotency key, compare the cursor, insert the immutable Event, advance the head, commit. Schema changes are versioned migrations applied at open. A shipped-binary smoke suite proves the same invariants over SQLite, including through the HTTP server; PostgreSQL validation remains pending behind the same schema and migrations.
+
 ## 2026-08-29 — Hold `event watch` on the server instead of polling
 
 Replaced the client 250 ms poll loop with a server-held long-poll. `GET /api/events` gains a `wait` parameter, capped at 60 seconds; the server returns as soon as a visible Event appears and otherwise returns an empty Feed when the wait elapses. Appends through the server wake waiters directly, and an idle fallback probes the Store for out-of-band writes without taking the lock or scanning the log (`core.Probe`; the file Store answers by stat). The CLI slices long waits into 30-second requests against a server and keeps polling only for local Rooms.

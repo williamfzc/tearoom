@@ -9,7 +9,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race smoke session-smoke docs fmt vet clean check
+.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo docs fmt vet clean check
 
 all: build
 
@@ -29,8 +29,18 @@ test-race:
 smoke: cli
 	@./scripts/smoke.sh
 
+# The relational backend must answer the same invariants through the same
+# shipped binary; its own suite proves that end to end.
+smoke-sqlite: cli
+	@./scripts/smoke-sqlite.sh
+
 session-smoke: cli
 	@./scripts/session-smoke.sh
+
+# The harness workflow user story: planner, generator, and evaluator agents
+# run one plan/generate/evaluate loop through the shipped binary.
+harness-demo: cli
+	@./scripts/harness-demo.sh
 
 fmt:
 	$(GO) fmt ./...
@@ -43,7 +53,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test smoke session-smoke docs
+check: fmt vet test smoke smoke-sqlite session-smoke harness-demo docs
 
 clean:
 	rm -rf $(BIN)

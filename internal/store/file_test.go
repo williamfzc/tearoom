@@ -12,11 +12,11 @@ import (
 
 func newTestStore(t *testing.T) *File {
 	t.Helper()
-	file, err := Init(t.TempDir(), "test")
+	st, err := Init(t.TempDir(), "test", BackendFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return file
+	return st.(*File)
 }
 
 func join(t *testing.T, file *File, ids ...string) {
