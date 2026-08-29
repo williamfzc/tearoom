@@ -10,7 +10,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    startCommand: tearoom hosted serve --database "$DATABASE_URL" --address :8787
+    startCommand: tearoom hosted serve --database "$DATABASE_URL" --address :8787 --cors-origin "$TEAROOM_CORS_ORIGIN"
     healthCheckPath: /healthz
     envVars:
       - key: DATABASE_URL
@@ -19,3 +19,5 @@ services:
         sync: false
       - key: TEAROOM_HOSTED_DEV
         value: "1"
+      - key: TEAROOM_CORS_ORIGIN
+        sync: false

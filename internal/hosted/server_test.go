@@ -109,6 +109,48 @@ func (h *testHosted) roomStatus(method, roomID, token, actor string) int {
 	return status
 }
 
+func TestCORSOnlyOpensTheConfiguredOrigin(t *testing.T) {
+	db, err := relational.OpenURL(filepath.Join(t.TempDir(), "hosted.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(db, adminToken)
+	s.SetCORS("https://ui.example.com")
+	srv := httptest.NewServer(s.Handler())
+	t.Cleanup(srv.Close)
+
+	// Preflight from the allowed origin is answered with the CORS headers.
+	req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/api/hosted/rooms", nil)
+	req.Header.Set("Origin", "https://ui.example.com")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight answered %d, want 204", res.StatusCode)
+	}
+	if got := res.Header.Get("Access-Control-Allow-Origin"); got != "https://ui.example.com" {
+		t.Fatalf("preflight allowed origin %q, want https://ui.example.com", got)
+	}
+
+	// A different origin gets no CORS headers and still faces auth.
+	req2, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/hosted/rooms", nil)
+	req2.Header.Set("Origin", "https://evil.example.com")
+	res2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res2.Body.Close()
+	if got := res2.Header.Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("foreign origin received Allow-Origin %q, want none", got)
+	}
+	if res2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("foreign-origin request answered %d, want 401", res2.StatusCode)
+	}
+}
+
 func TestHealthzNeedsNoCredentials(t *testing.T) {
 	h := newTestHosted(t)
 	status, body := h.request("GET", "/healthz", "", nil)

@@ -30,6 +30,11 @@ type Server struct {
 	db    *gorm.DB
 	admin string
 
+	// corsOrigin, when set, is the exact Origin the management UI is served
+	// from (a Cloudflare Pages domain, say). Cross-origin browsers then get
+	// the CORS headers and preflight answers; other origins stay closed.
+	corsOrigin string
+
 	mu          sync.Mutex
 	roomServers map[string]*transport.Server
 }
@@ -45,6 +50,12 @@ func New(db *gorm.DB, admin string) *Server {
 	}
 }
 
+// SetCORS allows cross-origin browser requests (the management UI) from
+// exactly origin. Empty disables CORS entirely.
+func (s *Server) SetCORS(origin string) {
+	s.corsOrigin = origin
+}
+
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
@@ -52,7 +63,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/hosted/rooms", s.requireAdmin(s.handleRooms))
 	mux.HandleFunc("/api/hosted/rooms/", s.requireAdmin(s.handleRoom))
 	mux.HandleFunc("/r/", s.handleRoomAPI)
-	return mux
+	return s.cors(mux)
+}
+
+// cors answers preflights and annotates responses when the request Origin
+// matches the configured management-UI origin. Authorization and
+// Content-Type are the headers the UI's fetch calls carry.
+func (s *Server) cors(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.corsOrigin != "" {
+			origin := r.Header.Get("Origin")
+			if origin == s.corsOrigin {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			}
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // handleHealthz answers liveness for the hosting platform: no authentication,
