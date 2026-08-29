@@ -437,21 +437,11 @@ Flags:
 
 var errTimeout = errors.New("watch timed out")
 
-// waiter is implemented by remote Stores: a single request holds the server
-// until a visible event appears, instead of the client polling for one.
-type waiter interface {
-	ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) (*core.Feed, error)
-}
-
-// maxWaitSegment bounds one long-poll request; longer deadlines are sliced
-// into repeated requests so a stuck client cannot pin a server connection.
-const maxWaitSegment = 30 * time.Second
-
 func (a *App) eventWatch(args []string) error {
 	const help = `Wait for later events.
 
-The saved session cursor is used and advanced automatically. Against a server
-the wait is held by the server (long-poll); locally the CLI polls.
+The saved session cursor is used and advanced automatically. The CLI polls
+on --poll-interval until the room moves or --timeout elapses.
 
 Usage:
   tearoom event watch [flags]
@@ -460,7 +450,7 @@ Flags:
   --as string             actor identity; defaults to TEAROOM_ACTOR
   --cursor uint           override the saved cursor
   --timeout duration      maximum wait (default 5m)
-  --poll-interval duration  local polling interval (default 250ms; ignored for servers)
+  --poll-interval duration  polling interval (default 250ms)
   --format string         json | text (default "json")
   -h, --help              show help
 `
@@ -487,19 +477,9 @@ Flags:
 	if flagWasSet(flags, "cursor") {
 		after = *cursor
 	}
-	w, remote := st.(waiter)
 	deadline := time.Now().Add(*timeout)
 	for {
-		var feed *core.Feed
-		if remote {
-			segment := time.Until(deadline)
-			if segment > maxWaitSegment {
-				segment = maxWaitSegment
-			}
-			feed, err = w.ReadWait(context.Background(), actor, after, 0, segment)
-		} else {
-			feed, err = st.Read(context.Background(), actor, after, 0)
-		}
+		feed, err := st.Read(context.Background(), actor, after, 0)
 		if err != nil {
 			return err
 		}
@@ -513,9 +493,7 @@ Flags:
 		if !time.Now().Before(deadline) {
 			return errTimeout
 		}
-		if !remote {
-			time.Sleep(*interval)
-		}
+		time.Sleep(*interval)
 	}
 }
 
