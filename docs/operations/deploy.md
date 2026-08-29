@@ -43,7 +43,7 @@ openssl rand -hex 32
 ## 4. Render: deploy the web service
 
 1. Sign in at [render.com](https://render.com) with GitHub; create a **New Web Service** from the repository.
-2. Runtime: **Docker** (uses the repo's `Dockerfile`; static `CGO_ENABLED=0` build).
+2. Runtime: **Docker** (uses the repo's `Dockerfile`; static `CGO_ENABLED=0` build). The image defaults to `hosted serve` (reads `$DATABASE_URL`), so a start command is optional; the blueprint sets one explicitly anyway.
 3. Plan: **Free**.
 4. Environment variables:
 

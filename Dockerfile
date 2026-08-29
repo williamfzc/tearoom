@@ -11,4 +11,7 @@ RUN adduser -D -u 10001 tearoom
 USER tearoom
 COPY --from=build /out/tearoom /usr/local/bin/tearoom
 EXPOSE 8787
-ENTRYPOINT ["/usr/local/bin/tearoom"]
+# Default to the hosted server so a plain `docker run` (or a platform
+# service without a start command) serves it; $DATABASE_URL is the only
+# required variable. A platform start command overrides this entrypoint.
+ENTRYPOINT ["sh", "-c", "exec /usr/local/bin/tearoom hosted serve --database \"$DATABASE_URL\" --address :8787"]
