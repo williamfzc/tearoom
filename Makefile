@@ -9,7 +9,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo check-evals docs fmt vet clean check
+.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo check-evals docs fmt vet clean check
 
 all: build
 
@@ -42,6 +42,15 @@ session-smoke: cli
 harness-demo: cli
 	@./scripts/harness-demo.sh
 
+# The game protocol user story: one Werewolf round over directed role Events.
+game-demo: cli
+	@./scripts/game-demo.sh
+
+# The one-Room-across-worktrees user story: two real git worktrees share one
+# served Room, cursors per worktree, handoffs across them by watch.
+worktree-demo: cli
+	@./scripts/worktree-demo.sh
+
 # The evaluation set must stay a bidirectional story<->proof map: a marker
 # removed from a script or a row removed from the registry fails the check.
 check-evals:
@@ -58,7 +67,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test smoke smoke-sqlite session-smoke harness-demo check-evals docs
+check: fmt vet test smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo check-evals docs
 
 clean:
 	rm -rf $(BIN)

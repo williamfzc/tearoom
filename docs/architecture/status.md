@@ -33,8 +33,8 @@ timestamp: 2026-08-28
 
 ## Next evidence to collect
 
-1. Use one Room across several real worktrees and measure whether cursor-only reads are sufficient.
-2. Implement one task protocol and one game protocol outside the kernel to test whether the three entities remain enough. The task protocol shipped 2026-08-29 as the harness workflow scenario; the game protocol (for example Werewolf with private role events) remains to run.
+1. Use one Room across several real worktrees and measure whether cursor-only reads are sufficient. **Shipped 2026-08-29** as the worktree demo (story S4, evaluation E7): two real git worktrees share one Room served from the repository root, handoffs cross worktrees by `watch`, later processes resume their cursors, and a fresh Actor reads the full trace through one Room.
+2. Implement one task protocol and one game protocol outside the kernel to test whether the three entities remain enough. **Both shipped 2026-08-29**: the task protocol as the harness workflow scenario (story S2), and the game protocol as one Werewolf round over directed role Events (story S3, evaluation E6) — a moderator deals private roles, night actions reach only the moderator and their sender, and the day is public.
 3. Measure irrelevant Event volume before adding subscriptions, mute, or indexing.
 4. Validate the SQLite schema and migrations on PostgreSQL before a hosted release.
 5. Build the hosted identity boundary described in [../domain/hosted-identity.md](../domain/hosted-identity.md) before exposing Rooms to untrusted clients.

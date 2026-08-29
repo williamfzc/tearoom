@@ -8,6 +8,12 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Run the harness with real agents and close the remaining stories
+
+Ran the harness workflow with three real agents (one planner, one generator, one evaluator, each an independent agent session) on a shared Room server. Each learned the CLI from the skill, then the loop ran end to end: plan → generate → revise → generate v2 → approve → close, threaded by `caused_by`. Measured send latency 13–31 ms and event-to-delivery latency 18–20 ms over local HTTP; no stale writes, no retries needed. The agents' skill feedback (flags not in the reference, watch batch semantics, feed shape) went back into SKILL.md.
+
+Then shipped the two remaining story scenarios. [scripts/game-demo.sh](../scripts/game-demo.sh) plays one Werewolf round as a protocol over directed role Events (E6, story S3): a moderator deals three private roles, night actions reach only the moderator and their sender, the day is public — 13 checks. [scripts/worktree-demo.sh](../scripts/worktree-demo.sh) proves one Room across two real git worktrees (E7, story S4): worktrees keep no local Room, handoffs cross them by `watch`, later processes resume cursors — 9 checks. Both run inside `make check`; the evaluation set now marks every story except the hosted ones proven.
+
 ## 2026-08-29 — Establish the bidirectional evaluation set
 
 Added [evaluations.md](evaluations.md), the single registry mapping every user story to the evaluations that prove it: stories S1–S10 with explicit statuses (`proven`, `open`, `deferred`), evaluations E1–E7 (`shipped`, `planned`), and two mapping tables the new `make check-evals` verifier requires to agree with each other and with the statuses. Shipped suites now carry a machine-checkable `# Evaluation:` marker, and story documents name their registry IDs. Everything previously scattered as prose — the untested game protocol (S3), the unmeasured cross-worktree Room (S4), the deferred hosted stories (S5–S10), PostgreSQL validation — is now marked, tracked, and checkable in one place.

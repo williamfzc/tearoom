@@ -33,15 +33,28 @@ join step is needed.
 # Append one event. Text is the common case; --data takes JSON.
 tearoom event send "review worktree A"
 tearoom event send --type handoff.requested --data '{"worktree":"A"}'
+# send flags: --type sets the event type (default "message"),
+# --data takes JSON, --caused-by links to the event you respond to,
+# --to restricts recipients (comma-separated).
 
-# Read everything new since your saved cursor, then exit.
+# Read everything new since your saved cursor in one batch, then exit.
 tearoom event list
 
-# Wait for a later event and return as soon as one arrives.
+# Wait for the room to move, and return with the whole batch of new events
+# as soon as any arrives (or immediately, if events are already available
+# past your cursor). --timeout is a Go duration: "5m", "300s", "30m".
 tearoom event watch --timeout 5m
 ```
 
-Output is JSON by default; `--format text` prints a compact per-line view.
+Output is JSON by default; `--format text` prints a compact per-line view. A feed looks like:
+
+```json
+{"room": {...}, "cursor": 4, "events": [{"id": "e4", "seq": 4, "actor": "...",
+  "at": "...", "type": "...", "body": "...", "data": {...}, "caused_by": "e3"}]}
+```
+
+`watch` returns the batch of everything published since your cursor, not a
+stream of one event per call.
 
 ## How the cursor works — read this before writing
 

@@ -44,6 +44,10 @@ The rules of the road are exactly the product invariants:
 3. the whisper reaches the generator and stays hidden from the planner;
 4. the planner's stale close is refused, then succeeds after the list/resync pattern.
 
+## Real-agent trial
+
+On 2026-08-29 three real agents — one planner, one generator, one evaluator, each an independent agent session — ran this loop for real against a shared Room server. Each read the skill and used the CLI as taught. The loop ran end to end: plan → generate → revise → generate v2 → approve → close, six Events threaded by `caused_by` with no stale writes and no retries. Measured over local HTTP: send latency 13–31 ms, event-to-delivery latency 18–20 ms (watch returned that long after the event's server timestamp). The agents' skill feedback went back into [.claude/skills/tearoom/SKILL.md](../../.claude/skills/tearoom/SKILL.md): the send flags reference, the watch batch semantics, and the feed shape are now stated explicitly.
+
 ## Why not new entities
 
 A task, a claim, an artifact, and a verdict are event types and projections, not core entities. The loop above is the product's "what it enables" claim ([product.md](../product.md)) in executable form: no workflow engine, scheduler, or DAG inside the kernel.

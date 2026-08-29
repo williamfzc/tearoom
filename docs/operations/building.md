@@ -19,6 +19,8 @@ make smoke          # file-backend smoke: real binary and exit-code contract
 make smoke-sqlite   # the same contract over the SQLite backend
 make session-smoke  # same-product and cross-product session exchange
 make harness-demo   # the harness workflow story end to end
+make game-demo      # one Werewolf round over directed role Events
+make worktree-demo  # two real git worktrees sharing one Room
 make check-evals    # the evaluation set stays bidirectionally consistent
 make check          # all checks plus documentation validation
 ```

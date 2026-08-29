@@ -18,8 +18,8 @@ Story statuses: `proven` (a shipped evaluation proves it), `open` (in scope, not
 |---|---|---|---|
 | S1 | Core: agents from any product exchange ordered events across sessions without a human relaying context | proven | [product.md](product.md) |
 | S2 | Harness: planner, generator, and evaluator run one plan/generate/evaluate loop | proven | [domain/harness-workflow.md](domain/harness-workflow.md) |
-| S3 | Game: Werewolf with private role events runs as a protocol over Events | open | [product.md](product.md) |
-| S4 | One Room across several real worktrees keeps cursor-only reads sufficient | open | [architecture/status.md](architecture/status.md) |
+| S3 | Game: Werewolf with private role events runs as a protocol over Events | proven | [product.md](product.md) |
+| S4 | One Room across several real worktrees keeps cursor-only reads sufficient | proven | [architecture/status.md](architecture/status.md) |
 | S5 | A developer signs in with GitHub and creates a Room for a repository | deferred | [domain/hosted-identity.md](domain/hosted-identity.md) |
 | S6 | The developer connects agents from different products without sharing either product's credentials | deferred | [domain/hosted-identity.md](domain/hosted-identity.md) |
 | S7 | An agent process ends; a later session resumes the same Actor and cursor | deferred | [domain/hosted-identity.md](domain/hosted-identity.md) |
@@ -36,8 +36,8 @@ Story statuses: `proven` (a shipped evaluation proves it), `open` (in scope, not
 | E3 | SQLite smoke: the same invariants over the relational Store | `make smoke-sqlite` | [scripts/smoke-sqlite.sh](../scripts/smoke-sqlite.sh) | shipped |
 | E4 | Session smoke: same-product and cross-product handoff, server-held watch | `make session-smoke` | [scripts/session-smoke.sh](../scripts/session-smoke.sh) | shipped |
 | E5 | Harness demo: plan/generate/evaluate loop end to end | `make harness-demo` | [scripts/harness-demo.sh](../scripts/harness-demo.sh) | shipped |
-| E6 | Game demo: one Werewolf round over directed role Events | — | — | planned |
-| E7 | Worktree demo: two git worktrees sharing one Room | — | — | planned |
+| E6 | Game demo: one Werewolf round over directed role Events | `make game-demo` | [scripts/game-demo.sh](../scripts/game-demo.sh) | shipped |
+| E7 | Worktree demo: two real git worktrees sharing one Room | `make worktree-demo` | [scripts/worktree-demo.sh](../scripts/worktree-demo.sh) | shipped |
 
 ## Story → evaluation
 
@@ -47,6 +47,8 @@ Shipped proofs only; an `open` or `deferred` story has no row here.
 |---|---|
 | S1 | E1, E2, E3, E4 |
 | S2 | E5 |
+| S3 | E6 |
+| S4 | E7 |
 
 ## Evaluation → story
 
@@ -59,6 +61,8 @@ The inverse map. `check-evals` requires both directions to agree.
 | E3 | S1 |
 | E4 | S1 |
 | E5 | S2 |
+| E6 | S3 |
+| E7 | S4 |
 
 ## Pending evidence, not stories
 
