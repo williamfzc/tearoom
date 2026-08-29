@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -205,13 +206,13 @@ Usage:
 Flags:
   --database string   SQLite path or postgres:// DSN
   --address string    listen address (default ":8787")
-  --cors-origin string  exact Origin allowed for the management UI (default none)
+  --cors-origin string  exact Origin allowed for the management UI (defaults to $TEAROOM_CORS_ORIGIN)
   -h, --help          show help
 `
 	flags := newFlags("hosted serve", a.Out, help)
 	database := flags.String("database", "", "")
 	address := flags.String("address", ":8787", "")
-	corsOrigin := flags.String("cors-origin", "", "")
+	corsOrigin := flags.String("cors-origin", os.Getenv("TEAROOM_CORS_ORIGIN"), "")
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
 	}
