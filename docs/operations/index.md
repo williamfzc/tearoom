@@ -12,6 +12,7 @@ timestamp: 2026-08-27
 |---|---|
 | [building.md](building.md) | Build targets, the test suites, and two toolchain traps |
 | [serving.md](serving.md) | Running the server and pointing Actors at one Room |
+| [deploy.md](deploy.md) | Deploying the hosted server free: Render + Neon |
 
 ## The one thing to remember
 

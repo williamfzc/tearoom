@@ -1,0 +1,21 @@
+# Render blueprint for the hosted server (https://render.com/docs/blueprint-spec).
+# A free-tier web service; the database always lives on Neon — Render's free
+# PostgreSQL expires 30 days after creation by design. The two `sync: false`
+# secrets are filled in from the Render dashboard or `render` CLI.
+#
+# The full procedure is documented in docs/operations/deploy.md.
+services:
+  - type: web
+    name: tearoom-hosted
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    startCommand: tearoom hosted serve --database "$DATABASE_URL" --address :8787
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: TEAROOM_HOSTED_ADMIN
+        sync: false
+      - key: TEAROOM_HOSTED_DEV
+        value: "1"

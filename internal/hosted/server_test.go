@@ -109,6 +109,17 @@ func (h *testHosted) roomStatus(method, roomID, token, actor string) int {
 	return status
 }
 
+func TestHealthzNeedsNoCredentials(t *testing.T) {
+	h := newTestHosted(t)
+	status, body := h.request("GET", "/healthz", "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("healthz answered %d, want 200", status)
+	}
+	if body["status"] != "ok" {
+		t.Fatalf("healthz answered %v, want status ok", body)
+	}
+}
+
 func TestManagementRoutesRequireAdmin(t *testing.T) {
 	h := newTestHosted(t)
 	status, _ := h.request(http.MethodPost, "/api/hosted/rooms", "", map[string]any{"name": "x"})

@@ -47,11 +47,22 @@ func New(db *gorm.DB, admin string) *Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", s.handleHealthz)
 	mux.HandleFunc("/api/hosted/login", s.handleLogin)
 	mux.HandleFunc("/api/hosted/rooms", s.requireAdmin(s.handleRooms))
 	mux.HandleFunc("/api/hosted/rooms/", s.requireAdmin(s.handleRoom))
 	mux.HandleFunc("/r/", s.handleRoomAPI)
 	return mux
+}
+
+// handleHealthz answers liveness for the hosting platform: no authentication,
+// no state, so Render's health check can hit it without credentials.
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // Management routes -------------------------------------------------------
