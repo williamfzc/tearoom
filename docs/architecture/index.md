@@ -14,5 +14,6 @@ timestamp: 2026-08-28
 | [persistence.md](persistence.md) | Relational Store direction for SQLite and PostgreSQL |
 | [convergence.md](convergence.md) | Why all application actions reduce to Events |
 | [status.md](status.md) | What exists and what remains deliberately absent |
+| [model-discussion.md](model-discussion.md) | Open design discussion: entity/value split, recursive rooms, room types, agent-facing primitives |
 
 The short version: `core` defines Room, Actor, Event, and Store; `store` enforces persistence invariants; `transport` carries Store over HTTP; `cli` presents the same operations; `cmd/tearoom` is the single process entry point.

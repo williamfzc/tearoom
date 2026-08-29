@@ -8,6 +8,10 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Record the model discussion draft
+
+Captured the open design discussion as [architecture/model-discussion.md](architecture/model-discussion.md): the entity/value split (rooms and actors are entities, events are values), recursive rooms as directories with never-merged order, visibility as membership, event-type extensibility, room types as declarative specs (plugins as template directories, not kernel code), agent-facing primitives, and the LoopX-style long-horizon comparison. Explicitly **not a decision** — the converged points and the open questions (§8) are separated on purpose, and nothing here is planned until it survives usage evidence.
+
 ## 2026-08-29 — Take the hosted stack live: Render + Neon + Cloudflare Pages
 
 Deployed the real thing for the first time. The service runs on **Render free** (Singapore, Docker, `[redacted deployment address]`), the database on **Neon free** (`[redacted project identifier]`, also Singapore, auto-suspend 5 min idle), and the management UI on **Cloudflare Pages** (`[redacted deployment address]`). Verified end to end against the live service: healthz, dev-admin login, room creation, credential issue, actor registration, event append + read, and the CORS matrix (preflight 204 for the Pages origin, foreign origins get 401 with no headers).
