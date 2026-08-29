@@ -11,7 +11,7 @@ timestamp: 2026-08-29
 
 The [deployment shape](../architecture/hosted-plan.md) settled in hosted-plan.md: the Go server runs as one stateless Render free-tier web service, the database lives on Neon free, and the management UI is a static SPA on Cloudflare Pages. This runbook covers the server and the database, then the UI.
 
-The whole setup costs $0. The free-tier constraints that matter are recorded at the end.
+The whole setup costs $0. The free-tier constraints that matter are recorded at the end. The production instance lives at `[redacted deployment address]` with the UI at `[redacted deployment address]` (see [the log](../log.md)).
 
 ## 0. Prerequisites
 
@@ -56,6 +56,8 @@ openssl rand -hex 32
 5. Deploy. The service answers `GET /healthz` for the platform health check.
 
 The repo's [render.yaml](../../render.yaml) is a blueprint for the same thing; its two `sync: false` secrets are filled in from the dashboard or `render` CLI.
+
+Alternatively, drive everything from the API (the path this instance actually took): `RENDER_API_KEY` against `api.render.com/v1` — service type is `web_service`, and env vars are a full-replacement `PUT /v1/services/<id>/env-vars` with a bare array body. Note the API refuses service creation until the account has a payment method on file, even on the free plan; that one step stays dashboard-only.
 
 ## 5. Verify end to end
 

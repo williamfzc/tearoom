@@ -8,6 +8,17 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Take the hosted stack live: Render + Neon + Cloudflare Pages
+
+Deployed the real thing for the first time. The service runs on **Render free** (Singapore, Docker, `[redacted deployment address]`), the database on **Neon free** (`[redacted project identifier]`, also Singapore, auto-suspend 5 min idle), and the management UI on **Cloudflare Pages** (`[redacted deployment address]`). Verified end to end against the live service: healthz, dev-admin login, room creation, credential issue, actor registration, event append + read, and the CORS matrix (preflight 204 for the Pages origin, foreign origins get 401 with no headers).
+
+The live deployment surfaced two real gaps that the runbook had not caught:
+
+1. **A platform service without an explicit start command cannot serve.** The dashboard-created service ran the image's bare entrypoint and exited immediately. Fixed by making the image default to `hosted serve` (`$DATABASE_URL` interpolated at container start) — `6ea8bd6`. A platform start command still overrides it.
+2. **`TEAROOM_CORS_ORIGIN` was never read.** The `--cors-origin` flag defaulted to empty, so an env-driven service silently served without CORS. The flag now defaults to the env var — `2f792a5`.
+
+Operational notes recorded: Render's API types (`web_service`), the env-vars endpoint is a full-replacement `PUT` with a bare array body, the API requires a payment method on file even for free services (dashboard action, no API bypass), and neonctl 4.x auth is `neonctl auth` (browser) or `NEON_API_KEY`. The admin token lives at `~/.tearoom-admin-token` and in the service's `TEAROOM_HOSTED_ADMIN`.
+
 ## 2026-08-29 — Complete the implementation queue: polling, deployment files, management UI
 
 Shipped all three steps of [hosted-plan.md](architecture/hosted-plan.md)'s implementation queue, each green in `make check` before its commit:
