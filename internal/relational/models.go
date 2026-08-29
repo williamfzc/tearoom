@@ -11,9 +11,10 @@ import (
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
-// RoomID is the single Room each Store owns, matching the file backend's
-// room id so both backends answer the same identity for one .tearoom.
-const RoomID = "room"
+// DefaultRoomID is the Room id a local .tearoom owns, matching the file
+// backend's room id so both backends answer the same identity for one
+// workspace. Hosted Rooms use ids chosen by the control plane.
+const DefaultRoomID = "room"
 
 // Table names are the relational shape of record, not GORM's pluralized
 // model names.

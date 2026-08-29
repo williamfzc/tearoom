@@ -8,6 +8,14 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Ship hosted Phase 1: the multi-tenant server
+
+Implemented the first executable slice of the hosted product ([hosted-plan.md](architecture/hosted-plan.md)): a control plane and a per-room event API in front of the unchanged Room/Actor/Event kernel, all in `make check`.
+
+`relational` became multi-tenant: the `RoomID` sentinel is now a per-store `roomID`, `New(db, roomID)` makes the Store a cheap value object over a shared `*gorm.DB`, and `OpenURL(dsn)` opens PostgreSQL by URL while local use keeps `Init`/`OpenAt`. New `internal/control` owns the control plane (`ctl_accounts`, `ctl_memberships`, `ctl_credentials`, own migration chain): credentials are opaque `tr_` tokens — 192 random bits, sha256 at rest, bound to (room, actor, capabilities, expiry), plaintext shown once, individually revocable. New `internal/hosted` serves management routes (`/api/hosted/*`, dev admin bearer) and the authenticated event API (`/r/<room-id>/api/*`): a middleware resolves the Bearer to a credential, checks room binding, actor binding, and capability, then delegates to that room's own transport server with its own long-poll broadcaster. Wrong-room tokens answer 401 so they cannot probe room existence. The CLI gained the `hosted` group (`init-db`, `create-room`, `issue-credential`, `revoke`, `serve`); clients needed no new surface — `TEAROOM_SERVER` points at `/r/<id>` and `TEAROOM_TOKEN` carries the credential.
+
+[scripts/hosted-demo.sh](../scripts/hosted-demo.sh) (E8, 15 checks) proves the hosted stories S6–S8: a handoff through credentials with session resume, and the negative matrix — no token 401, wrong-room 401, actor mismatch 403, read-only append refused (CLI exit and HTTP 403), revoked bob dead while alice works. PostgreSQL validation stays gated behind `TEAROOM_TEST_PG` (`make pg-smoke` + a `pg_test.go` battery that mirrors the SQLite suite); both skip with a notice without a DSN. The GitHub OAuth exchange is the stub `login` route; S5 stays open as pending evidence.
+
 ## 2026-08-29 — Run the harness with real agents and close the remaining stories
 
 Ran the harness workflow with three real agents (one planner, one generator, one evaluator, each an independent agent session) on a shared Room server. Each learned the CLI from the skill, then the loop ran end to end: plan → generate → revise → generate v2 → approve → close, threaded by `caused_by`. Measured send latency 13–31 ms and event-to-delivery latency 18–20 ms over local HTTP; no stale writes, no retries needed. The agents' skill feedback (flags not in the reference, watch batch semantics, feed shape) went back into SKILL.md.

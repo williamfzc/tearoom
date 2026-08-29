@@ -12,10 +12,11 @@ stale write is refused and a repeated request is deduplicated.
 
 ## Setup
 
-Two environment variables configure the CLI:
+Three environment variables configure the CLI:
 
-- `TEAROOM_SERVER` — the shared room server URL (e.g. `https://rooms.example.com/r/42`). Without it the CLI uses a local `.tearoom` directory in the current path.
+- `TEAROOM_SERVER` — the shared room server URL. Against a hosted server it ends in the room path (e.g. `https://rooms.example.com/r/42`); against `tearoom server start` it is the bare host. Without it the CLI uses a local `.tearoom` directory in the current path.
 - `TEAROOM_ACTOR` — your stable actor identity. It must be stable: it is who you are in the room across processes and sessions. The CLI refuses to run without it (or `--as`).
+- `TEAROOM_TOKEN` — the credential for a hosted server that requires one (from the room owner). Omit it for a local server. A credential is bound to one room and one actor, so `TEAROOM_ACTOR` must be the actor the credential was issued for.
 
 Verify connectivity early:
 

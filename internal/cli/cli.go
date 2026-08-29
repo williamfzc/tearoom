@@ -39,6 +39,7 @@ Commands:
   room      manage the local workspace
   server    run a shared room service
   event     send, list, and watch events
+  hosted    run the hosted control plane and event service
 
 Environment:
   TEAROOM_ACTOR    stable actor identity
@@ -108,6 +109,8 @@ func (a *App) Run(args []string) int {
 		err = a.runServer(args[1:])
 	case "event":
 		err = a.runEvent(args[1:])
+	case "hosted":
+		err = a.runHosted(args[1:])
 	case "help":
 		err = a.runHelp(args[1:])
 	default:
@@ -142,6 +145,8 @@ func (a *App) runHelp(args []string) error {
 		fmt.Fprint(a.Out, serverHelp)
 	case "event":
 		fmt.Fprint(a.Out, eventHelp)
+	case "hosted":
+		fmt.Fprint(a.Out, hostedHelp)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

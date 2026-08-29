@@ -9,7 +9,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo check-evals docs fmt vet clean check
+.PHONY: all build cli test test-race smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo hosted-demo pg-smoke check-evals docs fmt vet clean check
 
 all: build
 
@@ -51,6 +51,16 @@ game-demo: cli
 worktree-demo: cli
 	@./scripts/worktree-demo.sh
 
+# The hosted stories: a multi-tenant server, admin-issued revocable
+# credentials, actor binding, and the 401/403 matrix. Dev mode, SQLite.
+hosted-demo: cli
+	@./scripts/hosted-demo.sh
+
+# The same invariants over a real PostgreSQL; skips with a notice unless
+# TEAROOM_TEST_PG (a postgres:// DSN) is set.
+pg-smoke: cli
+	@./scripts/pg-smoke.sh
+
 # The evaluation set must stay a bidirectional story<->proof map: a marker
 # removed from a script or a row removed from the registry fails the check.
 check-evals:
@@ -67,7 +77,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo check-evals docs
+check: fmt vet test smoke smoke-sqlite session-smoke harness-demo game-demo worktree-demo hosted-demo pg-smoke check-evals docs
 
 clean:
 	rm -rf $(BIN)

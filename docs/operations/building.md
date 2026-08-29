@@ -21,6 +21,8 @@ make session-smoke  # same-product and cross-product session exchange
 make harness-demo   # the harness workflow story end to end
 make game-demo      # one Werewolf round over directed role Events
 make worktree-demo  # two real git worktrees sharing one Room
+make hosted-demo    # the hosted credential matrix: auth, binding, revocation
+make pg-smoke       # the same invariants over PostgreSQL (skips without TEAROOM_TEST_PG)
 make check-evals    # the evaluation set stays bidirectionally consistent
 make check          # all checks plus documentation validation
 ```
@@ -30,3 +32,5 @@ Release builds use `CGO_ENABLED=0` to produce one static binary. On macOS, tests
 ## What the suites prove
 
 The [evaluation set](../evaluations.md) is the map: every suite there is bound to the user story it proves (story ↔ evaluation), and `check-evals` fails if the map drifts — a suite removed from `make check` while its story still claims proof, or a marker dropped from a script. Nothing is re-listed here so the two cannot disagree.
+
+PostgreSQL validation is gated: `make pg-smoke` and the `TEAROOM_TEST_PG` unit battery skip with a notice when the environment variable (a `postgres://` DSN) is absent, and run the full suite wherever a database exists.

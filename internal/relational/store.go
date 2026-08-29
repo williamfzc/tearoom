@@ -17,6 +17,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/williamfzc/tearoom/internal/core"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -25,10 +26,11 @@ import (
 const dsnPragmas = "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
 
 type Store struct {
-	root  string
-	db    *gorm.DB
-	now   func() time.Time
-	probe struct {
+	root   string
+	db     *gorm.DB
+	roomID string
+	now    func() time.Time
+	probe  struct {
 		mu   sync.Mutex
 		head uint64
 	}
@@ -38,14 +40,15 @@ type Store struct {
 // records the room row. Callers must have created root and written any
 // backend marker before calling.
 func Init(root, name string) (*Store, error) {
-	s, err := openDB(root)
+	db, err := openDB(root)
 	if err != nil {
 		return nil, err
 	}
+	s := New(db, DefaultRoomID)
 	if err := s.migrate(context.Background()); err != nil {
 		return nil, err
 	}
-	room := RoomRow{ID: RoomID, Name: name, CreatedAt: s.now().UTC()}
+	room := RoomRow{ID: s.roomID, Name: name, CreatedAt: s.now().UTC()}
 	if err := s.db.Create(&room).Error; err != nil {
 		return nil, err
 	}
@@ -62,23 +65,37 @@ func OpenAt(root string) (*Store, error) {
 		}
 		return nil, err
 	}
-	s, err := openDB(root)
+	db, err := openDB(root)
 	if err != nil {
 		return nil, err
 	}
+	s := New(db, DefaultRoomID)
 	if err := s.migrate(context.Background()); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-func openDB(root string) (*Store, error) {
+func openDB(root string) (*gorm.DB, error) {
 	path := filepath.Join(root, "room.db")
-	db, err := gorm.Open(sqlite.Open("file:"+path+dsnPragmas), &gorm.Config{})
-	if err != nil {
-		return nil, err
+	return gorm.Open(sqlite.Open("file:"+path+dsnPragmas), &gorm.Config{})
+}
+
+// New wraps an existing database connection for one Room. roomID is the
+// tenant key: many Stores can share one *gorm.DB as long as their room ids
+// differ. The caller is responsible for running migrations (s.migrate).
+func New(db *gorm.DB, roomID string) *Store {
+	return &Store{db: db, roomID: roomID, now: time.Now}
+}
+
+// OpenURL opens a database by DSN. PostgreSQL URLs use the postgres
+// dialector; any other DSN is treated as a SQLite path. Used by the hosted
+// layer; local use keeps Init/OpenAt.
+func OpenURL(dsn string) (*gorm.DB, error) {
+	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
+		return gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	}
-	return &Store{root: root, db: db, now: time.Now}, nil
+	return gorm.Open(sqlite.Open("file:"+dsn+dsnPragmas), &gorm.Config{})
 }
 
 func (s *Store) Root() string { return s.root }
@@ -87,7 +104,7 @@ func (s *Store) SetClock(now func() time.Time) { s.now = now }
 
 func (s *Store) Room(ctx context.Context) (*core.Room, error) {
 	var row RoomRow
-	if err := s.db.WithContext(ctx).Where("id = ?", RoomID).Limit(1).Find(&row).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", s.roomID).Limit(1).Find(&row).Error; err != nil {
 		return nil, err
 	}
 	if row.ID == "" {
@@ -105,7 +122,7 @@ func (s *Store) UpsertActor(ctx context.Context, id, role string) (*core.Actor, 
 	var actor *core.Actor
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row ActorRow
-		if err := tx.Where("room_id = ? AND id = ?", RoomID, id).Limit(1).Find(&row).Error; err != nil {
+		if err := tx.Where("room_id = ? AND id = ?", s.roomID, id).Limit(1).Find(&row).Error; err != nil {
 			return err
 		}
 		if row.ID != "" {
@@ -117,7 +134,7 @@ func (s *Store) UpsertActor(ctx context.Context, id, role string) (*core.Actor, 
 				return err
 			}
 		} else {
-			row = ActorRow{RoomID: RoomID, ID: id, Role: role, JoinedAt: now, LastSeenAt: now}
+			row = ActorRow{RoomID: s.roomID, ID: id, Role: role, JoinedAt: now, LastSeenAt: now}
 			if err := tx.Create(&row).Error; err != nil {
 				return err
 			}
@@ -133,7 +150,7 @@ func (s *Store) UpsertActor(ctx context.Context, id, role string) (*core.Actor, 
 
 func (s *Store) Actors(ctx context.Context) ([]*core.Actor, error) {
 	var rows []ActorRow
-	if err := s.db.WithContext(ctx).Where("room_id = ?", RoomID).Order("id").Find(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("room_id = ?", s.roomID).Order("id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	actors := make([]*core.Actor, 0, len(rows))
@@ -153,7 +170,7 @@ func (s *Store) Read(ctx context.Context, actor string, after uint64, limit int)
 	}
 	feed := &core.Feed{Room: room, Cursor: after, Events: []core.Event{}}
 	query := s.db.WithContext(ctx).
-		Where("room_id = ? AND seq > ?", RoomID, after).
+		Where("room_id = ? AND seq > ?", s.roomID, after).
 		Order("seq")
 	if limit > 0 {
 		// The SQL visibility predicate matches the canonical comma-joined
@@ -200,7 +217,7 @@ func (s *Store) AppendEvent(ctx context.Context, input core.AppendInput) (*core.
 		// 1. Lock the Room head. On SQLite the no-op update is the first
 		// write, which serializes concurrent appends before any of them
 		// reads; on PostgreSQL it takes the row lock.
-		if err := tx.Exec("UPDATE rooms SET name = name WHERE id = ?", RoomID).Error; err != nil {
+		if err := tx.Exec("UPDATE rooms SET name = name WHERE id = ?", s.roomID).Error; err != nil {
 			return err
 		}
 
@@ -216,7 +233,7 @@ func (s *Store) AppendEvent(ctx context.Context, input core.AppendInput) (*core.
 
 		// 3. Resolve an existing idempotency key.
 		var existing EventRow
-		if err := tx.Where("room_id = ? AND key = ?", RoomID, input.Key).Limit(1).Find(&existing).Error; err != nil {
+		if err := tx.Where("room_id = ? AND key = ?", s.roomID, input.Key).Limit(1).Find(&existing).Error; err != nil {
 			return err
 		}
 		if existing.Key != "" {
@@ -230,7 +247,7 @@ func (s *Store) AppendEvent(ctx context.Context, input core.AppendInput) (*core.
 
 		// 4. Compare the expected cursor with the current head.
 		var room RoomRow
-		if err := tx.Where("id = ?", RoomID).First(&room).Error; err != nil {
+		if err := tx.Where("id = ?", s.roomID).First(&room).Error; err != nil {
 			return err
 		}
 		if input.Expected != room.Head {
@@ -240,7 +257,7 @@ func (s *Store) AppendEvent(ctx context.Context, input core.AppendInput) (*core.
 		// 5-6. Assign the next dense sequence and insert the immutable Event.
 		seq := room.Head + 1
 		row := EventRow{
-			RoomID:     RoomID,
+			RoomID:     s.roomID,
 			Seq:        seq,
 			ID:         fmt.Sprintf("e%d", seq),
 			Actor:      input.Actor,
@@ -257,7 +274,7 @@ func (s *Store) AppendEvent(ctx context.Context, input core.AppendInput) (*core.
 		}
 
 		// 7. Advance the Room head in the same transaction.
-		if err := tx.Model(&RoomRow{}).Where("id = ?", RoomID).Update("head", seq).Error; err != nil {
+		if err := tx.Model(&RoomRow{}).Where("id = ?", s.roomID).Update("head", seq).Error; err != nil {
 			return err
 		}
 		event := row.coreEvent()
@@ -276,7 +293,7 @@ func (s *Store) Changed(ctx context.Context) (bool, error) {
 	var head uint64
 	if err := s.db.WithContext(ctx).
 		Model(&EventRow{}).
-		Where("room_id = ?", RoomID).
+		Where("room_id = ?", s.roomID).
 		Select("COALESCE(MAX(seq), 0)").
 		Scan(&head).Error; err != nil {
 		return false, err
@@ -295,7 +312,7 @@ func (s *Store) requireActor(ctx context.Context, id string) error {
 
 func (s *Store) requireActorTx(tx *gorm.DB, id string) error {
 	var count int64
-	if err := tx.Model(&ActorRow{}).Where("room_id = ? AND id = ?", RoomID, id).Count(&count).Error; err != nil {
+	if err := tx.Model(&ActorRow{}).Where("room_id = ? AND id = ?", s.roomID, id).Count(&count).Error; err != nil {
 		return err
 	}
 	if count == 0 {

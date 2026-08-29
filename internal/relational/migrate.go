@@ -28,8 +28,11 @@ var migrations = []struct {
 	}},
 }
 
-func (s *Store) migrate(ctx context.Context) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// Migrate upgrades a database to the current coordination schema. Shared
+// databases (the hosted control plane) call this directly on open; local
+// Stores run it through migrate.
+func Migrate(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.AutoMigrate(&schemaVersion{}); err != nil {
 			return err
 		}
@@ -54,4 +57,8 @@ func (s *Store) migrate(ctx context.Context) error {
 		}
 		return nil
 	})
+}
+
+func (s *Store) migrate(ctx context.Context) error {
+	return Migrate(s.db.WithContext(ctx))
 }
