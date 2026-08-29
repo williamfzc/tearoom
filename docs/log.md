@@ -8,6 +8,14 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Complete the implementation queue: polling, deployment files, management UI
+
+Shipped all three steps of [hosted-plan.md](architecture/hosted-plan.md)'s implementation queue, each green in `make check` before its commit:
+
+1. **Client-side watch polling** (`refactor: poll event watch from the client instead of the server-held wait`, 4fe77c9). `eventWatch` now reads on an interval for every store, exactly like the local branch; the CLI's waiter interface is gone. Watch's command surface, skill text, and demo semantics are unchanged — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays as the optional LAN optimization.
+2. **Deployment files** (`feat: add the deployment files`, e4c10be). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at [deploy.md](operations/deploy.md): Neon project + pooled DSN → `tearoom hosted init-db` → admin token → Render free-tier web service → end-to-end verification → TLS/domain notes → the 2026 free-tier constraints. The server gained `GET /healthz` (no credentials) for the platform health check.
+3. **Management UI** (`feat: allow a configured CORS origin`, b79e1f0; `feat: list room credentials for the management UI`, c5f2961; `web: build the hosted management UI`, fe0de64). A deliberately thin React + Vite static SPA in `web/` — rooms, credentials, room history — in the recorded Vercel/Claude-style minimal tech, built to `dist/` for Cloudflare Pages (`VITE_API_BASE` + `--cors-origin`). Supporting server work: CORS for one exact configured origin (preflight 204, foreign origins get no headers), and `GET /api/hosted/rooms/<id>/credentials` returning a hash-free `CredentialView` — the at-rest token digest never leaves the server.
+
 ## 2026-08-29 — Decide watch's wait moves to the client; settle the free deployment
 
 Re-examined the server-held long-poll: coordination tolerates seconds of latency, so the long-poll was over-engineering. `event watch` keeps its batch semantics and its place in the skill and the demos; the wait moves to the CLI — the same `Read` + interval loop the local mode already runs. The hosted server is therefore a stateless read/append/register API; Phase 1's `wait` parameter and per-room broadcaster remain only as an optional self-hosted-LAN optimization.

@@ -9,7 +9,7 @@ timestamp: 2026-08-29
 
 # Deploying the hosted server
 
-The [deployment shape](../architecture/hosted-plan.md) settled in hosted-plan.md: the Go server runs as one stateless Render free-tier web service, the database lives on Neon free, and the management UI (a later phase) is a static SPA on Cloudflare Pages. This runbook covers the server and the database.
+The [deployment shape](../architecture/hosted-plan.md) settled in hosted-plan.md: the Go server runs as one stateless Render free-tier web service, the database lives on Neon free, and the management UI is a static SPA on Cloudflare Pages. This runbook covers the server and the database, then the UI.
 
 The whole setup costs $0. The free-tier constraints that matter are recorded at the end.
 
@@ -82,7 +82,17 @@ TEAROOM_SERVER="$SVC/r/$ROOM" TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=alice \
 
 `*.onrender.com` serves HTTPS by default; custom domains are a paid-plan feature on Render, so free-tier agents use the `*.onrender.com` URL. TLS termination in front of the server is the security boundary assumed in [security.md](../domain/security.md).
 
-## 7. Free-tier constraints (2026)
+## 7. Management UI
+
+The [management UI](../../web/README.md) (`web/`) is a static React/Vite SPA. Build with the Render service as the API base, then deploy `dist/` to Cloudflare Pages:
+
+```bash
+VITE_API_BASE="$SVC" npm --prefix web run build
+```
+
+The server must allow the Pages origin: set `TEAROOM_CORS_ORIGIN` (or pass `--cors-origin`) to the Pages site's origin — without it the browser is refused by CORS. The UI signs in with the same `TEAROOM_HOSTED_ADMIN` token and manages rooms and credentials over `/api/hosted/*`.
+
+## 8. Free-tier constraints (2026)
 
 - **750 instance hours/month** — more than any month's 24/7 needs (the longest is 744), and spun-down time does not count. Client polling keeps the instance awake while any agent is watching.
 - **15-minute spin-down** — a quiet night sleeps the instance; the first request after that pays one 30–60 s cold start. Coordination tolerates this (`event watch` is a client poll, not a held connection).
