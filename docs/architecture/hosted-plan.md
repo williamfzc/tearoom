@@ -83,6 +83,14 @@ Neon (free)      — ctl_* control plane + coordination tables (the shared datab
 - **Comfort upgrade** — Fly.io shared-cpu-1x at ≈ $2/month when the free tier pinches (no cold starts, no hour accounting, no CORS).
 - **Superseded** — the earlier "stateful instance behind Cloudflare" shape (per-room broadcasters, held long-polls) and the developer's own machine behind a `cloudflared` tunnel. A self-hosted LAN server may still use the server-held wait as an optimization; the hosted product does not.
 
+## Implementation queue
+
+The direction is settled above; this is the executable order. Each step ends with its own conventional commit (`feat:`/`docs:`/`web:`, body ending `Co-Authored-By: Claude Code <noreply@anthropic.com>`), and `make check` green before the next step starts.
+
+1. **Client-side watch polling** (`internal/cli`). `eventWatch`'s remote branch stops using the server-held `wait`: poll with `Read` + `Sleep(interval)`, exactly like the local branch, so hosted serving is not required to hold requests. Watch's command surface, skill, and demo semantics must not change — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays untouched (optional LAN optimization).
+2. **Deployment files**. `Dockerfile` (multi-stage, `CGO_ENABLED=0` static build) + `render.yaml` (free tier web service, start command `tearoom hosted serve --database "$DATABASE_URL"`, env `TEAROOM_HOSTED_ADMIN`), plus a runbook at `docs/operations/deploy.md` linked from the operations index: Neon project + DSN, `tearoom hosted init-db`, the Render blueprint, TLS/domain notes, and the free-tier constraints recorded in the deployment shapes above (750 h math, cold start, 5 GB egress).
+3. **Management UI** (Phase 2). A React + Vite static SPA on Cloudflare Pages calling `/api/hosted/*` with a Bearer token: rooms, memberships, credentials, room history. Deliberately thin — no framework beyond React + Vite, no SSR. Visual direction recorded above: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type, cool but clean.
+
 ## Considered: the all-Cloudflare shape
 
 The free tiers are real (2026): Workers 100K requests/day (10 ms CPU, 1 MB body), D1 5 GB / 5M rows read / 100K rows written per day, R2 10 GB, Pages unlimited bandwidth. The watch-semantics objection is gone — client polling works against any HTTP surface. What still holds:
