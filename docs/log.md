@@ -8,6 +8,22 @@ timestamp: 2026-08-28
 
 # Change log
 
+## 2026-08-29 — Hold `event watch` on the server instead of polling
+
+Replaced the client 250 ms poll loop with a server-held long-poll. `GET /api/events` gains a `wait` parameter, capped at 60 seconds; the server returns as soon as a visible Event appears and otherwise returns an empty Feed when the wait elapses. Appends through the server wake waiters directly, and an idle fallback probes the Store for out-of-band writes without taking the lock or scanning the log (`core.Probe`; the file Store answers by stat). The CLI slices long waits into 30-second requests against a server and keeps polling only for local Rooms.
+
+SSE stays deferred: `event watch` returns batches and exits, so a long-poll matches its semantics with less machinery.
+
+## 2026-08-29 — Ship the cross-agent skill
+
+Added [.claude/skills/tearoom/SKILL.md](../.claude/skills/tearoom/SKILL.md), the first cross-product integration surface: a self-contained skill teaching `event send`, `event list`, and `event watch` — setup, cursor semantics, the stale-write resync pattern, safe idempotent retries, and directed events. Zero new server code; the CLI is the contract. A dedicated MCP server remains deferred until a caller needs structured tool results instead of shell commands.
+
+## 2026-08-29 — Record the competitive landscape and its priorities
+
+Added [competitive-analysis.md](competitive-analysis.md): the 2026 protocol, memory, and coding-agent market; the claim that the coordination contract A2A and MCP leave undefined is Tearoom's layer; and three near-term priorities — a server-held wait for `event watch`, the relational Store first on SQLite, and a cross-agent skill over the CLI before any MCP server.
+
+Kept [product.md](product.md) authoritative over scope; the analysis only orders work already named there.
+
 ## 2026-08-28 — Set the hosted product and persistence direction
 
 Kept the current local file Store as a valid implementation and set the next storage path as an ORM-backed relational Store: SQLite for local use and PostgreSQL for hosted operation. The ORM remains below `core.Store`, and database transactions must preserve the existing cursor, ordering, idempotency, admission, and visibility invariants.

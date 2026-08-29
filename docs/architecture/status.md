@@ -17,12 +17,13 @@ timestamp: 2026-08-28
 - Idempotent appends and directed Event filtering.
 - HTTP client and server implementing the same Store contract.
 - Executable same-product and cross-product multi-session scenarios.
+- Server-held wait for `event watch`: a long-poll request wakes on the first visible Event and costs nothing while a Room is quiet.
 
 ## Deliberately absent
 
 - Browser or WebAssembly console.
 - Built-in Thread, Lease, Gate, task, workflow, or game entities.
-- Realtime push; `event watch` polls.
+- SSE push; watch returns batches through long-poll instead of streaming.
 - Hosted multi-tenant service and management interface.
 - GitHub login, Room ownership, membership, Agent credentials, and billing.
 - ORM-backed SQLite and PostgreSQL Store implementations.
@@ -36,6 +37,10 @@ timestamp: 2026-08-28
 3. Measure irrelevant Event volume before adding subscriptions, mute, or indexing.
 4. Add the relational Store behind `core.Store`, beginning with SQLite and validating the same migrations on PostgreSQL.
 5. Build the hosted identity boundary described in [../domain/hosted-identity.md](../domain/hosted-identity.md) before exposing Rooms to untrusted clients.
+
+## Near-term priorities
+
+[../competitive-analysis.md](../competitive-analysis.md) set three: a server-held wait for `event watch` (shipped as long-poll), the relational Store beginning with SQLite, and one cross-agent skill over the CLI before any MCP server.
 
 ## Completion proof
 

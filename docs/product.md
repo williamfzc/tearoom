@@ -101,6 +101,10 @@ The core does not know these applications, but it can carry them:
 - No silent success when the store is unavailable or a write is stale.
 - No claim that recipient filtering is security until server authentication exists.
 
+## Competitive context
+
+The market evidence behind this product, and the near-term priorities it justifies, live in [competitive-analysis.md](competitive-analysis.md). This document remains authoritative over scope; the analysis only orders work already named here.
+
 ## Command surface
 
 The CLI exposes three top-level concerns rather than every domain entity:
