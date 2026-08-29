@@ -99,12 +99,14 @@ tearoom event watch --timeout 5m
 
 Starts after the saved cursor. If the Room has already advanced, it returns immediately; otherwise it waits. A successful watch returns the same Feed shape as `event list` and advances the cursor. Timeout exits 3 without changing local state.
 
+Against a server the wait is held by the server (long-poll, sliced into requests of at most 30 seconds), so a quiet Room costs the waiting client and the server nothing until an Event appears. Against a local Room the CLI polls at `--poll-interval`.
+
 Optional controls:
 
 - `--as`: Actor identity.
 - `--cursor`: override the saved starting cursor.
 - `--timeout`: maximum wait.
-- `--poll-interval`: polling interval.
+- `--poll-interval`: local polling interval; ignored when `TEAROOM_SERVER` is set.
 
 ## Actor bootstrap and directed Events
 

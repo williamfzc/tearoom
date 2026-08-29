@@ -18,8 +18,14 @@ timestamp: 2026-08-28
 | `GET` | `/api/room` | Read Room identity |
 | `GET` | `/api/actors` | List Actors |
 | `POST` | `/api/actors` | Join or refresh an Actor with `{ID, Role}` |
-| `GET` | `/api/events?actor=a&after=12&limit=20` | Read a visible Feed |
+| `GET` | `/api/events?actor=a&after=12&limit=20&wait=30` | Read a visible Feed, optionally waiting |
 | `POST` | `/api/events` | Append one `core.AppendInput` |
+
+## Server-held wait
+
+`GET /api/events` accepts `wait`, a non-negative number of seconds. With `wait=0` (or omitted) the request returns immediately, like the file Store. With a positive `wait`, the server holds the request until a visible Event appears after the cursor and returns it at once; if `wait` elapses with nothing new, it returns an empty Feed with the requested cursor so the client can ask again. `wait` is capped at 60 seconds; longer waits are sliced into repeated requests.
+
+A held request costs the server nothing while the room is quiet: appends through the server wake it directly, and an idle fallback check uses the Store's cheap change probe rather than a full read. A waiting Actor still sees only Events visible to it.
 
 ## Append body
 

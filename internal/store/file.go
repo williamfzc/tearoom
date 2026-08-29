@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -21,8 +22,13 @@ import (
 const Dir = ".tearoom"
 
 type File struct {
-	root string
-	now  func() time.Time
+	root  string
+	now   func() time.Time
+	probe struct {
+		mu    sync.Mutex
+		size  int64
+		mtime time.Time
+	}
 }
 
 func Find(start string) (string, error) {
@@ -89,6 +95,22 @@ func Init(dir, name string) (*File, error) {
 func (f *File) Root() string { return f.root }
 
 func (f *File) SetClock(now func() time.Time) { f.now = now }
+
+// Changed reports whether the event log changed since the previous call, by
+// stat rather than by taking the lock and scanning. Waiters use it to avoid
+// burning constant lock and scan work while a room is quiet.
+func (f *File) Changed(context.Context) (bool, error) {
+	info, err := os.Stat(f.path("events.jsonl"))
+	if err != nil {
+		return false, err
+	}
+	p := &f.probe
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	changed := p.size != info.Size() || !p.mtime.Equal(info.ModTime())
+	p.size, p.mtime = info.Size(), info.ModTime()
+	return changed, nil
+}
 
 func (f *File) path(name string) string { return filepath.Join(f.root, name) }
 

@@ -70,6 +70,10 @@ func NewClient(base, token string) *Client {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	return c.doWith(c.HTTP, ctx, method, path, body, out)
+}
+
+func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, path string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -88,7 +92,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if c.Token != "" {
 		request.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	response, err := c.HTTP.Do(request)
+	response, err := httpClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("tearoom server unreachable: %w", err)
 	}
@@ -122,6 +126,20 @@ func (c *Client) Read(ctx context.Context, actor string, after uint64, limit int
 	var feed core.Feed
 	path := "/api/events?actor=" + url.QueryEscape(actor) + "&after=" + strconv.FormatUint(after, 10) + "&limit=" + strconv.Itoa(limit)
 	return &feed, c.do(ctx, http.MethodGet, path, nil, &feed)
+}
+
+// ReadWait extends Read with a server-held wait: the server returns as soon as
+// a visible event appears, or after wait with an empty feed. The request gets
+// its own client timeout so the server's hold is never cut short by the
+// shared 30s default.
+func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) (*core.Feed, error) {
+	seconds := (wait + time.Second - 1) / time.Second
+	path := "/api/events?actor=" + url.QueryEscape(actor) + "&after=" + strconv.FormatUint(after, 10) +
+		"&limit=" + strconv.Itoa(limit) + "&wait=" + strconv.FormatInt(int64(seconds), 10)
+	waiter := *c.HTTP
+	waiter.Timeout = wait + 10*time.Second
+	var feed core.Feed
+	return &feed, c.doWith(&waiter, ctx, http.MethodGet, path, nil, &feed)
 }
 
 func (c *Client) AppendEvent(ctx context.Context, input core.AppendInput) (*core.Event, error) {

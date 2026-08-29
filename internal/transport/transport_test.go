@@ -71,6 +71,108 @@ func TestStaleWriteSurvivesTheWire(t *testing.T) {
 	}
 }
 
+func TestLongPollReturnsWhenEventAppends(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	for _, actor := range []string{"a", "b"} {
+		if _, err := client.UpsertActor(ctx, actor, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := make(chan *core.Feed, 1)
+	go func() {
+		feed, err := client.ReadWait(ctx, "b", 0, 0, 5*time.Second)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		got <- feed
+	}()
+	time.Sleep(150 * time.Millisecond)
+	if _, err := client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "wake", Key: "wake-key"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case feed := <-got:
+		if feed.Cursor != 1 || len(feed.Events) != 1 || feed.Events[0].Body != "wake" {
+			t.Fatalf("feed = %+v", feed)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("long-poll did not return after an append")
+	}
+}
+
+func TestLongPollReturnsEmptyFeedAfterWait(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	if _, err := client.UpsertActor(ctx, "a", ""); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	feed, err := client.ReadWait(ctx, "a", 0, 0, 250*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feed.Cursor != 0 || len(feed.Events) != 0 {
+		t.Fatalf("feed = %+v", feed)
+	}
+	if elapsed := time.Since(before); elapsed < 200*time.Millisecond {
+		t.Fatalf("empty long-poll returned too early: %s", elapsed)
+	}
+}
+
+func TestLongPollShortCircuitsOnAvailableEvents(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	if _, err := client.UpsertActor(ctx, "a", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "already", Key: "one"}); err != nil {
+		t.Fatal(err)
+	}
+	before := time.Now()
+	feed, err := client.ReadWait(ctx, "a", 0, 0, 5*time.Second)
+	if err != nil || len(feed.Events) != 1 {
+		t.Fatalf("feed = %+v, err = %v", feed, err)
+	}
+	if elapsed := time.Since(before); elapsed > time.Second {
+		t.Fatalf("short circuit took %s", elapsed)
+	}
+}
+
+func TestLongPollPicksUpOutOfBandAppend(t *testing.T) {
+	client, file := newPair(t)
+	ctx := context.Background()
+	for _, actor := range []string{"a", "b"} {
+		if _, err := client.UpsertActor(ctx, actor, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := make(chan *core.Feed, 1)
+	go func() {
+		feed, err := client.ReadWait(ctx, "b", 0, 0, 4*time.Second)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		got <- feed
+	}()
+	time.Sleep(150 * time.Millisecond)
+	// A direct file append bypasses the server's broadcaster and is only
+	// observable through the idle fallback probe.
+	if _, err := file.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "direct", Key: "direct-key"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case feed := <-got:
+		if len(feed.Events) != 1 || feed.Events[0].Body != "direct" {
+			t.Fatalf("feed = %+v", feed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("long-poll missed an out-of-band append")
+	}
+}
+
 func TestUnreachableServerFailsLoudly(t *testing.T) {
 	client := NewClient("http://127.0.0.1:1", "")
 	client.HTTP.Timeout = 100 * time.Millisecond

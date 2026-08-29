@@ -106,3 +106,10 @@ type Store interface {
 	Read(ctx context.Context, actor string, after uint64, limit int) (*Feed, error)
 	AppendEvent(ctx context.Context, input AppendInput) (*Event, error)
 }
+
+// Probe is an optional Store capability for long waits: Changed reports
+// whether durable state changed, without the cost of a full read or lock.
+// A store that lacks it makes a waiter fall back to periodic full reads.
+type Probe interface {
+	Changed(ctx context.Context) (bool, error)
+}

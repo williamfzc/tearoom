@@ -52,3 +52,22 @@ code=$(curl -sS -o "$WORK/stale.json" -w '%{http_code}' -X POST "$BASE/api/event
 [ "$code" = 409 ]
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["kind"]=="stale_write" and d["actual"]==3' "$WORK/stale.json"
 printf '  ok   stale raw HTTP writer is rejected\n'
+
+# Server-held watch: the waiting CLI learns about a later Event without
+# polling. The append goes through the server, so the wait is broadcast.
+TEAROOM_SERVER="$BASE" TEAROOM_ACTOR=same "$TEAROOM" event list >/dev/null
+( sleep 1; curl -fsS -X POST "$BASE/api/events" -H 'Content-Type: application/json' \
+  -d '{"actor":"other","expected":3,"type":"message","body":"wake up","key":"wake-key"}' >/dev/null ) &
+CURL_PID=$!
+W=$(TEAROOM_SERVER="$BASE" TEAROOM_ACTOR=same "$TEAROOM" event watch --timeout 5s)
+printf '%s' "$W" |
+  python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["events"][0]["body"]=="wake up" and d["cursor"]==4'
+printf '  ok   server-held watch returns the later Event\n'
+# Wait only for the appending curl, never for the long-running server itself.
+wait "$CURL_PID"
+
+# Watch timeout still exits 3 against a server.
+CODE=0
+TEAROOM_SERVER="$BASE" TEAROOM_ACTOR=same "$TEAROOM" event watch --timeout 200ms >/dev/null 2>&1 || CODE=$?
+[ "$CODE" = 3 ]
+printf '  ok   server watch timeout exits 3\n'
