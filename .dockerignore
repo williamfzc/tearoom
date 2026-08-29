@@ -5,3 +5,5 @@ bin
 .tearoom
 docs
 scripts
+web
+node_modules
