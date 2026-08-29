@@ -151,4 +151,30 @@ func Revoke(ctx context.Context, db *gorm.DB, roomID string, id uint) error {
 	return nil
 }
 
+// CredentialView is the management-facing shape of a credential. The hash
+// is deliberately absent: the list must not carry even the at-rest token
+// digest, which exists only to verify presented tokens.
+type CredentialView struct {
+	ID           uint       `json:"id"`
+	RoomID       string     `json:"room"`
+	ActorID      string     `json:"actor"`
+	Capabilities string     `json:"capabilities"`
+	ExpiresAt    *time.Time `json:"expires_at"`
+	RevokedAt    *time.Time `json:"revoked_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+// ListCredentials returns a Room's credentials, newest first, for the
+// management UI: identity, capabilities, expiry, and revocation state —
+// never the hash, which exists only at issue time.
+func ListCredentials(ctx context.Context, db *gorm.DB, roomID string) ([]CredentialView, error) {
+	var views []CredentialView
+	err := db.WithContext(ctx).
+		Table("ctl_credentials").
+		Where("room_id = ?", roomID).
+		Order("id DESC").
+		Scan(&views).Error
+	return views, err
+}
+
 func ptr(t time.Time) *time.Time { return &t }

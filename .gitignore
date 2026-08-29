@@ -5,4 +5,8 @@ bin/
 # Local Room state belongs to one checkout and must not enter version control.
 .tearoom/
 
+# The management UI's build outputs come from `npm run build`.
+web/dist/
+web/node_modules/
+
 .DS_Store

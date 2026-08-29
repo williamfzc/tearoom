@@ -236,6 +236,60 @@ func TestCredentialGatesTheEventAPI(t *testing.T) {
 	}
 }
 
+func TestCredentialsListForTheManagementUI(t *testing.T) {
+	h := newTestHosted(t)
+	room := h.createRoom("ops")
+	bobID, _ := h.issue(room, "bob", control.CapRead)
+	_, alice := h.issue(room, "alice", control.CapRead+","+control.CapAppend)
+
+	status, out := h.request(http.MethodGet, "/api/hosted/rooms/"+room+"/credentials", adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("list = %d, want 200", status)
+	}
+	list, ok := out["credentials"].([]any)
+	if !ok || len(list) != 2 {
+		t.Fatalf("list = %v, want 2 credentials", out)
+	}
+	first, _ := list[0].(map[string]any)
+	if first["actor"] != "alice" {
+		t.Fatalf("newest credential = %v, want alice", first)
+	}
+	for key := range first {
+		if key == "hash" || key == "token" {
+			t.Fatalf("list leaks %s", key)
+		}
+	}
+
+	// Revocation shows up in the list without deleting the row.
+	status, _ = h.request(http.MethodDelete,
+		fmt.Sprintf("/api/hosted/rooms/%s/credentials/%d", room, bobID), adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("revoke = %d", status)
+	}
+	status, out = h.request(http.MethodGet, "/api/hosted/rooms/"+room+"/credentials", adminToken, nil)
+	list, _ = out["credentials"].([]any)
+	revoked := list[1].(map[string]any)
+	if revoked["revoked_at"] == nil {
+		t.Fatalf("revoked credential still live: %v", revoked)
+	}
+
+	// The list stays room-scoped: another room answers its own empty list.
+	other := h.createRoom("other")
+	status, out = h.request(http.MethodGet, "/api/hosted/rooms/"+other+"/credentials", adminToken, nil)
+	if status != http.StatusOK {
+		t.Fatalf("other-room list = %d", status)
+	}
+	if list, _ := out["credentials"].([]any); len(list) != 0 {
+		t.Fatalf("other room leaks credentials: %v", list)
+	}
+
+	// Alice's token is not the admin token and cannot reach the list.
+	status, _ = h.request(http.MethodGet, "/api/hosted/rooms/"+room+"/credentials", alice, nil)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("credential on admin route = %d, want 401", status)
+	}
+}
+
 func TestDevLoginAnswersTheAdminToken(t *testing.T) {
 	h := newTestHosted(t)
 	status, out := h.request(http.MethodPost, "/api/hosted/login", adminToken, map[string]any{"provider": "dev"})

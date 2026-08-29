@@ -183,6 +183,13 @@ func (s *Server) handleRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.Method == http.MethodGet && len(parts) == 2:
+		creds, err := control.ListCredentials(r.Context(), s.db, roomID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"credentials": creds})
 	case r.Method == http.MethodPost && len(parts) == 2:
 		var input struct {
 			Actor        string `json:"actor"`
