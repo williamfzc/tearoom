@@ -16,6 +16,7 @@ The vocabulary is Room, Actor, and Event. Application protocols add event types,
 | [problem.md](problem.md) | The failures the Room prevents |
 | [boundaries.md](boundaries.md) | Stale views, retries, contention, and hidden events |
 | [agent-experience.md](agent-experience.md) | Cursor-based attention and remaining cost controls |
+| [harness-workflow.md](harness-workflow.md) | User story: plan/generate/evaluate agents run one loop through a Room |
 | [security.md](security.md) | Current trust boundary and required hardening |
 | [hosted-identity.md](hosted-identity.md) | GitHub sign-in, Room ownership, and Agent credentials |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |
