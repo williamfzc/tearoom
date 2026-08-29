@@ -62,6 +62,30 @@ TEAROOM_SERVER=http://localhost:8787/r/<id> TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=a
 - **Abuse controls**: per-account rate limits, quotas, and moderation surfaces; the coordination schema is untouched.
 - **Retention and compaction**: the interplay of expiry/compaction with the append contract (dense `seq`, `caused_by` chains, cursor semantics) needs its own design before data deletion is offered.
 
+## Deployment shapes
+
+Phase 1 code runs as one process; the shape follows what is stateful:
+
+```
+Cloudflare — DNS · TLS · CDN · DDoS · static admin UI · R2   (stateless, free)
+        │ reverse proxy
+tearoom hosted serve  — per-room broadcaster registry,      (stateful, one instance)
+                        60s-held watch long-polls, GORM pool
+        │ postgres://
+Neon (free tier) — ctl_* control plane + coordination tables (the shared database)
+```
+
+The service itself is deliberately stateful in memory: the per-room `Broadcaster` and held watch connections are the product's handoff mechanism. Nothing stops a second instance behind a sticky load balancer, but the memory state is real and single-instance is the default. Cheapest early shape: the developer's own machine behind a `cloudflared` tunnel (Cloudflare gives DNS, TLS, CDN for free), Neon as the database; a VPS later. The gateway layers — DNS, TLS, CDN, rate limiting, the static management UI, R2 for exports — are the genuinely stateless parts and belong to Cloudflare in any shape.
+
+## Considered: the all-Cloudflare shape
+
+The free tiers are real (2026): Workers 100K requests/day (10 ms CPU, 1 MB body), D1 5 GB / 5M rows read / 100K rows written per day, R2 10 GB. It is rejected for the current product, not because of quotas:
+
+- **Watch semantics.** `event watch` is the agent handoff mechanism: a server-held long-poll capped at 60 s, woken by a per-room in-process `Broadcaster`. Workers is a request-lifecycle model — a request cannot hold a 60-second wait on an in-process channel, and the broadcaster registry has no home in a stateless runtime. Porting watch to Queues/Durable Objects (whose free-tier availability is itself uncertain) is a rewrite of half the transport layer.
+- **The database.** D1 is SQLite behind a worker-binding API, not a DSN GORM can open. Switching to it throws away the Phase 1 property that one schema and one transaction contract run over SQLite locally and PostgreSQL hosted; and 100K rows written/day is a daily limit for an active coordination room, not a headroom figure.
+
+What Cloudflare contributes today, free and conflict-free: DNS, TLS, CDN, DDoS protection, the static management UI, and R2 for event exports. Reconsider the all-Cloudflare shape if watch ever degrades to polling (the CLI's local mode already polls) or if a serverless event API becomes acceptable.
+
 ## Decisions recorded
 
 | Decision | Choice | Why |
