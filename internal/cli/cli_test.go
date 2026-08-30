@@ -37,6 +37,20 @@ func TestRootAndCommandHelp(t *testing.T) {
 		if !strings.Contains(out.String(), test.want) {
 			t.Fatalf("%v output %q does not contain %q", test.args, out.String(), test.want)
 		}
+		if test.args[0] == "--help" && strings.Contains(out.String(), "help      show help") {
+			t.Fatalf("root help still advertises removed help command: %q", out.String())
+		}
+	}
+}
+
+func TestRoomJoinHelpUsesPositionalActor(t *testing.T) {
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"room", "join", "--help"}); code != ExitOK {
+		t.Fatalf("room join --help exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "tearoom room join <actor>") || strings.Contains(out.String(), "--as") {
+		t.Fatalf("room join help = %q", out.String())
 	}
 }
 
@@ -50,6 +64,7 @@ func TestRemovedCommandsAreRejected(t *testing.T) {
 		{"watch"},
 		{"hosted"},
 		{"actor"},
+		{"help"},
 		{"room", "info"},
 	} {
 		app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
@@ -69,11 +84,37 @@ func TestRemovedFlagsAreRejected(t *testing.T) {
 		{"send", "hello", "--id", "k", "--as", "alice"},
 		{"read", "--cursor", "3", "--as", "alice"},
 		{"read", "--type", "message", "--as", "alice"},
+		{"server", "start", "--directory", t.TempDir()},
 	} {
 		app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
 		if code := app.Run(args); code != ExitError {
 			t.Fatalf("%v exit = %d, want %d", args, code, ExitError)
 		}
+	}
+}
+
+func TestRootHelpCommandIsRemovedButSendHelpIsText(t *testing.T) {
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"help"}); code != ExitError {
+		t.Fatalf("help exit = %d, want %d", code, ExitError)
+	}
+	dir := initRoom(t, "planner")
+	var out bytes.Buffer
+	app = &App{Out: &out, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"send", "help", "--as", "planner"}); code != ExitOK {
+		t.Fatalf("send help exit = %d, output %s", code, out.String())
+	}
+	var event core.Event
+	if err := json.Unmarshal(out.Bytes(), &event); err != nil || string(event.Content) != `"help"` {
+		t.Fatalf("send help output = %q", out.String())
+	}
+	// `--` makes a help-looking positional argument literal as well.
+	out.Reset()
+	if code := app.Run([]string{"send", "--as", "planner", "--", "--help"}); code != ExitOK {
+		t.Fatalf("send -- --help exit = %d, output %s", code, out.String())
+	}
+	if err := json.Unmarshal(out.Bytes(), &event); err != nil || string(event.Content) != `"--help"` {
+		t.Fatalf("send literal help output = %q", out.String())
 	}
 }
 
@@ -134,7 +175,7 @@ func TestJoinAndMembers(t *testing.T) {
 	}
 	var joinOut bytes.Buffer
 	joinApp := &App{Out: &joinOut, Err: io.Discard, Dir: dir}
-	if code := joinApp.Run([]string{"room", "join", "--as", "developer"}); code != ExitOK {
+	if code := joinApp.Run([]string{"room", "join", "developer"}); code != ExitOK {
 		t.Fatalf("room join exit = %d", code)
 	}
 	var actor core.Actor
@@ -149,6 +190,18 @@ func TestJoinAndMembers(t *testing.T) {
 	var actors []core.Actor
 	if err := json.Unmarshal(members.Bytes(), &actors); err != nil || len(actors) != 2 {
 		t.Fatalf("room members output = %q", members.String())
+	}
+}
+
+func TestRoomJoinRequiresPositionalActor(t *testing.T) {
+	dir := initRoom(t, "planner")
+	t.Setenv("TEAROOM_ACTOR", "from-environment")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"room", "join"}); code != ExitError {
+		t.Fatalf("join without positional actor exit = %d, want %d", code, ExitError)
+	}
+	if code := app.Run([]string{"room", "join", "--as", "bob"}); code != ExitError {
+		t.Fatalf("join with --as exit = %d, want %d", code, ExitError)
 	}
 }
 
@@ -200,7 +253,7 @@ func TestSendToRepeatable(t *testing.T) {
 	dir := initRoom(t, "planner")
 	for _, member := range []string{"bob", "carol"} {
 		app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-		if code := app.Run([]string{"room", "join", "--as", member}); code != ExitOK {
+		if code := app.Run([]string{"room", "join", member}); code != ExitOK {
 			t.Fatalf("join %s exit = %d", member, code)
 		}
 	}
@@ -223,6 +276,18 @@ func TestSendUnjoinedActorRejected(t *testing.T) {
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
 	if code := app.Run([]string{"send", "hello", "--as", "stranger"}); code != ExitError {
 		t.Fatalf("unjoined send exit = %d, want %d", code, ExitError)
+	}
+}
+
+func TestSendUnknownRecipientSuggestsJoin(t *testing.T) {
+	dir := initRoom(t, "planner")
+	var errOut bytes.Buffer
+	app := &App{Out: io.Discard, Err: &errOut, Dir: dir}
+	if code := app.Run([]string{"send", "hello", "--as", "planner", "--to", "bob"}); code != ExitError {
+		t.Fatalf("send unknown recipient exit = %d, want %d", code, ExitError)
+	}
+	if !strings.Contains(errOut.String(), "tearoom room join <actor>") {
+		t.Fatalf("error = %q, want join hint", errOut.String())
 	}
 }
 
@@ -272,7 +337,7 @@ func TestReadAfterBoundary(t *testing.T) {
 			t.Fatalf("send %d exit = %d", i, code)
 		}
 	}
-	for _, after := range []string{"e1", "1"} {
+	for _, after := range []string{"e1"} {
 		var out bytes.Buffer
 		reader := &App{Out: &out, Err: io.Discard, Dir: dir}
 		if code := reader.Run([]string{"read", "--after", after, "--as", "planner"}); code != ExitOK {
@@ -286,6 +351,14 @@ func TestReadAfterBoundary(t *testing.T) {
 		if err := json.Unmarshal([]byte(lines[0]), &first); err != nil || first.Seq != 2 {
 			t.Fatalf("read --after %s first event = %s", after, lines[0])
 		}
+	}
+}
+
+func TestReadAfterRequiresPresentationAddress(t *testing.T) {
+	dir := initRoom(t, "planner")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"read", "--after", "1", "--as", "planner"}); code != ExitError {
+		t.Fatalf("bare --after exit = %d, want %d", code, ExitError)
 	}
 }
 
@@ -468,7 +541,7 @@ func TestServerModeRoundTrip(t *testing.T) {
 		t.Fatalf("http send exit = %d", code)
 	}
 	joiner := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
-	if code := joiner.Run([]string{"room", "join", "--as", "bob"}); code != ExitOK {
+	if code := joiner.Run([]string{"room", "join", "bob"}); code != ExitOK {
 		t.Fatalf("http join exit = %d", code)
 	}
 	var out bytes.Buffer

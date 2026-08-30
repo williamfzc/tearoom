@@ -39,7 +39,6 @@ Commands:
   send      append one event
   read      read events, optionally waiting for later ones
   server    serve the nearest room over HTTP
-  help      show help
 
 Environment:
   TEAROOM_ACTOR    stable actor identity
@@ -95,8 +94,6 @@ func (a *App) Run(args []string) int {
 		err = a.runRead(args[1:])
 	case "server":
 		err = a.runServer(args[1:])
-	case "help":
-		err = a.runHelp(args[1:])
 	default:
 		fmt.Fprintf(a.Err, "unknown command %q\n\n%s", args[0], rootHelp)
 		return ExitError
@@ -113,26 +110,6 @@ func (a *App) Run(args []string) int {
 	default:
 		return ExitError
 	}
-}
-
-func (a *App) runHelp(args []string) error {
-	if len(args) == 0 {
-		fmt.Fprint(a.Out, rootHelp)
-		return nil
-	}
-	switch args[0] {
-	case "room":
-		fmt.Fprint(a.Out, roomHelp)
-	case "send":
-		fmt.Fprint(a.Out, sendHelp)
-	case "read":
-		fmt.Fprint(a.Out, readHelp)
-	case "server":
-		fmt.Fprint(a.Out, serverHelp)
-	default:
-		return fmt.Errorf("unknown command %q", args[0])
-	}
-	return nil
 }
 
 func (a *App) runRoom(args []string) error {
@@ -199,20 +176,24 @@ func (a *App) roomJoin(args []string) error {
 	const help = `Join the nearest room as an explicit member.
 
 Usage:
-  tearoom room join [--as <actor>]
+  tearoom room join <actor>
+
+Arguments:
+  <actor>            stable actor identity to admit
 
 Flags:
-  --as string        actor identity; defaults to TEAROOM_ACTOR
   -h, --help         show help
 `
 	flags := newFlags("room join", a.Out, help)
-	as := flags.String("as", "", "")
-	if err := parseNoArgs(flags, args); err != nil {
+	if err := parse(flags, args); err != nil {
 		return err
 	}
-	actor, err := actorID(*as)
-	if err != nil {
-		return err
+	if flags.NArg() != 1 {
+		return errors.New("usage: tearoom room join <actor>")
+	}
+	actor := strings.TrimSpace(flags.Arg(0))
+	if actor == "" {
+		return errors.New("actor identity is required")
 	}
 	st, err := a.openStore()
 	if err != nil {
@@ -306,6 +287,9 @@ func (a *App) runSend(args []string) error {
 		IdempotencyKey: *key,
 	})
 	if err != nil {
+		if errors.Is(err, core.ErrUnknownActor) && strings.Contains(err.Error(), "recipient") {
+			return fmt.Errorf("%w; run `tearoom room join <actor>` first", err)
+		}
 		return err
 	}
 	return json.NewEncoder(a.Out).Encode(event)
@@ -442,25 +426,23 @@ Usage:
 
 Flags:
   --address string      listen address (default "127.0.0.1:8787")
-  --directory string    directory containing the room (default ".")
   -h, --help            show help
 `
 	flags := newFlags("server start", a.Out, help)
 	address := flags.String("address", "127.0.0.1:8787", "")
-	directory := flags.String("directory", a.Dir, "")
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
 	}
 	if err := requireLoopback(*address); err != nil {
 		return err
 	}
-	st, err := store.Open(*directory)
+	st, err := store.Open(a.Dir)
 	if err != nil {
-		return fmt.Errorf("open room under %s: %w", *directory, err)
+		return fmt.Errorf("open room under %s: %w", a.Dir, err)
 	}
 	defer closeStore(st)
 	server := &http.Server{Addr: *address, Handler: transport.NewServer(st).Handler(), ReadHeaderTimeout: 10 * time.Second}
-	root := *directory
+	root := a.Dir
 	if r, ok := st.(interface{ Root() string }); ok {
 		root = r.Root()
 	}
@@ -538,14 +520,20 @@ func parseBackend(value string) (store.Backend, error) {
 	}
 }
 
-// parseBoundary accepts the presentation address e<seq> or a bare sequence.
+// parseBoundary accepts only the presentation address e<seq>.
 func parseBoundary(value string) (uint64, error) {
 	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(value, "e")
 	if value == "" {
 		return 0, nil
 	}
-	seq, err := strconv.ParseUint(value, 10, 64)
+	if !strings.HasPrefix(value, "e") {
+		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
+	}
+	seqText := strings.TrimPrefix(value, "e")
+	if seqText == "" {
+		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
+	}
+	seq, err := strconv.ParseUint(seqText, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
 	}
@@ -585,7 +573,7 @@ func parseNoArgs(flags *flag.FlagSet, args []string) error {
 	return nil
 }
 
-func isHelp(value string) bool { return value == "help" || value == "-h" || value == "--help" }
+func isHelp(value string) bool { return value == "-h" || value == "--help" }
 
 func newFlags(name string, out io.Writer, help string) *flag.FlagSet {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -631,7 +619,11 @@ func parse(flags *flag.FlagSet, args []string) error {
 		i++
 		options = append(options, args[i])
 	}
-	return flags.Parse(append(options, positionals...))
+	parsed := options
+	if literal {
+		parsed = append(parsed, "--")
+	}
+	return flags.Parse(append(parsed, positionals...))
 }
 
 func isBoolFlag(value *flag.Flag) bool {
