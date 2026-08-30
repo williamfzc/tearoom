@@ -1,9 +1,10 @@
-// Cross-process tests prove flock serializes the complete append decision.
+// Cross-process tests prove flock serializes the complete append decision:
+// concurrent appends from independent OS processes all succeed and receive a
+// dense, ordered sequence.
 package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,9 +16,7 @@ import (
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
-// TestConcurrentProcessesAssignOneSequence proves flock protects the complete
-// cursor-check-and-append operation across independent OS processes.
-func TestConcurrentProcessesAssignOneSequence(t *testing.T) {
+func TestConcurrentProcessesDenseSequence(t *testing.T) {
 	if testing.Short() {
 		t.Skip("spawns processes")
 	}
@@ -27,7 +26,7 @@ func TestConcurrentProcessesAssignOneSequence(t *testing.T) {
 	for i := range ids {
 		ids[i] = fmt.Sprintf("actor-%d", i)
 	}
-	join(t, file, ids...)
+	admit(t, file, ids...)
 
 	start := make(chan struct{})
 	results := make([]string, writers)
@@ -46,27 +45,22 @@ func TestConcurrentProcessesAssignOneSequence(t *testing.T) {
 	close(start)
 	group.Wait()
 
-	wins, stale := 0, 0
-	for _, result := range results {
-		switch result {
-		case "WON":
-			wins++
-		case "STALE":
-			stale++
-		default:
-			t.Fatalf("unexpected helper result %q", result)
+	for i, result := range results {
+		if !strings.HasPrefix(result, "OK:") {
+			t.Fatalf("helper %d result %q", i, result)
 		}
 	}
-	if wins != 1 || stale != writers-1 {
-		t.Fatalf("wins=%d stale=%d results=%v", wins, stale, results)
-	}
-
-	feed, err := file.Read(context.Background(), ids[0], 0, 0)
+	events, err := file.Read(context.Background(), ids[0], 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feed.Cursor != 1 || len(feed.Events) != 1 {
-		t.Fatalf("feed after race = %+v", feed)
+	if len(events) != writers {
+		t.Fatalf("events = %d, want %d", len(events), writers)
+	}
+	for i, event := range events {
+		if event.Seq != uint64(i+1) {
+			t.Fatalf("sequence not dense across processes: event %d has seq %d", i, event.Seq)
+		}
 	}
 }
 
@@ -86,21 +80,18 @@ func TestAppendProcessHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	root, actor := os.Args[separator+1], os.Args[separator+2]
-	file, err := OpenAt(filepath.Clean(root))
+	st, err := Open(filepath.Clean(root))
 	if err != nil {
 		fmt.Print("OPEN_ERROR")
 		os.Exit(2)
 	}
-	_, err = file.AppendEvent(context.Background(), core.AppendInput{
-		Actor: actor, Expected: 0, Type: "race", Body: actor, Key: actor,
+	event, err := st.Append(context.Background(), actor, core.AppendRequest{
+		Content: []byte(`"race"`),
 	})
-	switch {
-	case err == nil:
-		fmt.Print("WON")
-	case errors.Is(err, core.ErrStaleWrite):
-		fmt.Print("STALE")
-	default:
+	if err != nil {
 		fmt.Print("ERROR")
+		os.Exit(2)
 	}
+	fmt.Printf("OK:%d", event.Seq)
 	os.Exit(0)
 }

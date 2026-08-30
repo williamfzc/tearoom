@@ -1,9 +1,14 @@
-// File store contract tests cover the invariants every client receives.
+// File store tests: the shared core conformance battery plus layout,
+// admission, and in-process concurrency invariants specific to the file
+// backend.
 package store
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -12,135 +17,165 @@ import (
 
 func newTestStore(t *testing.T) *File {
 	t.Helper()
-	st, err := Init(t.TempDir(), "test", BackendFile)
+	st, err := Init(t.TempDir(), BackendFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return st.(*File)
 }
 
-func join(t *testing.T, file *File, ids ...string) {
+func admit(t *testing.T, file *File, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, err := file.UpsertActor(context.Background(), id, ""); err != nil {
+		if _, err := file.AdmitActor(context.Background(), id); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func TestAppendRejectsStaleCursor(t *testing.T) {
-	file := newTestStore(t)
-	join(t, file, "a", "b")
-	ctx := context.Background()
-
-	if _, err := file.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "first", Key: "one"}); err != nil {
-		t.Fatal(err)
-	}
-	_, err := file.AppendEvent(ctx, core.AppendInput{Actor: "b", Expected: 0, Type: "message", Body: "I thought it was empty", Key: "two"})
-	var stale *core.StaleWriteError
-	if !errors.As(err, &stale) {
-		t.Fatalf("stale append error = %v", err)
-	}
-	if stale.Expected != 0 || stale.Actual != 1 {
-		t.Fatalf("stale cursors = %d/%d", stale.Expected, stale.Actual)
-	}
-}
-
-func TestIdempotentRetryReturnsOriginalEvent(t *testing.T) {
-	file := newTestStore(t)
-	join(t, file, "a")
-	input := core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "once", Key: "stable-key"}
-	first, err := file.AppendEvent(context.Background(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	input.Expected = first.Seq
-	retry, err := file.AppendEvent(context.Background(), input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if retry.ID != first.ID {
-		t.Fatalf("retry created %s, want %s", retry.ID, first.ID)
-	}
-	feed, _ := file.Read(context.Background(), "a", 0, 0)
-	if len(feed.Events) != 1 {
-		t.Fatalf("events = %d, want 1", len(feed.Events))
-	}
-}
-
-func TestPrivateEventVisibleOnlyToSenderAndRecipients(t *testing.T) {
-	file := newTestStore(t)
-	join(t, file, "seer", "wolf", "villager")
-	event, err := file.AppendEvent(context.Background(), core.AppendInput{
-		Actor: "seer", Expected: 0, Type: "role.assigned", Body: "wolf", To: []string{"wolf"}, Key: "secret",
+func TestFileStoreConformsToCoreContract(t *testing.T) {
+	core.StoreContract(t, func(t *testing.T) core.Store {
+		return newTestStore(t)
 	})
+}
+
+func TestInitWritesFormat2Marker(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, BackendFile); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, Dir, markerName))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, actor := range []string{"seer", "wolf"} {
-		feed, err := file.Read(context.Background(), actor, 0, 0)
-		if err != nil || len(feed.Events) != 1 || feed.Events[0].ID != event.ID {
-			t.Fatalf("%s did not see private event: %+v %v", actor, feed, err)
+	var m marker
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Format != 2 || m.Backend != string(BackendFile) {
+		t.Fatalf("marker = %+v, want format 2 file", m)
+	}
+}
+
+func TestLayoutHasNoCursorOrSessionState(t *testing.T) {
+	file := newTestStore(t)
+	admit(t, file, "a")
+	ctx := context.Background()
+	if _, err := file.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"x"`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Read(ctx, "a", 0, 0); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(file.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowed := map[string]bool{
+		"store.json":   true,
+		"room.json":    true,
+		"actors.json":  true,
+		"events.jsonl": true,
+		"lock":         true,
+	}
+	for _, entry := range entries {
+		if !allowed[entry.Name()] {
+			t.Fatalf("unexpected file in room: %s", entry.Name())
 		}
 	}
-	feed, err := file.Read(context.Background(), "villager", 0, 0)
+}
+
+func TestRoomIdentityFromDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "planning")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Init(dir, BackendFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(feed.Events) != 0 || feed.Cursor != 1 {
-		t.Fatalf("villager feed = %+v", feed)
+	room, err := st.Room(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.ID != "planning" {
+		t.Fatalf("room id = %q, want %q", room.ID, "planning")
 	}
 }
 
-func TestConcurrentAppendHasOneWinnerPerCursor(t *testing.T) {
+func TestAdmitJoiningAgainReturnsExistingActor(t *testing.T) {
+	file := newTestStore(t)
+	first, err := file.AdmitActor(context.Background(), "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := file.AdmitActor(context.Background(), "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != first.ID || !again.Joined.Equal(first.Joined) {
+		t.Fatalf("re-join changed the actor: %+v then %+v", first, again)
+	}
+	actors, err := file.Actors(context.Background())
+	if err != nil || len(actors) != 1 {
+		t.Fatalf("actors = %+v, %v", actors, err)
+	}
+}
+
+func TestAppendRejectsInvalidContent(t *testing.T) {
+	file := newTestStore(t)
+	admit(t, file, "a")
+	ctx := context.Background()
+	if _, err := file.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage("")}); err == nil {
+		t.Fatal("empty content accepted")
+	}
+	if _, err := file.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage("{")}); err == nil {
+		t.Fatal("invalid JSON content accepted")
+	}
+}
+
+func TestConcurrentAppendIsDenseInProcess(t *testing.T) {
 	file := newTestStore(t)
 	const writers = 12
 	ids := make([]string, writers)
 	for i := range ids {
-		ids[i] = string(rune('a' + i))
+		ids[i] = fmt.Sprintf("actor-%d", i)
 	}
-	join(t, file, ids...)
+	admit(t, file, ids...)
 
 	var group sync.WaitGroup
 	start := make(chan struct{})
 	results := make(chan error, writers)
-	for i, actor := range ids {
+	for _, actor := range ids {
 		group.Add(1)
-		go func(i int, actor string) {
+		go func(actor string) {
 			defer group.Done()
 			<-start
-			_, err := file.AppendEvent(context.Background(), core.AppendInput{
-				Actor: actor, Expected: 0, Type: "message", Body: actor, Key: actor,
+			_, err := file.Append(context.Background(), actor, core.AppendRequest{
+				Content: json.RawMessage(fmt.Sprintf(`"from %s"`, actor)),
 			})
 			results <- err
-		}(i, actor)
+		}(actor)
 	}
 	close(start)
 	group.Wait()
 	close(results)
-
-	wins, stale := 0, 0
 	for err := range results {
-		switch {
-		case err == nil:
-			wins++
-		case errors.Is(err, core.ErrStaleWrite):
-			stale++
-		default:
-			t.Fatalf("unexpected result: %v", err)
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
-	if wins != 1 || stale != writers-1 {
-		t.Fatalf("wins=%d stale=%d", wins, stale)
-	}
-}
 
-func TestUnknownActorCannotReadOrWrite(t *testing.T) {
-	file := newTestStore(t)
-	if _, err := file.Read(context.Background(), "missing", 0, 0); !errors.Is(err, core.ErrUnknownActor) {
-		t.Fatalf("read error = %v", err)
+	events, err := file.Read(context.Background(), ids[0], 0, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := file.AppendEvent(context.Background(), core.AppendInput{Actor: "missing", Type: "message", Body: "x", Key: "missing-actor"}); !errors.Is(err, core.ErrUnknownActor) {
-		t.Fatalf("write error = %v", err)
+	if len(events) != writers {
+		t.Fatalf("events = %d, want %d", len(events), writers)
+	}
+	for i, event := range events {
+		if event.Seq != uint64(i+1) {
+			t.Fatalf("sequence not dense: event %d has seq %d", i, event.Seq)
+		}
 	}
 }
