@@ -238,3 +238,26 @@ func TestReadCorruptRecipientsFailsClosed(t *testing.T) {
 		t.Fatal("corrupt recipient JSON was accepted")
 	}
 }
+
+func TestReadCorruptEventMembershipFailsClosed(t *testing.T) {
+	tests := map[string]EventRow{
+		"ghost author": {
+			Seq: 1, Actor: "ghost", At: time.Now().UTC(), To: "[]", Content: `"ok"`,
+		},
+		"ghost recipient": {
+			Seq: 1, Actor: "planner", At: time.Now().UTC(), To: `["ghost"]`, Content: `"ok"`,
+		},
+	}
+	for name, row := range tests {
+		t.Run(name, func(t *testing.T) {
+			st := newTestStore(t)
+			row.RoomID = st.roomID
+			if err := st.db.Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.Read(context.Background(), "planner", 0, 0); err == nil {
+				t.Fatal("event with a non-member identity was accepted")
+			}
+		})
+	}
+}

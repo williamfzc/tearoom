@@ -148,6 +148,43 @@ func TestCorruptRecordFailsClosed(t *testing.T) {
 	}
 }
 
+func TestLegacyAndTrailingRecordJSONFailsClosed(t *testing.T) {
+	tests := map[string]string{
+		"unknown nested event field": `{"event":{"seq":1,"actor":"planner","at":"2026-08-30T00:00:00Z","content":"x","id":"legacy"}}`,
+		"unknown envelope field":     `{"event":{"seq":1,"actor":"planner","at":"2026-08-30T00:00:00Z","content":"x"},"legacy":"field"}`,
+		"trailing JSON value":        `{"event":{"seq":1,"actor":"planner","at":"2026-08-30T00:00:00Z","content":"x"}} {"event":{}}`,
+	}
+	for name, line := range tests {
+		t.Run(name, func(t *testing.T) {
+			file := newTestStore(t)
+			if err := os.WriteFile(filepath.Join(file.Root(), "events.jsonl"), []byte(line+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Read(context.Background(), "planner", 0, 0); err == nil {
+				t.Fatal("non-canonical event record was accepted")
+			}
+		})
+	}
+}
+
+func TestCorruptEventMembershipFailsClosed(t *testing.T) {
+	tests := map[string]string{
+		"ghost author":    `{"event":{"seq":1,"actor":"ghost","at":"2026-08-30T00:00:00Z","content":"x"}}`,
+		"ghost recipient": `{"event":{"seq":1,"actor":"planner","at":"2026-08-30T00:00:00Z","to":["ghost"],"content":"x"}}`,
+	}
+	for name, line := range tests {
+		t.Run(name, func(t *testing.T) {
+			file := newTestStore(t)
+			if err := os.WriteFile(filepath.Join(file.Root(), "events.jsonl"), []byte(line+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Read(context.Background(), "planner", 0, 0); err == nil {
+				t.Fatal("event with a non-member identity was accepted")
+			}
+		})
+	}
+}
+
 func TestAppendRejectsInvalidContent(t *testing.T) {
 	file := newTestStore(t)
 	admit(t, file, "a")

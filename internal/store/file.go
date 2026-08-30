@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -121,11 +122,16 @@ func (f *File) Read(_ context.Context, actorID string, after uint64, limit int) 
 		return nil, err
 	}
 	defer unlock()
-	if err := f.requireActor(actorID); err != nil {
+	actors, err := f.loadActors()
+	if err != nil {
 		return nil, err
 	}
+	members := actorSet(actors)
+	if !isMember(members, actorID) {
+		return nil, fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
+	}
 	events := []core.Event{}
-	err = f.scanRecords(func(rec record) (bool, error) {
+	err = f.scanRecords(members, func(rec record) (bool, error) {
 		if rec.Event.Seq > after {
 			events = append(events, rec.Event)
 			if limit > 0 && len(events) >= limit {
@@ -161,18 +167,23 @@ func (f *File) Append(_ context.Context, actorID string, request core.AppendRequ
 		return nil, err
 	}
 	defer unlock()
-	if err := f.requireActor(actorID); err != nil {
+	actors, err := f.loadActors()
+	if err != nil {
 		return nil, err
 	}
+	members := actorSet(actors)
+	if !isMember(members, actorID) {
+		return nil, fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
+	}
 	for _, recipient := range to {
-		if err := f.requireActor(recipient); err != nil {
-			return nil, fmt.Errorf("recipient %q: %w", recipient, err)
+		if !isMember(members, recipient) {
+			return nil, fmt.Errorf("recipient %q: %w", recipient, core.ErrUnknownActor)
 		}
 	}
 
 	var head uint64
 	var duplicate *record
-	err = f.scanRecords(func(rec record) (bool, error) {
+	err = f.scanRecords(members, func(rec record) (bool, error) {
 		head = rec.Event.Seq
 		if key != "" && rec.Event.Actor == actorID && rec.Idempotency == key {
 			if bytes.Equal(rec.Fingerprint, fingerprint) {
@@ -240,7 +251,7 @@ func (f *File) loadActors() ([]core.Actor, error) {
 	return actors, nil
 }
 
-func (f *File) scanRecords(fn func(record) (bool, error)) error {
+func (f *File) scanRecords(members map[string]struct{}, fn func(record) (bool, error)) error {
 	file, err := os.Open(f.path("events.jsonl"))
 	if err != nil {
 		return err
@@ -251,10 +262,19 @@ func (f *File) scanRecords(fn func(record) (bool, error)) error {
 	var expectedSeq uint64
 	for scanner.Scan() {
 		var rec record
-		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(scanner.Bytes()))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&rec); err != nil {
 			return fmt.Errorf("decode event log: %w", err)
 		}
-		if err := validateRecord(rec, expectedSeq+1); err != nil {
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return errors.New("decode event log: trailing JSON value")
+			}
+			return fmt.Errorf("decode event log: trailing JSON: %w", err)
+		}
+		if err := validateRecord(rec, expectedSeq+1, members); err != nil {
 			return err
 		}
 		expectedSeq = rec.Event.Seq
@@ -269,12 +289,15 @@ func (f *File) scanRecords(fn func(record) (bool, error)) error {
 	return scanner.Err()
 }
 
-func validateRecord(rec record, expectedSeq uint64) error {
+func validateRecord(rec record, expectedSeq uint64, members map[string]struct{}) error {
 	if rec.Event.Seq != expectedSeq {
 		return fmt.Errorf("invalid event log sequence %d: want %d", rec.Event.Seq, expectedSeq)
 	}
 	if strings.TrimSpace(rec.Event.Actor) == "" || rec.Event.Actor != strings.TrimSpace(rec.Event.Actor) {
 		return errors.New("invalid event log actor")
+	}
+	if !isMember(members, rec.Event.Actor) {
+		return fmt.Errorf("invalid event log event %d: actor %q is not an admitted member", rec.Event.Seq, rec.Event.Actor)
 	}
 	if rec.Event.At.IsZero() {
 		return fmt.Errorf("invalid event log event %d: timestamp is required", rec.Event.Seq)
@@ -286,6 +309,11 @@ func validateRecord(rec record, expectedSeq uint64) error {
 	if normalized := core.NormalizeTo(rec.Event.To); !equalStrings(rec.Event.To, normalized) {
 		return fmt.Errorf("invalid event log event %d: to is not normalized", rec.Event.Seq)
 	}
+	for _, recipient := range rec.Event.To {
+		if !isMember(members, recipient) {
+			return fmt.Errorf("invalid event log event %d: recipient %q is not an admitted member", rec.Event.Seq, recipient)
+		}
+	}
 	if rec.Idempotency == "" && len(rec.Fingerprint) != 0 {
 		return fmt.Errorf("invalid event log event %d: fingerprint without idempotency key", rec.Event.Seq)
 	}
@@ -296,6 +324,19 @@ func validateRecord(rec record, expectedSeq uint64) error {
 		}
 	}
 	return nil
+}
+
+func actorSet(actors []core.Actor) map[string]struct{} {
+	members := make(map[string]struct{}, len(actors))
+	for _, actor := range actors {
+		members[actor.ID] = struct{}{}
+	}
+	return members
+}
+
+func isMember(members map[string]struct{}, actorID string) bool {
+	_, ok := members[actorID]
+	return ok
 }
 
 func (f *File) readJSON(name string, out any) error {

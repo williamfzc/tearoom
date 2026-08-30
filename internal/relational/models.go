@@ -67,11 +67,14 @@ type MetaRow struct {
 }
 
 // coreEvent converts a stored row back into the domain Event. The To column
-// is JSON we wrote ourselves, so an unmarshal failure can only mean file
-// corruption; the empty list is the safe reading.
-func (r EventRow) coreEvent() (core.Event, error) {
+// is JSON we wrote ourselves, so malformed JSON or non-member identities are
+// storage corruption and fail closed.
+func (r EventRow) coreEvent(members map[string]struct{}) (core.Event, error) {
 	if r.Seq == 0 || strings.TrimSpace(r.Actor) == "" || r.Actor != strings.TrimSpace(r.Actor) || r.At.IsZero() {
 		return core.Event{}, fmt.Errorf("invalid stored event %d", r.Seq)
+	}
+	if !isMember(members, r.Actor) {
+		return core.Event{}, fmt.Errorf("invalid stored event %d: actor %q is not an admitted member", r.Seq, r.Actor)
 	}
 	var to []string
 	if err := json.Unmarshal([]byte(r.To), &to); err != nil {
@@ -79,6 +82,11 @@ func (r EventRow) coreEvent() (core.Event, error) {
 	}
 	if normalized := core.NormalizeTo(to); !equalStrings(to, normalized) {
 		return core.Event{}, fmt.Errorf("stored event %d recipients are not normalized", r.Seq)
+	}
+	for _, recipient := range to {
+		if !isMember(members, recipient) {
+			return core.Event{}, fmt.Errorf("invalid stored event %d: recipient %q is not an admitted member", r.Seq, recipient)
+		}
 	}
 	content, err := core.CompactJSON(json.RawMessage(r.Content))
 	if err != nil || string(content) != r.Content {
@@ -91,6 +99,11 @@ func (r EventRow) coreEvent() (core.Event, error) {
 		To:      to,
 		Content: content,
 	}, nil
+}
+
+func isMember(members map[string]struct{}, actorID string) bool {
+	_, ok := members[actorID]
+	return ok
 }
 
 func equalStrings(a, b []string) bool {

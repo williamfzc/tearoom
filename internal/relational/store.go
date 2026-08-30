@@ -196,8 +196,12 @@ func (s *Store) Actors(ctx context.Context) ([]core.Actor, error) {
 // admitted actor. Repeated reads are side-effect-free; no cursor is persisted.
 func (s *Store) Read(ctx context.Context, actorID string, after uint64, limit int) ([]core.Event, error) {
 	actorID = strings.TrimSpace(actorID)
-	if err := s.requireActor(ctx, actorID); err != nil {
+	members, err := s.actorSet(ctx)
+	if err != nil {
 		return nil, err
+	}
+	if !isMember(members, actorID) {
+		return nil, fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
 	}
 	query := s.db.WithContext(ctx).
 		Where("room_id = ? AND seq > ?", s.roomID, after).
@@ -211,7 +215,7 @@ func (s *Store) Read(ctx context.Context, actorID string, after uint64, limit in
 	}
 	events := make([]core.Event, 0, len(rows))
 	for _, row := range rows {
-		event, err := row.coreEvent()
+		event, err := row.coreEvent(members)
 		if err != nil {
 			return nil, err
 		}
@@ -251,12 +255,16 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 		}
 
 		// 2. Admission.
-		if err := s.requireActorTx(tx, actorID); err != nil {
+		members, err := s.actorSetTx(tx)
+		if err != nil {
 			return err
 		}
+		if !isMember(members, actorID) {
+			return fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
+		}
 		for _, recipient := range to {
-			if err := s.requireActorTx(tx, recipient); err != nil {
-				return fmt.Errorf("recipient %q: %w", recipient, err)
+			if !isMember(members, recipient) {
+				return fmt.Errorf("recipient %q: %w", recipient, core.ErrUnknownActor)
 			}
 		}
 
@@ -280,7 +288,7 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 				if original.Seq == 0 {
 					return fmt.Errorf("idempotency key %q lost its original event", key)
 				}
-				event, err := original.coreEvent()
+				event, err := original.coreEvent(members)
 				if err != nil {
 					return err
 				}
@@ -321,6 +329,22 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 
 func (s *Store) requireActor(ctx context.Context, id string) error {
 	return s.requireActorTx(s.db.WithContext(ctx), id)
+}
+
+func (s *Store) actorSet(ctx context.Context) (map[string]struct{}, error) {
+	return s.actorSetTx(s.db.WithContext(ctx))
+}
+
+func (s *Store) actorSetTx(tx *gorm.DB) (map[string]struct{}, error) {
+	var rows []ActorRow
+	if err := tx.Where("room_id = ?", s.roomID).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	members := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		members[row.ID] = struct{}{}
+	}
+	return members, nil
 }
 
 func (s *Store) requireActorTx(tx *gorm.DB, id string) error {
