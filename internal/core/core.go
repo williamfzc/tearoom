@@ -1,10 +1,11 @@
-// Package core defines Tearoom's complete domain vocabulary and storage contract.
-// A room contains durable actors and one append-only sequence of events.
+// Package core defines Tearoom's domain vocabulary and storage contract.
+// A room contains admitted actors and one ordered, append-only event history.
 package core
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,70 +19,62 @@ var (
 	ErrConflict     = errors.New("conflict")
 	ErrNoRoom       = errors.New("no room: run 'tearoom room init' first")
 	ErrUnknownActor = errors.New("unknown actor")
-	ErrStaleWrite   = errors.New("stale write")
 )
 
-// StaleWriteError rejects an event based on an older room view.
-type StaleWriteError struct {
-	Expected uint64 `json:"expected"`
-	Actual   uint64 `json:"actual"`
-}
-
-func (e *StaleWriteError) Error() string {
-	return fmt.Sprintf("room changed: read again (expected cursor %d, current cursor %d)", e.Expected, e.Actual)
-}
-
-func (e *StaleWriteError) Is(target error) bool {
-	return target == ErrStaleWrite || target == ErrConflict
-}
-
-// Room is the durable boundary in which actors exchange events.
+// Room is the durable boundary in which actors exchange events. One room owns
+// one ordered event sequence; its identity and creation time are fixed at init.
 type Room struct {
 	ID      string    `json:"id"`
-	Name    string    `json:"name"`
 	Created time.Time `json:"created"`
 }
 
-// Actor is a durable participant identity, independent of a process or session.
+// Actor is a durable participant identity, independent of any process or
+// session. Admission is explicit: joining an already-admitted actor returns
+// the existing actor.
 type Actor struct {
-	ID       string    `json:"id"`
-	Role     string    `json:"role,omitempty"`
-	Joined   time.Time `json:"joined"`
-	LastSeen time.Time `json:"last_seen"`
+	ID     string    `json:"id"`
+	Joined time.Time `json:"joined"`
 }
 
-// Event is one immutable fact in a room's ordered log. An empty To list means
-// every actor may read it; otherwise only the sender and named recipients may.
+// Event is one immutable contribution in a room's dense sequence. Every member
+// may read every event; To names whom the event addresses and is public
+// addressing metadata, never a visibility or secrecy boundary.
 type Event struct {
-	ID       string          `json:"id"`
-	Room     string          `json:"room"`
-	Seq      uint64          `json:"seq"`
-	Actor    string          `json:"actor"`
-	At       time.Time       `json:"at"`
-	Type     string          `json:"type"`
-	Body     string          `json:"body,omitempty"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	To       []string        `json:"to,omitempty"`
-	CausedBy string          `json:"caused_by,omitempty"`
-	Key      string          `json:"key"`
+	Seq     uint64          `json:"seq"`
+	Actor   string          `json:"actor"`
+	At      time.Time       `json:"at"`
+	To      []string        `json:"to,omitempty"`
+	Content json.RawMessage `json:"content"`
 }
 
-// VisibleTo reports whether an actor may read an event.
-func (e Event) VisibleTo(actor string) bool {
-	if len(e.To) == 0 || e.Actor == actor {
-		return true
-	}
-	for _, id := range e.To {
-		if id == actor {
-			return true
-		}
-	}
-	return false
+// Address returns the presentation address e<seq> of the event.
+func (e Event) Address() string { return fmt.Sprintf("e%d", e.Seq) }
+
+// AppendRequest carries the caller-provided parts of one append. Content is
+// arbitrary JSON (plain text is encoded as a JSON string by the CLI);
+// IdempotencyKey, when set, is matched per (room, actor, key) and never
+// becomes an Event field.
+type AppendRequest struct {
+	To             []string        `json:"to"`
+	Content        json.RawMessage `json:"content"`
+	IdempotencyKey string          `json:"-"`
 }
 
-// NormalizeRecipients trims, splits on commas, deduplicates, and sorts. Every
-// Store backend stores and compares recipients in this single canonical form.
-func NormalizeRecipients(values []string) []string {
+// Store is the only persistence seam. Every implementation enforces explicit
+// admission, dense ordered append, membership visibility, pure caller-owned
+// reads, and per-request idempotency atomically.
+type Store interface {
+	Room(ctx context.Context) (*Room, error)
+	AdmitActor(ctx context.Context, actorID string) (*Actor, error)
+	Actors(ctx context.Context) ([]Actor, error)
+	Read(ctx context.Context, actorID string, after uint64, limit int) ([]Event, error)
+	Append(ctx context.Context, actorID string, request AppendRequest) (*Event, error)
+}
+
+// NormalizeTo returns the canonical form of the To addressing list: each value
+// is trimmed, comma-split, deduplicated, and sorted. Stores persist and compare
+// To in this single canonical form.
+func NormalizeTo(values []string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
@@ -97,60 +90,35 @@ func NormalizeRecipients(values []string) []string {
 	return out
 }
 
-// SameEvent reports whether an existing event matches a retried append well
-// enough that the retry returns the original instead of conflicting.
-func SameEvent(event Event, input AppendInput) bool {
-	return event.Actor == input.Actor && event.Type == input.Type && event.Body == input.Body &&
-		event.CausedBy == input.CausedBy && event.Key == input.Key &&
-		bytes.Equal(event.Data, input.Data) && equalStrings(event.To, input.To)
-}
-
-// AppendInput carries every condition required for one atomic append.
-type AppendInput struct {
-	Actor    string          `json:"actor"`
-	Expected uint64          `json:"expected"`
-	Type     string          `json:"type"`
-	Body     string          `json:"body,omitempty"`
-	Data     json.RawMessage `json:"data,omitempty"`
-	To       []string        `json:"to,omitempty"`
-	CausedBy string          `json:"caused_by,omitempty"`
-	Key      string          `json:"key,omitempty"`
-}
-
-// Feed is a visible slice of a room log plus the last sequence inspected. A
-// writer must pass Cursor back as Expected; the store rejects it if the room
-// changed in between.
-type Feed struct {
-	Room   *Room   `json:"room"`
-	Cursor uint64  `json:"cursor"`
-	Events []Event `json:"events"`
-}
-
-// Store is the only persistence seam. Every append implementation must enforce
-// ordering, stale-write rejection, visibility and idempotency atomically.
-type Store interface {
-	Room(ctx context.Context) (*Room, error)
-	UpsertActor(ctx context.Context, id, role string) (*Actor, error)
-	Actors(ctx context.Context) ([]*Actor, error)
-	Read(ctx context.Context, actor string, after uint64, limit int) (*Feed, error)
-	AppendEvent(ctx context.Context, input AppendInput) (*Event, error)
-}
-
-// Probe is an optional Store capability for long waits: Changed reports
-// whether durable state changed, without the cost of a full read or lock.
-// A store that lacks it makes a waiter fall back to periodic full reads.
-type Probe interface {
-	Changed(ctx context.Context) (bool, error)
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
+// CompactJSON returns the canonical compacted form of valid JSON content,
+// without insignificant whitespace. The empty message is rejected: content is
+// required, though null is valid content.
+func CompactJSON(raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		return nil, errors.New("content is required")
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
+	if !json.Valid(raw) {
+		return nil, errors.New("content must be valid JSON")
 	}
-	return true
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, raw); err != nil {
+		return nil, err
+	}
+	return json.RawMessage(buf.Bytes()), nil
+}
+
+// Fingerprint returns the idempotency identity of one append request: SHA-256
+// over the actor, the normalized To list, and the compacted content bytes.
+// Pass already-compacted content and already-normalized To; the Store contract
+// performs both normalizations before any fingerprint comparison.
+func Fingerprint(actor string, to []string, content json.RawMessage) []byte {
+	h := sha256.New()
+	h.Write([]byte(actor))
+	h.Write([]byte{0})
+	for _, id := range to {
+		h.Write([]byte(id))
+		h.Write([]byte{0})
+	}
+	h.Write(content)
+	return h.Sum(nil)
 }
