@@ -95,6 +95,43 @@ func TestClientReadWaitHonorsSubsecondBudget(t *testing.T) {
 	}
 }
 
+func TestClientReadWaitSeesSubsecondAppend(t *testing.T) {
+	client, file := newPair(t)
+	if _, err := client.AdmitActor(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	result := make(chan struct {
+		events []core.Event
+		err    error
+	}, 1)
+	go func() {
+		events, err := client.ReadWait(context.Background(), "a", 0, 0, 300*time.Millisecond)
+		result <- struct {
+			events []core.Event
+			err    error
+		}{events, err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	if _, err := file.Append(context.Background(), "a", core.AppendRequest{Content: json.RawMessage(`"later"`)}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case outcome := <-result:
+		if outcome.err != nil {
+			t.Fatal(outcome.err)
+		}
+		if len(outcome.events) != 1 || string(outcome.events[0].Content) != `"later"` {
+			t.Fatalf("events = %+v, want one later event", outcome.events)
+		}
+		if elapsed := time.Since(started); elapsed >= 300*time.Millisecond {
+			t.Fatalf("wait returned after %s, want before 300ms", elapsed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("subsecond wait did not return after an append")
+	}
+}
+
 func TestRequireLoopbackURL(t *testing.T) {
 	for _, test := range []struct {
 		url string
@@ -499,6 +536,35 @@ func TestStrictErrorBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(response, http.StatusConflict, "conflict")
+}
+
+func TestWaitCapsBeforeDurationConversion(t *testing.T) {
+	client, file := newPair(t)
+	if _, err := client.AdmitActor(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodGet, client.Base+"/api/events?wait=18446744073709551615", nil).WithContext(ctx)
+	request.Header.Set(actorHeader, "a")
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		NewServer(file).Handler().ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("overflowing wait returned before the bounded wait elapsed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	// Stop the bounded wait without waiting for its full 60-second server cap.
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("bounded wait did not finish after the test window")
+	}
 }
 
 func TestUnreachableServerFailsLoudly(t *testing.T) {

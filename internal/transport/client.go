@@ -157,7 +157,9 @@ func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit
 		}
 		if seconds == 0 {
 			attemptCtx, cancel := context.WithTimeout(ctx, remaining)
-			events, err := c.Read(attemptCtx, actor, after, limit)
+			// The server accepts whole seconds, so ask it to hold for one
+			// second and let the caller's remaining context cap the request.
+			events, err := c.read(attemptCtx, actor, after, limit, time.Second)
 			cancel()
 			if err != nil {
 				if ctx.Err() != nil {

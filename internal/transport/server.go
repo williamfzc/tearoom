@@ -27,8 +27,10 @@ const idempotencyHeader = "Idempotency-Key"
 // repeated requests.
 const waitCap = 60 * time.Second
 
+const waitCapSeconds = uint64(waitCap / time.Second)
+
 // waitInterval is the bounded-polling cadence of a wait request.
-const waitInterval = 500 * time.Millisecond
+const waitInterval = 25 * time.Millisecond
 
 // errMethodNotAllowed distinguishes a route with the wrong method so the
 // client sees 405 instead of a generic bad request.
@@ -137,10 +139,10 @@ func (s *Server) readEvents(r *http.Request) (any, error) {
 	if wait == 0 {
 		return s.Store.Read(r.Context(), actor, after, limit)
 	}
-	budget := time.Duration(wait) * time.Second
-	if budget > waitCap {
-		budget = waitCap
+	if wait > waitCapSeconds {
+		wait = waitCapSeconds
 	}
+	budget := time.Duration(wait) * time.Second
 	deadline := time.Now().Add(budget)
 	for {
 		events, err := s.Store.Read(r.Context(), actor, after, limit)

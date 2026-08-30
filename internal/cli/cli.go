@@ -458,6 +458,7 @@ Flags:
 	if err != nil {
 		return fmt.Errorf("open room under %s: %w", *directory, err)
 	}
+	defer closeStore(st)
 	server := &http.Server{Addr: *address, Handler: transport.NewServer(st).Handler(), ReadHeaderTimeout: 10 * time.Second}
 	root := *directory
 	if r, ok := st.(interface{ Root() string }); ok {
@@ -487,6 +488,12 @@ Flags:
 			return err
 		}
 		return nil
+	}
+}
+
+func closeStore(st core.Store) {
+	if closer, ok := st.(interface{ Close() error }); ok {
+		_ = closer.Close()
 	}
 }
 

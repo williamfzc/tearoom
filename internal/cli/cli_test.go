@@ -408,6 +408,24 @@ func TestServerStartStopsOnContextCancellation(t *testing.T) {
 	}
 }
 
+type closableStore struct {
+	core.Store
+	closed bool
+}
+
+func (s *closableStore) Close() error {
+	s.closed = true
+	return nil
+}
+
+func TestCloseStoreClosesClosableBackend(t *testing.T) {
+	backend := &closableStore{}
+	closeStore(backend)
+	if !backend.closed {
+		t.Fatal("closeStore did not close a closable backend")
+	}
+}
+
 func TestRemoteServerRefusesNonLoopback(t *testing.T) {
 	t.Setenv("TEAROOM_SERVER", "http://192.0.2.1:8787")
 	var errOut bytes.Buffer
