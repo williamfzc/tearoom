@@ -1,7 +1,8 @@
-// The same battery as the SQLite suite, against a real PostgreSQL when the
-// operator provides one. Gated by TEAROOM_TEST_PG so `make check` runs
-// anywhere and the PG suite runs wherever a database exists. Each test uses
-// a fresh random room id in the shared database and cleans up after itself.
+// The same contract battery as the SQLite suite, against a real PostgreSQL
+// when the operator provides one. Gated by TEAROOM_TEST_PG so `make check`
+// runs anywhere and the PostgreSQL suite runs wherever a database exists.
+// Each subtest gets a fresh random room id in the shared database and cleans
+// up after itself.
 package relational
 
 import (
@@ -10,6 +11,8 @@ import (
 	"encoding/hex"
 	"os"
 	"testing"
+
+	"github.com/williamfzc/tearoom/internal/core"
 )
 
 func pgDSN(t *testing.T) string {
@@ -21,9 +24,9 @@ func pgDSN(t *testing.T) string {
 	return dsn
 }
 
-func newPGStore(t *testing.T) *Store {
+func newPGStore(t *testing.T) core.Store {
 	t.Helper()
-	db, err := OpenURL(pgDSN(t))
+	db, err := OpenPostgres(pgDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,28 +38,29 @@ func newPGStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	roomID := "pgtest-" + hex.EncodeToString(raw)
-	store := New(db, roomID)
-	if err := db.Create(&RoomRow{ID: roomID, Name: "pg battery"}).Error; err != nil {
+	st := New(db, roomID)
+	if err := db.Create(&RoomRow{ID: roomID, CreatedAt: st.now().UTC(), Head: 0}).Error; err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		db.Where("room_id = ?", roomID).Delete(&IdempotencyRow{})
 		db.Where("room_id = ?", roomID).Delete(&EventRow{})
 		db.Where("room_id = ?", roomID).Delete(&ActorRow{})
 		db.Where("id = ?", roomID).Delete(&RoomRow{})
 	})
-	return store
+	return st
 }
 
-func TestPostgreSQLBattery(t *testing.T) {
+func TestPostgreSQLStoreContract(t *testing.T) {
 	ctx := context.Background()
-	// A room exists check up front gives a clear failure when the DSN is
-	// wrong instead of seven confusing per-test failures.
-	db, err := OpenURL(pgDSN(t))
+	// A reachability check up front gives a clear failure when the DSN is
+	// wrong instead of a confusing per-subtest failure.
+	db, err := OpenPostgres(pgDSN(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := db.WithContext(ctx).Exec("SELECT 1").Error; err != nil {
 		t.Fatalf("cannot reach PostgreSQL at TEAROOM_TEST_PG: %v", err)
 	}
-	battery(t, newPGStore)
+	core.StoreContract(t, newPGStore)
 }

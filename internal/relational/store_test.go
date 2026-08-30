@@ -1,13 +1,16 @@
-// The relational Store must answer the same contract as the file Store:
-// these tests mirror internal/store/file_test.go against SQLite, and the
-// same battery runs against PostgreSQL when TEAROOM_TEST_PG is set
-// (pg_test.go).
+// The relational Store must answer the same contract as the file Store: the
+// core conformance battery runs against SQLite here and against PostgreSQL in
+// pg_test.go. Backend-specific gates the battery does not cover — the format
+// gate, the schema shape, and input validation — are proven on top.
 package relational
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"sync"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -15,178 +18,165 @@ import (
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	store, err := Init(t.TempDir(), "test")
+	st, err := Init(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { store.db.Migrator().DropTable("events", "actors", "rooms") })
-	return store
+	return st
 }
 
-func join(t *testing.T, store *Store, ids ...string) {
+func admit(t *testing.T, st *Store, ids ...string) {
 	t.Helper()
 	for _, id := range ids {
-		if _, err := store.UpsertActor(context.Background(), id, ""); err != nil {
+		if _, err := st.AdmitActor(context.Background(), id); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-// battery is the complete relational contract, run identically over every
-// backend.
-func battery(t *testing.T, newStore func(*testing.T) *Store) {
-	t.Run("AppendRejectsStaleCursor", func(t *testing.T) {
-		store := newStore(t)
-		join(t, store, "a", "b")
-		ctx := context.Background()
-
-		if _, err := store.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "first", Key: "one"}); err != nil {
-			t.Fatal(err)
-		}
-		_, err := store.AppendEvent(ctx, core.AppendInput{Actor: "b", Expected: 0, Type: "message", Body: "I thought it was empty", Key: "two"})
-		var stale *core.StaleWriteError
-		if !errors.As(err, &stale) {
-			t.Fatalf("stale append error = %v", err)
-		}
-		if stale.Expected != 0 || stale.Actual != 1 {
-			t.Fatalf("stale cursors = %d/%d", stale.Expected, stale.Actual)
-		}
-	})
-
-	t.Run("IdempotentRetryReturnsOriginalEvent", func(t *testing.T) {
-		store := newStore(t)
-		join(t, store, "a")
-		input := core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "once", Key: "stable-key"}
-		first, err := store.AppendEvent(context.Background(), input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		input.Expected = first.Seq
-		retry, err := store.AppendEvent(context.Background(), input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if retry.ID != first.ID {
-			t.Fatalf("retry created %s, want %s", retry.ID, first.ID)
-		}
-		feed, _ := store.Read(context.Background(), "a", 0, 0)
-		if len(feed.Events) != 1 {
-			t.Fatalf("events = %d, want 1", len(feed.Events))
-		}
-	})
-
-	t.Run("IdempotencyKeyReuseForOtherContentConflicts", func(t *testing.T) {
-		store := newStore(t)
-		join(t, store, "a")
-		ctx := context.Background()
-		if _, err := store.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "first", Key: "key-1"}); err != nil {
-			t.Fatal(err)
-		}
-		_, err := store.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 1, Type: "message", Body: "different", Key: "key-1"})
-		if !errors.Is(err, core.ErrConflict) {
-			t.Fatalf("conflict error = %v", err)
-		}
-	})
-
-	t.Run("PrivateEventVisibleOnlyToSenderAndRecipients", func(t *testing.T) {
-		store := newStore(t)
-		join(t, store, "seer", "wolf", "villager")
-		event, err := store.AppendEvent(context.Background(), core.AppendInput{
-			Actor: "seer", Expected: 0, Type: "role.assigned", Body: "wolf", To: []string{"wolf"}, Key: "secret",
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, actor := range []string{"seer", "wolf"} {
-			feed, err := store.Read(context.Background(), actor, 0, 0)
-			if err != nil || len(feed.Events) != 1 || feed.Events[0].ID != event.ID {
-				t.Fatalf("%s did not see private event: %+v %v", actor, feed, err)
-			}
-		}
-		feed, err := store.Read(context.Background(), "villager", 0, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(feed.Events) != 0 || feed.Cursor != 1 {
-			t.Fatalf("villager feed = %+v", feed)
-		}
-	})
-
-	t.Run("ConcurrentAppendHasOneWinnerPerCursor", func(t *testing.T) {
-		store := newStore(t)
-		const writers = 12
-		ids := make([]string, writers)
-		for i := range ids {
-			ids[i] = string(rune('a' + i))
-		}
-		join(t, store, ids...)
-
-		var group sync.WaitGroup
-		start := make(chan struct{})
-		results := make(chan error, writers)
-		for _, actor := range ids {
-			group.Add(1)
-			go func(actor string) {
-				defer group.Done()
-				<-start
-				_, err := store.AppendEvent(context.Background(), core.AppendInput{
-					Actor: actor, Expected: 0, Type: "message", Body: actor, Key: actor,
-				})
-				results <- err
-			}(actor)
-		}
-		close(start)
-		group.Wait()
-		close(results)
-
-		wins, stale := 0, 0
-		for err := range results {
-			switch {
-			case err == nil:
-				wins++
-			case errors.Is(err, core.ErrStaleWrite):
-				stale++
-			default:
-				t.Fatalf("unexpected result: %v", err)
-			}
-		}
-		if wins != 1 || stale != writers-1 {
-			t.Fatalf("wins=%d stale=%d", wins, stale)
-		}
-	})
-
-	t.Run("UnknownActorCannotReadOrWrite", func(t *testing.T) {
-		store := newStore(t)
-		if _, err := store.Read(context.Background(), "missing", 0, 0); !errors.Is(err, core.ErrUnknownActor) {
-			t.Fatalf("read error = %v", err)
-		}
-		if _, err := store.AppendEvent(context.Background(), core.AppendInput{Actor: "missing", Type: "message", Body: "x", Key: "missing-actor"}); !errors.Is(err, core.ErrUnknownActor) {
-			t.Fatalf("write error = %v", err)
-		}
-	})
-
-	t.Run("ChangedProbeTracksAppends", func(t *testing.T) {
-		store := newStore(t)
-		join(t, store, "a")
-		ctx := context.Background()
-		changed, err := store.Changed(ctx)
-		if err != nil || changed {
-			t.Fatalf("empty store Changed = %v, %v", changed, err)
-		}
-		changed, err = store.Changed(ctx)
-		if err != nil || changed {
-			t.Fatalf("quiet store Changed = %v, %v", changed, err)
-		}
-		if _, err := store.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "x", Key: "one"}); err != nil {
-			t.Fatal(err)
-		}
-		changed, err = store.Changed(ctx)
-		if err != nil || !changed {
-			t.Fatalf("store with one append Changed = %v, %v", changed, err)
-		}
+func TestSQLiteStoreContract(t *testing.T) {
+	core.StoreContract(t, func(t *testing.T) core.Store {
+		return newTestStore(t)
 	})
 }
 
-func TestBattery(t *testing.T) {
-	battery(t, newTestStore)
+func TestInitRefusesExistingDatabase(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Init(root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Init(root); err == nil {
+		t.Fatal("second Init over an existing database accepted")
+	}
+}
+
+func TestRoomIdentityFromDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "planning")
+	root := filepath.Join(dir, ".tearoom")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Init(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room, err := st.Room(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if room.ID != "planning" || room.Created.IsZero() {
+		t.Fatalf("room = %+v, want id planning with a creation time", room)
+	}
+}
+
+func TestOpenMissingDatabaseIsNoRoom(t *testing.T) {
+	if _, err := Open(t.TempDir()); !errors.Is(err, core.ErrNoRoom) {
+		t.Fatalf("Open on an empty root = %v, want %v", err, core.ErrNoRoom)
+	}
+}
+
+// TestOpenRefusesPreCutoverDatabase simulates the old layout: a schema_versions
+// bookkeeping table and no format marker. It must be refused without being
+// read or migrated.
+func TestOpenRefusesPreCutoverDatabase(t *testing.T) {
+	root := t.TempDir()
+	db, err := openSQLite(filepath.Join(root, "room.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE schema_versions (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO schema_versions (version, applied_at) VALUES (1, '2026-01-01T00:00:00Z')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Open(root)
+	if err == nil {
+		t.Fatal("pre-cutover database opened without error")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "incompatible") || !strings.Contains(message, "no automatic upgrade") {
+		t.Fatalf("refusal is not a clear incompatible error: %v", err)
+	}
+}
+
+func TestOpenRefusesWrongFormatMarker(t *testing.T) {
+	root := t.TempDir()
+	st, err := Init(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.db.Model(&MetaRow{}).Where("key = ?", formatKey).Update("value", "1").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = Open(root)
+	if err == nil {
+		t.Fatal("database with a wrong format marker opened without error")
+	}
+	if !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("wrong-format refusal is not a clear incompatible error: %v", err)
+	}
+}
+
+func TestSchemaIsOnlyTheFormatTwoShape(t *testing.T) {
+	st := newTestStore(t)
+	tables, err := st.db.Migrator().GetTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"meta": true, "rooms": true, "actors": true,
+		"events": true, "append_idempotency": true,
+	}
+	if len(tables) != len(want) {
+		t.Fatalf("tables = %v, want only %v", tables, want)
+	}
+	for _, table := range tables {
+		if !want[table] {
+			t.Fatalf("unexpected table %q", table)
+		}
+	}
+	// The old Event shape must not exist: PRAGMA table_info names the real
+	// columns, where a word like "key" cannot be confused with "PRIMARY KEY".
+	var columns []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := st.db.Raw("PRAGMA table_info(events)").Scan(&columns).Error; err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(columns))
+	for _, column := range columns {
+		names = append(names, column.Name)
+	}
+	wantColumns := []string{"room_id", "seq", "actor", "at", "to", "content"}
+	if strings.Join(names, ",") != strings.Join(wantColumns, ",") {
+		t.Fatalf("events columns = %v, want %v", names, wantColumns)
+	}
+}
+
+func TestAppendRejectsInvalidContent(t *testing.T) {
+	st := newTestStore(t)
+	admit(t, st, "a")
+	ctx := context.Background()
+	if _, err := st.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage("")}); err == nil {
+		t.Fatal("empty content accepted")
+	}
+	if _, err := st.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage("{")}); err == nil {
+		t.Fatal("invalid JSON content accepted")
+	}
+}
+
+func TestAppendRejectsEmptyActor(t *testing.T) {
+	st := newTestStore(t)
+	if _, err := st.Append(context.Background(), "  ", core.AppendRequest{Content: json.RawMessage(`"x"`)}); err == nil {
+		t.Fatal("blank actor accepted")
+	}
 }
