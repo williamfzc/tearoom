@@ -1,5 +1,7 @@
-// Package transport implements core.Store for a remote Tearoom server.
-// Local and remote callers therefore share exactly one domain contract.
+// Package transport carries the core.Store contract over HTTP.
+// The client speaks the wire protocol the server enforces: the Actor on the
+// events routes arrives in X-Tearoom-Actor, idempotency in Idempotency-Key,
+// and errors come back as the unified {"error":{...}} envelope.
 package transport
 
 import (
@@ -17,63 +19,38 @@ import (
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
-type wireError struct {
-	Kind     string `json:"kind"`
-	Message  string `json:"message"`
-	Expected uint64 `json:"expected,omitempty"`
-	Actual   uint64 `json:"actual,omitempty"`
-}
-
-func EncodeError(err error) (int, wireError) {
-	var stale *core.StaleWriteError
-	switch {
-	case errors.As(err, &stale):
-		return http.StatusConflict, wireError{Kind: "stale_write", Message: err.Error(), Expected: stale.Expected, Actual: stale.Actual}
-	case errors.Is(err, core.ErrNotFound):
-		return http.StatusNotFound, wireError{Kind: "not_found", Message: err.Error()}
-	case errors.Is(err, core.ErrUnknownActor):
-		return http.StatusForbidden, wireError{Kind: "unknown_actor", Message: err.Error()}
-	case errors.Is(err, core.ErrNoRoom):
-		return http.StatusServiceUnavailable, wireError{Kind: "no_room", Message: err.Error()}
-	case errors.Is(err, core.ErrConflict):
-		return http.StatusConflict, wireError{Kind: "conflict", Message: err.Error()}
-	default:
-		return http.StatusBadRequest, wireError{Kind: "invalid", Message: err.Error()}
-	}
-}
-
+// decode converts one wire error entry back into the store error it describes.
 func (w wireError) decode() error {
-	switch w.Kind {
-	case "stale_write":
-		return &core.StaleWriteError{Expected: w.Expected, Actual: w.Actual}
-	case "not_found":
-		return fmt.Errorf("%w: %s", core.ErrNotFound, w.Message)
+	switch w.Code {
 	case "unknown_actor":
 		return fmt.Errorf("%w: %s", core.ErrUnknownActor, w.Message)
-	case "no_room":
-		return core.ErrNoRoom
 	case "conflict":
 		return fmt.Errorf("%w: %s", core.ErrConflict, w.Message)
+	case "no_room":
+		return core.ErrNoRoom
+	case "not_found":
+		return fmt.Errorf("%w: %s", core.ErrNotFound, w.Message)
 	default:
 		return errors.New(w.Message)
 	}
 }
 
+// Client implements core.Store against a remote Tearoom server. Local and
+// remote callers therefore share exactly one domain contract.
 type Client struct {
-	Base  string
-	Token string
-	HTTP  *http.Client
+	Base string
+	HTTP *http.Client
 }
 
-func NewClient(base, token string) *Client {
-	return &Client{Base: base, Token: token, HTTP: &http.Client{Timeout: 30 * time.Second}}
+func NewClient(base string) *Client {
+	return &Client{Base: base, HTTP: &http.Client{Timeout: 30 * time.Second}}
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
-	return c.doWith(c.HTTP, ctx, method, path, body, out)
+func (c *Client) do(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
+	return c.doWith(c.HTTP, ctx, method, path, headers, body, out)
 }
 
-func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, path string, body, out any) error {
+func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, path string, headers map[string]string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -89,8 +66,10 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if c.Token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.Token)
+	for name, value := range headers {
+		if value != "" {
+			request.Header.Set(name, value)
+		}
 	}
 	response, err := httpClient.Do(request)
 	if err != nil {
@@ -98,53 +77,67 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 400 {
-		var wire wireError
-		if err := json.NewDecoder(response.Body).Decode(&wire); err != nil || wire.Message == "" {
+		var envelope errorEnvelope
+		if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil || envelope.Error.Message == "" {
 			return fmt.Errorf("server returned %s", response.Status)
 		}
-		return wire.decode()
+		return envelope.Error.decode()
 	}
 	return json.NewDecoder(response.Body).Decode(out)
 }
 
 func (c *Client) Room(ctx context.Context) (*core.Room, error) {
 	var room core.Room
-	return &room, c.do(ctx, http.MethodGet, "/api/room", nil, &room)
+	return &room, c.do(ctx, http.MethodGet, "/api/room", nil, nil, &room)
 }
 
-func (c *Client) UpsertActor(ctx context.Context, id, role string) (*core.Actor, error) {
+// AdmitActor joins the named actor explicitly under loopback/OS trust.
+func (c *Client) AdmitActor(ctx context.Context, actorID string) (*core.Actor, error) {
 	var actor core.Actor
-	return &actor, c.do(ctx, http.MethodPost, "/api/actors", map[string]string{"id": id, "role": role}, &actor)
+	return &actor, c.do(ctx, http.MethodPost, "/api/actors", nil, map[string]string{"id": actorID}, &actor)
 }
 
-func (c *Client) Actors(ctx context.Context) ([]*core.Actor, error) {
-	var actors []*core.Actor
-	return actors, c.do(ctx, http.MethodGet, "/api/actors", nil, &actors)
+func (c *Client) Actors(ctx context.Context) ([]core.Actor, error) {
+	var actors []core.Actor
+	return actors, c.do(ctx, http.MethodGet, "/api/actors", nil, nil, &actors)
 }
 
-func (c *Client) Read(ctx context.Context, actor string, after uint64, limit int) (*core.Feed, error) {
-	var feed core.Feed
-	path := "/api/events?actor=" + url.QueryEscape(actor) + "&after=" + strconv.FormatUint(after, 10) + "&limit=" + strconv.Itoa(limit)
-	return &feed, c.do(ctx, http.MethodGet, path, nil, &feed)
+// Read returns the events after the exclusive caller-owned boundary, read as
+// the named actor.
+func (c *Client) Read(ctx context.Context, actor string, after uint64, limit int) ([]core.Event, error) {
+	return c.read(ctx, actor, after, limit, 0)
 }
 
 // ReadWait extends Read with a server-held wait: the server returns as soon as
-// a visible event appears, or after wait with an empty feed. The request gets
-// its own client timeout so the server's hold is never cut short by the
-// shared 30s default.
-func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) (*core.Feed, error) {
-	seconds := (wait + time.Second - 1) / time.Second
-	path := "/api/events?actor=" + url.QueryEscape(actor) + "&after=" + strconv.FormatUint(after, 10) +
-		"&limit=" + strconv.Itoa(limit) + "&wait=" + strconv.FormatInt(int64(seconds), 10)
-	waiter := *c.HTTP
-	waiter.Timeout = wait + 10*time.Second
-	var feed core.Feed
-	return &feed, c.doWith(&waiter, ctx, http.MethodGet, path, nil, &feed)
+// an event past after appears, or after wait with an empty list. The request
+// gets its own client timeout so the server's hold is never cut short by the
+// shared default.
+func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
+	return c.read(ctx, actor, after, limit, wait)
 }
 
-func (c *Client) AppendEvent(ctx context.Context, input core.AppendInput) (*core.Event, error) {
+func (c *Client) read(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
+	params := url.Values{}
+	params.Set("after", strconv.FormatUint(after, 10))
+	params.Set("limit", strconv.Itoa(limit))
+	headers := map[string]string{actorHeader: actor}
+	var events []core.Event
+	if wait == 0 {
+		return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
+	}
+	params.Set("wait", strconv.FormatInt(int64((wait+time.Second-1)/time.Second), 10))
+	waiter := *c.HTTP
+	waiter.Timeout = wait + 10*time.Second
+	return events, c.doWith(&waiter, ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
+}
+
+// Append contributes one Event as the named actor. The request body carries
+// only to and content; the idempotency key, when set, travels in the
+// Idempotency-Key header.
+func (c *Client) Append(ctx context.Context, actor string, request core.AppendRequest) (*core.Event, error) {
 	var event core.Event
-	return &event, c.do(ctx, http.MethodPost, "/api/events", input, &event)
+	headers := map[string]string{actorHeader: actor, idempotencyHeader: request.IdempotencyKey}
+	return &event, c.do(ctx, http.MethodPost, "/api/events", headers, request, &event)
 }
 
 var _ core.Store = (*Client)(nil)
