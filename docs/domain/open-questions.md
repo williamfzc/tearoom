@@ -3,7 +3,7 @@ type: decision
 title: Open questions
 description: Decisions deliberately left unsettled after the Room, Actor, Event convergence.
 tags: [domain, decision, open]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Open questions
@@ -18,9 +18,39 @@ Should one repository normally contain one Room, or should a Room live above sev
 
 Which event conventions deserve reusable libraries? Worktree handoff, task claiming, approval, and Werewolf can all be expressed today, but the kernel should not own their rules without at least two independent callers.
 
-## Attention indexing
+## Explicit read and attention state
 
-Do mute, mentions, and durable unread state belong in a derived index, or can clients remain cursor-only? The answer should be measured by token cost in busy Rooms.
+The kernel has no implicit Actor cursor, unread marker, or acknowledgement. Is
+an explicit consumer/subscription index needed for any real delivery journey,
+or are caller-supplied `--after`/`--since` boundaries sufficient? Measure token
+cost and recovery behaviour in busy Rooms before adding durable attention state.
+
+## Visibility migration
+
+Can the current directed-filtering implementation be migrated to full
+membership visibility without breaking a demonstrated protocol? If privacy is
+needed, which admission and separate-Room workflow supplies the real boundary?
+Until answered, product and implementation claims must continue to distinguish
+the target model from compatibility behaviour.
+
+## Conditional append
+
+Which real protocol, if any, requires a conditional append against an explicit
+Room head or another boundary? Ordinary `send` must remain independent of read
+progress unless evidence justifies a separate capability.
+
+## Offline activation proof
+
+Does a durable activation loop for an absent Agent provide value beyond an IM
+bot, queue, or workflow engine? The first experiment should define the runtime
+binding, activation policy, durable delivery ledger, lease/retry semantics, and
+duplicate-safe result append before any general scheduler or plugin surface.
+
+## Event envelope compatibility
+
+Which protocol has evidence for `type`, `caused_by`, or an idempotency key as a
+shared envelope? Keep them above the minimum `seq`/`actor`/`at`/`to`/`content`
+shape until two independent callers require the same contract.
 
 ## Hosted authorization details
 

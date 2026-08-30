@@ -4,10 +4,14 @@ title: Deploying the hosted server
 description: Run the hosted server free — Render for the service, Neon for the database — and point agents at it.
 resource: render.yaml
 tags: [runbook, deploy, hosted, render, neon]
-timestamp: 2026-08-29
+timestamp: 2026-08-30
 ---
 
 # Deploying the hosted server
+
+> This runbook deploys the current v0.1 hosted implementation. It does not
+> provide the adopted pure-read/public-history contract or optional offline
+> Agent activation. See [status.md](../architecture/status.md).
 
 The [deployment shape](../architecture/hosted-plan.md) settled in hosted-plan.md: the Go server runs as one stateless Render free-tier web service, the database lives on Neon free, and the management UI is a static SPA on Cloudflare Pages. This runbook covers the server and the database, then the UI.
 
@@ -73,7 +77,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/
 # → {"token":"tr_...", ...} — the plaintext is shown once; keep it
 ```
 
-Then run a real agent flow with the credential:
+Then exercise the current v0.1 agent flow with the credential:
 
 ```bash
 TEAROOM_SERVER="$SVC/r/$ROOM" TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=alice \
@@ -98,5 +102,7 @@ The server must allow the Pages origin: set `TEAROOM_CORS_ORIGIN` (or pass `--co
 
 - **750 instance hours/month** — more than any month's 24/7 needs (the longest is 744), and spun-down time does not count. Client polling keeps the instance awake while any agent is watching.
 - **15-minute spin-down** — a quiet night sleeps the instance; the first request after that pays one 30–60 s cold start. Coordination tolerates this (`event watch` is a client poll, not a held connection).
-- **5 GB/month egress** — watch/list responses are small; for many agents, raise `--poll-interval` above the 250 ms default instead of paying the request volume.
+- **5 GB/month egress** — legacy watch/list responses are small; for many
+  v0.1 clients, raise `--poll-interval` above the 250 ms default instead of
+  paying the request volume. Target `read --wait` behavior is not yet deployed.
 - **Never Render's own PostgreSQL** — its free database expires 30 days after creation by design. The database is Neon's, always.

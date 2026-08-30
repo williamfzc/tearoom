@@ -1,118 +1,150 @@
 ---
 type: architecture
 title: Hosted Tearoom plan
-description: How the multi-tenant service is built: architecture decisions, the Phase 1 implementation, and the phased roadmap.
+description: The hosted control plane, its current implementation boundary, and the target Room/Event contract.
 tags: [architecture, hosted, saas, plan, roadmap]
-timestamp: 2026-08-29
+timestamp: 2026-08-30
 ---
 
 # Hosted Tearoom plan
 
-[hosted-identity.md](../domain/hosted-identity.md) decides the product shape: a human control plane (accounts, GitHub, membership, credentials) around the Room/Actor/Event kernel. This document records how that gets built — the architecture, what Phase 1 shipped, and the roadmap after it.
+[hosted-identity.md](../domain/hosted-identity.md) defines the intended human
+control plane around the Room/Actor/Event kernel. This document separates what
+Phase 1 currently implements from the minimum Room/Event model in
+[model-discussion.md](model-discussion.md). The distinction matters: hosted
+authentication is shipped, but the Room migration and offline Agent activation
+are not.
 
-## The architecture
+## Stable hosted boundary
 
-**The coordination plane stays untouched.** Rooms, actors, and events keep the same schema and invariants; `core.Store` does not gain authentication. Everything here is a layer in front of it.
+The control plane remains outside coordination. Accounts, human sessions,
+organizations, credentials, and billing authorize access to a Room; they do
+not become Room or Event fields. The coordination Store remains responsible for
+Room and Actor identity, membership, ordered immutable history, and append/read
+semantics.
 
-**One shared database, `room_id` as the tenant key.** The relational models already carry `room_id` on every row, so a `relational.Store` is now a cheap value object over a shared `*gorm.DB`: `relational.New(db, roomID)`. Many stores, one database, no cross-room table collisions. The append transaction's `UPDATE rooms ... WHERE id = ?` row lock serializes writers per room, exactly as it did for one room.
+The target hosted contract is:
 
-**The control plane is its own schema.** `internal/control` owns `ctl_accounts`, `ctl_memberships`, `ctl_credentials`, and its own versioned migration table (`ctl_schema_versions`), so the coordination schema never grows control rows and vice versa. Two migration chains, one database, both idempotent on open.
+- membership is real admission and the Room visibility boundary;
+- every admitted member can read the complete Room history;
+- `to` is public addressing or attention metadata, not an Event-level secrecy
+  filter and not a process-start command;
+- reads take an explicit boundary and do not silently persist an Actor cursor;
+- an optional activation service may observe addressed Events, but its runtime
+  bindings, delivery ledger, leases, and launcher remain above the Store.
 
-**Credentials are opaque, bound, hashed tokens.** A credential is `tr_` + 192 random bits, bound to (room, actor, capabilities, expiry), stored only as its sha256 hash, plaintext shown once at issue, individually revocable. Capabilities: `read`, `append`, `manage`. A credential is one agent's identity — the server requires every request to declare that exact actor, so a credential can never be used as a room-level key.
+The current hosted API still delegates to the older Store contract: directed
+Events are filtered, Actor registration can be automatic, and the CLI carries a
+saved cursor into reads and writes. Those are implemented compatibility facts,
+not proof that the target contract has shipped. A migration must update the
+authenticated API, both Store implementations, CLI, tests, and docs together.
 
-**URL shape.** Management at `/api/hosted/*` (admin bearer). The event API at `/r/<room-id>/api/*`; a middleware resolves the Bearer credential → (room, actor, capabilities) and rejects mismatches **before** delegating the stripped request to that room's own `transport.Server` instance (one server per room, so wakeups never cross rooms). Wrong-room credentials answer 401, never 403 — a token cannot probe which rooms exist.
+## Current Phase 1 architecture — shipped 2026-08-29
 
-**PostgreSQL is the hosted database.** The same models and migrations target both SQLite (local) and PostgreSQL (hosted); `relational.OpenURL` picks the dialector by DSN. Driver-specific pragmas live only in the local open path.
+**One shared database, `room_id` as tenant key.** Relational models carry
+`room_id` on every row. `relational.New(db, roomID)` creates a per-Room Store
+over one shared `*gorm.DB`; the Room-head lock serializes writers per Room.
 
-**Watch's wait lives in the client.** `event watch` keeps its batch-return semantics without depending on server state: the CLI polls on an interval, exactly as it already does for local Rooms, so the hosted server is a stateless read/append/register surface. Phase 1's server-held `wait` (per-room `Broadcaster`) remains in the code as an optional optimization for self-hosted LANs; the deployment shapes below do not rely on it.
+**Separate control schema.** `internal/control` owns `ctl_accounts`,
+`ctl_memberships`, `ctl_credentials`, and `ctl_schema_versions`. Control rows
+do not mix with coordination rows, and both migration chains are idempotent on
+open.
 
-## Phase 1 — shipped 2026-08-29
+**Bound credentials.** A credential is a one-time shown `tr_` token containing
+192 random bits, stored only as a SHA-256 hash, bound to `(room, actor,
+capabilities, expiry)`, and individually revocable. Capabilities are `read`,
+`append`, and `manage`. The server requires every request to declare the exact
+Actor bound to the credential.
 
-The executable slice: dev-mode administration, credentials, the authenticated event API, and the full negative matrix — all in `make check`, no external dependencies.
+**URL and isolation.** Management uses `/api/hosted/*`; Room events use
+`/r/<room-id>/api/*`. Middleware resolves the Bearer credential before
+delegating to that Room's Store. A wrong-room credential returns 401, so a
+token cannot probe whether another Room exists.
 
-- `internal/relational`: `RoomID` sentinel became a per-store `roomID`; `New(db, roomID)` and `OpenURL(dsn)` added; local `Init`/`OpenAt` unchanged.
-- `internal/control`: the control plane — accounts, memberships, credentials (issue/verify/revoke, sha256 at rest, capability parse), room creation with owner membership, dev admin.
-- `internal/hosted`: the multi-tenant server — `/api/hosted/*` management routes, `/r/<id>/api/*` with Bearer auth, actor binding, capability enforcement, per-room broadcaster registry.
-- CLI: the `hosted` group — `init-db`, `create-room`, `issue-credential`, `revoke`, `serve`. Client side needed no new surface: `TEAROOM_SERVER` points at `/r/<room-id>`, `TEAROOM_TOKEN` carries the credential.
-- Dev mode: `TEAROOM_HOSTED_DEV=1` + `TEAROOM_HOSTED_ADMIN=<token>` gates management routes; the login endpoint answers the dev account. The GitHub OAuth exchange is stubbed by design.
-- Proof: E8 ([hosted-demo](../../scripts/hosted-demo.sh), 15 checks: happy-path handoff through credentials, session resume, and the 401/403/revocation matrix) plus unit suites for `control` and `hosted`. S6/S7/S8 are now proven in the [evaluation set](../evaluations.md). PostgreSQL keeps its gated suite (`make pg-smoke`, `TEAROOM_TEST_PG`).
+**Stateless serving.** Hosted `event watch` uses client polling. The server-held
+wait/Broadcaster remains an optional same-process or LAN optimization; hosted
+correctness does not depend on it.
 
-Run it:
+The shipped executable slice includes hosted administration, credential issue,
+revocation, authenticated event access, and the negative authorization matrix.
+`scripts/hosted-demo.sh` is legacy implementation evidence recorded in
+[evaluations.md](../evaluations.md), not target-model proof. PostgreSQL remains
+a gated validation path until a DSN is supplied.
 
-```bash
-TEAROOM_HOSTED_DEV=1 TEAROOM_HOSTED_ADMIN=dev-admin-1 tearoom hosted serve --database hosted.db
-# admin (Bearer dev-admin-1):
-curl -X POST -H "Authorization: Bearer dev-admin-1" -H "Content-Type: application/json" \
-  -d '{"name":"ops"}' http://localhost:8787/api/hosted/rooms
-curl -X POST -H "Authorization: Bearer dev-admin-1" -H "Content-Type: application/json" \
-  -d '{"actor":"alice","capabilities":"read,append"}' http://localhost:8787/api/hosted/rooms/<id>/credentials
-# agent (the issued token):
-TEAROOM_SERVER=http://localhost:8787/r/<id> TEAROOM_TOKEN=tr_... TEAROOM_ACTOR=alice tearoom event send "..."
+## Optional activation boundary — not shipped
+
+Offline Agent activation is an application capability, not a hosted Store
+feature. The intended path is:
+
+```text
+addressed Event -> activation policy -> durable claim/lease
+                -> configured launcher -> ephemeral Agent Runtime
+                -> Runtime reads Room and appends a contribution
 ```
 
-## Phase 2 — real identity
+The trigger carries a Room/Event reference rather than a copied transcript.
+The durable activation ledger is separate from Room history and Actor read
+state. It can provide at-least-once attempts, bounded leases, retry, budget,
+and duplicate coalescing; it cannot claim that an Agent understood or completed
+an Event. Addressing an Actor never grants authority to spend resources or
+start a process without policy.
 
-- **GitHub OAuth** replaces the dev admin: the `/api/hosted/login` exchange issues a signed session, sessions map to accounts, and management routes authorize by account membership instead of a shared token. S5 closes; the OAuth exchange becomes pending evidence with its own gated suite.
-- **TLS and deployment**: hosted operation's security boundary ([security.md](../domain/security.md)) requires TLS termination, rate limiting, and audit records for control-plane changes.
-- **Organizations (S9)**: membership scoping — a member inspects only their rooms; unrelated accounts cannot discover or read a room. The `Membership` model and `MembershipOf` already scope management; orgs add a tenant layer above accounts.
-- **Credential rotation (S10)**: expiry is already per-credential; rotation adds an operator workflow (issue → migrate → revoke) without touching Room or Actor identity.
-- **Invitation flow**: issue credentials to named actors with a TTL, mirroring the existing API.
-- **Management UI**: the front end from the [deployment shape](#deployment-shapes) — a static React + Vite SPA on Cloudflare Pages (rooms, memberships, credentials, room history against `/api/hosted/*`), styled Vercel/Claude-style minimal: restrained layout, generous whitespace, precise type.
+The first proof should be one local launcher: a member with no running process
+receives an addressed Event, resumes after daemon restart, reads the Room, and
+appends a response exactly once at the collaboration layer. Until that exists,
+the hosted service must not advertise offline wakeup.
 
-## Phase 3 — operation
+## Deployment shape
 
-- **Billing** sits behind the same control plane, per the 2026-08-28 direction: billing records belong to the control plane around the Room, never to the kernel.
-- **Abuse controls**: per-account rate limits, quotas, and moderation surfaces; the coordination schema is untouched.
-- **Retention and compaction**: the interplay of expiry/compaction with the append contract (dense `seq`, `caused_by` chains, cursor semantics) needs its own design before data deletion is offered.
+The current hosted shape is deliberately stateless:
 
-## Deployment shapes
-
-The server is deliberately stateless: `event watch` waits in the CLI (client polling, the same loop local mode already runs), so hosted serving is a plain read/append/register API and everything stateful lives in one shared database. The free shapes therefore close:
-
-```
-Cloudflare Pages — management UI (React/Vite SPA, static assets; $0, unlimited bandwidth)
-        │ fetch /api/hosted/* (Bearer; CORS allows the Pages origin)
-Render (free)    — `tearoom hosted serve`, one stateless instance (Go, unchanged)
-        │ postgres://
-Neon (free)      — ctl_* control plane + coordination tables (the shared database)
+```text
+Cloudflare Pages — optional management UI
+        |
+Render — `tearoom hosted serve` (Go service)
+        |
+Neon — control and coordination PostgreSQL
 ```
 
-**Render's free tier is the service's home, and it is genuinely 24/7.** The 750 free instance hours per workspace exceed the longest month (31 × 24 = 744 hours), spun-down time does not consume hours, and client polling keeps the instance awake in practice — as long as any agent polls at least every 15 minutes, the instance never sleeps and never pays a cold start. A quiet night spins it down and the first morning request pays one 30–60 s cold start, which coordination tolerates. The database always lives on Neon: Render's free PostgreSQL expires 30 days after creation by design.
+The service may later move to another host without changing the coordination
+contract. TLS termination, rate limiting, audit records, and secret handling
+remain deployment obligations; the current hosted server assumes TLS in front
+of it and does not yet provide rate limiting.
 
-- **Management UI** — Cloudflare Pages, the only free static host with unlimited bandwidth and no commercial-use ban (Vercel's Hobby plan forbids commercial use; Netlify's 300 build minutes are too few; Render's own static hosting shares the workspace's 5 GB/month egress with the API). A React + Vite SPA calling `/api/hosted/*` with the admin Bearer token. Visual direction: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type, cool but clean; never decorative.
-- **Comfort upgrade** — Fly.io shared-cpu-1x at ≈ $2/month when the free tier pinches (no cold starts, no hour accounting, no CORS).
-- **Superseded** — the earlier "stateful instance behind Cloudflare" shape (per-room broadcasters, held long-polls) and the developer's own machine behind a `cloudflared` tunnel. A self-hosted LAN server may still use the server-held wait as an optimization; the hosted product does not.
+## Roadmap
 
-## Implementation queue
-
-The direction is settled above; this is the executable order. Each step ends with its own conventional commit (`feat:`/`docs:`/`web:`, body ending `Co-Authored-By: Claude Code <noreply@anthropic.com>`), and `make check` green before the next step starts. All three shipped on 2026-08-29 — commit trail `4fe77c9` → `e4c10be` → `b79e1f0`/`c5f2961`/`fe0de64`, runbook at `docs/operations/deploy.md`, UI build/deploy notes in `web/README.md`.
-
-- [x] **Client-side watch polling** (`internal/cli`). `eventWatch`'s remote branch stops using the server-held `wait`: poll with `Read` + `Sleep(interval)`, exactly like the local branch, so hosted serving is not required to hold requests. Watch's command surface, skill, and demo semantics must not change — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays untouched (optional LAN optimization).
-- [x] **Deployment files**. `Dockerfile` (multi-stage, `CGO_ENABLED=0` static build) + `render.yaml` (free tier web service, start command `tearoom hosted serve --database "$DATABASE_URL"`, env `TEAROOM_HOSTED_ADMIN`), plus a runbook at `docs/operations/deploy.md` linked from the operations index: Neon project + DSN, `tearoom hosted init-db`, the Render blueprint, TLS/domain notes, and the free-tier constraints recorded in the deployment shapes above (750 h math, cold start, 5 GB egress).
-- [x] **Management UI** (Phase 2). A React + Vite static SPA on Cloudflare Pages calling `/api/hosted/*` with a Bearer token: rooms, memberships, credentials, room history. Deliberately thin — no framework beyond React + Vite, no SSR. Visual direction recorded above: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type, cool but clean.
-
-## Considered: the all-Cloudflare shape
-
-The free tiers are real (2026): Workers 100K requests/day (10 ms CPU, 1 MB body), D1 5 GB / 5M rows read / 100K rows written per day, R2 10 GB, Pages unlimited bandwidth. The watch-semantics objection is gone — client polling works against any HTTP surface. What still holds:
-
-- **The Go server does not run on Workers.** It is a request-lifecycle runtime for JS/TS; `transport`, `relational`, `control`, and `hosted` would be rewritten in another language, and the verification chain rebuilt with them (unit batteries plus the nine demo suites in `make check`). The Phase 1 property that one schema and one transaction contract run over SQLite locally and PostgreSQL hosted would split into two implementations with drift risk.
-- **The database access is not portable.** D1 is SQLite behind a worker-binding API, not a DSN GORM can open; Neon would need its serverless driver and a re-verification of the append transaction over HTTP.
-- **The request budget is small.** 100K requests/day is 2–3 agents polling every 5 s; 10 ms CPU per request sits at the edge of an append transaction.
-
-What Cloudflare contributes today, free and conflict-free: Pages for the management UI, plus DNS, TLS, CDN, and R2 for event exports. Reconsider the rewrite if the product proves itself and the server surface stays a thin CRUD — the migration list is small then, but it is a rewrite, not a configuration change.
+1. **Identity:** replace the dev admin token with the GitHub OAuth exchange and
+   human sessions; preserve Room/Actor identity and credential binding.
+2. **Admission:** make hosted membership explicit before claiming Room-wide
+   visibility as a security boundary; remove silent registration from the
+   target API.
+3. **Room migration:** replace implicit cursors and directed visibility with
+   explicit read boundaries and membership visibility, after a compatibility
+   decision and data migration.
+4. **Activation evidence:** implement one local durable activation ledger and
+   launcher before adding hosted wake services or a general scheduler.
+5. **Operations:** add organizations, credential rotation, rate limits,
+   retention, and compaction only after their data and authorization contracts
+   are independently specified.
 
 ## Decisions recorded
 
-| Decision | Choice | Why |
+| Decision | Choice | Boundary |
 |---|---|---|
-| Tenant key | `room_id` on every coordination row | the models already carry it; no schema change |
-| Control schema | `ctl_` tables + own migration chain | control rows never mix with coordination rows |
-| Credential storage | sha256 hash, no KDF | 192 random bits need no stretching; leak never yields tokens |
-| Capability model | `read` / `append` / `manage` | matches the kernel's read-append surface |
-| URL shape | `/r/<id>/api/*` | keeps the path self-describing and one segment per tenant |
-| Wrong-room tokens | 401 | a token must not probe room existence |
-| Registration | any live credential may register its own actor | identity, not content; a read-only agent can still join |
-| Dev mode | env-gated admin token | real OAuth needs a browser flow; Phase 2 replaces it |
-| Watch's wait | client polling (CLI, as local mode already does) | coordination tolerates seconds of latency; keeps the hosted server stateless |
-| Hosted service home | Render free tier + Neon | 750 instance hours ≥ the longest month's 744; polling keeps it awake; Neon holds the data |
-| Management UI | static React/Vite SPA on Cloudflare Pages | the only free static host with unlimited bandwidth and no commercial-use ban |
+| Tenant key | `room_id` on coordination rows | Current and target |
+| Control schema | `ctl_` tables with a separate migration chain | Current |
+| Credential storage | Hash opaque, bound, revocable tokens | Current |
+| Capability model | `read` / `append` / `manage` | Current; target may refine admission |
+| Room URL | `/r/<id>/api/*` | Current |
+| Hosted wait | Client polling | Current hosted behavior |
+| Event visibility | Membership-wide in target; directed filtering still in code | Migration required |
+| Read progress | Explicit boundary in target; saved Actor cursor still in code | Migration required |
+| Activation | Optional application service, never kernel behavior | Not shipped |
+
+## Related
+
+- [model-discussion.md](model-discussion.md)
+- [layers.md](layers.md)
+- [persistence.md](persistence.md)
+- [../domain/hosted-identity.md](../domain/hosted-identity.md)
+- [../operations/deploy.md](../operations/deploy.md)

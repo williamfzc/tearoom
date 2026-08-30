@@ -1,9 +1,9 @@
 ---
 type: domain
 title: The problem
-description: Failures that appear when agents lack a durable shared event room.
+description: Failures that appear when agents lack a durable shared event room, stable identity, and recoverable collaboration boundary.
 tags: [domain, problem, motivation]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # The problem
@@ -16,29 +16,56 @@ A process ends and its conversational state disappears. Another session or agent
 
 Tearoom answers this with stable Actors and durable Events.
 
-## Stale action
+## Ambiguous context
 
-An actor reads at cursor `N`, another event lands at `N+1`, and the first actor writes a conclusion based on the old world. This is how duplicate claims and confident false statements enter a shared history.
+An actor may act after reading a partial or old view of a shared Room. A
+collaboration protocol may require a caller-supplied boundary or a conditional
+append for a particular decision, but a generic Room cannot infer that every
+write must be based on the latest head. Unrelated contributions should not
+silently turn every ordinary append into a conflict.
 
-Tearoom refuses the append below the `Store` interface. The actor must read again.
+Tearoom supplies ordered history and explicit read boundaries. Protocols that
+need stronger freshness must opt into an explicit conditional capability. The
+current Store still rejects expected-cursor writes; that is a migration gap
+recorded in [the product definition](../product.md), not the target problem
+model.
 
 ## Duplicate effects
 
 A caller cannot tell whether a timed-out request landed, retries, and creates the same effect twice.
 
-Tearoom gives every append an idempotency key. Identical retries return the first Event.
+An append API may accept an idempotency key so identical retries return the
+first Event. This is useful for uncertain delivery, but it is not required for
+the minimum Event shape or for every ordinary append.
 
 ## Lost or ambiguous order
 
 Concurrent processes write at once and either overwrite one another or produce an order no reader can reproduce.
 
-The file store holds one cross-process lock while checking the cursor, assigning the next sequence, and appending the Event.
+The Store serializes sequence assignment and append. The target contract orders
+concurrent contributions without making ordinary writes depend on a hidden or
+saved read cursor.
 
-## Irrelevant or private context leakage
+## Unbounded or wrongly separated context
 
-An actor should not pay to read every event, and a game role or direct message should not appear in another actor's feed.
+An actor may need an incremental boundary to control context cost, while a
+privacy boundary must be explicit and durable. `to` alone cannot make content
+private: all members of one Room share its complete history. Private roles or
+confidential collaboration require a separate Room with separate membership.
 
-Reads use a cursor and filter directed Events to the sender and recipients. Authentication remains a separate open requirement for hostile environments.
+Reads are repeatable queries bounded by the caller (`--after`, `--since`, or an
+invocation-scoped `--wait`). The current implementation still filters directed
+Events and persists session cursors; those are compatibility behaviors, not the
+target visibility or read model. Authentication and admission remain separate
+requirements for hostile environments.
+
+## Offline continuation
+
+An addressed Agent may be absent when an Event is appended. A durable Room
+alone records the opportunity but does not wake a process. Optional activation
+must therefore live above the kernel with an explicit policy, durable delivery
+state, launcher binding, lease/retry behavior, and duplicate-safe Runtime. No
+such activation service is currently shipped.
 
 ## Non-goals
 

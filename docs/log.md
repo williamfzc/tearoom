@@ -3,14 +3,42 @@ type: log
 title: Change log
 description: Dated record of product decisions and structural changes, newest first.
 tags: [log, history]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Change log
 
+## 2026-08-30 — Adopt the minimum Room and optional activation model
+
+Promoted the conclusions in
+[architecture/model-discussion.md](architecture/model-discussion.md) into the
+authoritative product design. The Room now owns one complete history visible to
+every member; `to` is public addressing rather than privacy; reads have no
+implicit Actor checkpoint; ordinary append has no hidden freshness precondition;
+and the common target surface is `send` plus side-effect-free `read`, with
+waiting as a read mode. The minimum Event is `seq`, `actor`, `at`, optional
+`to`, and `content`; protocols may encode richer meaning in content without
+promoting `type` or `caused_by` into the kernel.
+
+Agent activation is an optional application above the Room. A runtime binding
+and activation policy may elect an addressed Event, launch or resume the stable
+Actor, and pass an Event reference so the Agent reconstructs context from the
+Room. Activation delivery state is explicit operational state, not Actor read
+progress or proof of task completion.
+
+This entry records a product decision, not a shipped implementation. The v0.1
+code still has saved cursors, mandatory stale-write checks, directed visibility,
+typed/causal Event fields, and `event send/list/watch`; the migration and the
+offline-activation proof remain open in
+[architecture/status.md](architecture/status.md) and
+[evaluations.md](evaluations.md).
+
 ## 2026-08-29 — Record the model discussion draft
 
-Captured the open design discussion as [architecture/model-discussion.md](architecture/model-discussion.md): the entity/value split (rooms and actors are entities, events are values), recursive rooms as directories with never-merged order, visibility as membership, event-type extensibility, room types as declarative specs (plugins as template directories, not kernel code), agent-facing primitives, and the LoopX-style long-horizon comparison. Explicitly **not a decision** — the converged points and the open questions (§8) are separated on purpose, and nothing here is planned until it survives usage evidence.
+Captured the first open design discussion as
+[architecture/model-discussion.md](architecture/model-discussion.md). The file
+was subsequently rewritten and adopted on 2026-08-30; this entry describes its
+historical draft state rather than its current contents.
 
 ## 2026-08-29 — Take the hosted stack live: Render + Neon + Cloudflare Pages
 

@@ -1,10 +1,10 @@
 ---
 type: lesson
 title: Borrowed from consensus systems
-description: Restrict caller freedom, order facts once, and reject work based on an obsolete view.
+description: Serialize Room facts once and make uncertain retries safe without turning every append into consensus.
 resource: internal/store/file.go
 tags: [lesson, concurrency, consensus, design]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Borrowed from consensus systems
@@ -15,19 +15,28 @@ Tearoom is not a consensus implementation. It borrows one useful design posture:
 
 A Room owns one increasing sequence. Concurrent Events do not need globally synchronized wall clocks; the Store assigns their Room order under one lock.
 
-## Freshness at commit
+## Freshness is protocol-specific
 
-An Actor reads cursor `N` and appends with `expected=N`. If another Event moved the Room, the Store refuses the append and reports the current cursor. The caller must read the delta before deciding whether its intended Event remains true.
+The v0.1 implementation requires every append to name the Room head it observed
+and refuses the append when the head moved. That rule proved that stale
+assumptions can be surfaced, but it also rejects unrelated concurrent
+contributions and couples ordinary writing to hidden client progress.
 
-This prevents the observed failure where an agent, working from an old snapshot, recorded a confident statement that another Actor had already made false.
+The adopted product therefore does not make freshness a default append
+condition. A protocol that truly requires compare-and-append may request an
+explicit conditional capability and must define what state it protects. The
+general lesson is to make a real precondition atomic at its owning boundary,
+not to impose one precondition on every Event.
 
 ## Idempotent effects
 
 A transport error can leave a caller unsure whether its Event landed. Every append therefore carries a caller-chosen key. Retrying identical content with that key returns the original Event; using the key for different content is refused.
 
-## Rules below every client
+## Shared rules below every client
 
-Freshness, idempotency, order, and visibility are Store rules. Implementing any one only in the CLI would let raw HTTP or a future client bypass it.
+Room membership, authenticated authorship, sequence assignment, append-only
+persistence, and any supported idempotency rule belong below every client.
+Event visibility follows Room membership rather than a per-Event Store filter.
 
 ## What was not copied
 

@@ -1,18 +1,20 @@
 ---
 type: product
 title: Product definition
-description: Authoritative definition of Tearoom's scope, model, invariants, and completion standard.
+description: Authoritative definition of Tearoom's scope, target model, implementation status, and completion standard.
 tags: [product, scope, authority]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Product definition
 
-This document decides scope. If another document disagrees, that document is wrong.
+This document decides product scope. The current target model is recorded in
+[the model rationale](architecture/model-discussion.md); code that still
+implements an older contract is called out as an implementation gap below.
 
 ## One sentence
 
-**Tearoom is a durable room where agents from any product exchange ordered events across sessions without a human relaying context.**
+**Tearoom is a durable shared Room where people, Agents, and tools contribute to one ordered, replayable history; an optional activation layer lets absent Agents return and continue the collaboration.**
 
 ## The three entities
 
@@ -20,7 +22,8 @@ This document decides scope. If another document disagrees, that document is wro
 - **Actor** is a stable participant identity independent of a process, session, model, or agent product.
 - **Event** is one immutable fact appended by an actor.
 
-There is no fourth core entity. A task, claim, approval, handoff, direct message, game phase, role assignment, or vote is an event type or a projection over events.
+There is no fourth core entity. A task, claim, approval, handoff, game phase,
+role assignment, or vote is a content convention or a projection over Events.
 
 `Room` is the name because this product is Tearoom. It also describes the user model directly: actors enter a room and events happen there.
 
@@ -37,11 +40,30 @@ The first two are the completion boundary. A dedicated human interface is option
 - **One room, one sequence.** Events receive dense, increasing sequence numbers under one store lock.
 - **Append only.** Accepted events are never edited in place.
 - **Stable actors.** An actor identity survives process and session changes.
-- **Fresh writes.** Every append names the room cursor it was based on. A moved cursor is refused under the `Store` interface.
-- **Idempotent retries.** Repeating the same event with the same key returns the original event. Reusing a key for different content is refused.
-- **Selective visibility.** A public event is visible to every actor. A directed event is visible only to its sender and named recipients. This is filtering, not yet authenticated access control.
-- **One contract locally and remotely.** The file Store, the SQLite Store, and the HTTP client implement the same `Store` interface.
+- **Caller-owned read boundaries.** Reading is a repeatable query. A caller may provide an explicit sequence boundary; Tearoom does not persist an implicit per-Actor read cursor, unread marker, or acknowledgement.
+- **Ordinary append.** The Store assigns the next dense sequence. A normal append does not require the writer to prove which read cursor it used. An explicit conditional append may be added when a protocol proves it needs one.
+- **Idempotent retries.** An append API may use an idempotency key so an uncertain retry returns the original Event; this is an append capability, not part of the minimum Event shape.
+- **Membership visibility.** Every member of a Room can read its complete history. `to` is public addressing or attention metadata, not secrecy, permission, or a process-control request. Privacy requires a separate Room with separate admission.
+- **One contract locally and remotely.** Local and hosted implementations should expose the same Room, Actor, Event, send, and read contract.
 - **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
+
+## Design baseline and implementation status
+
+The target collaboration kernel is intentionally smaller than the current
+implementation:
+
+| Area | Target model | Current implementation status |
+|---|---|---|
+| Read progress | Caller-supplied `read` boundaries; no implicit Actor cursor | The CLI still persists session cursors and `event list`/`event watch` advance them. Migration is pending. |
+| Visibility | Room membership exposes complete history; `to` addresses | The current Store still filters directed Events. This is compatibility behavior, not the target privacy model. |
+| Event minimum | `seq`, `actor`, `at`, optional `to`, and `content` | `internal/core.Event` still carries the older typed/causal envelope. Those fields remain a migration concern, not minimum-kernel requirements. |
+| Append freshness | Ordinary append is independent of read progress; conditional append is explicit | The current Store still enforces expected-cursor writes. Migration is pending. |
+| Activation | Optional application capability above Room; durable offline activation is not required for a valid Room | No durable activation ledger, runtime binding, offline launcher, or retry policy is shipped. |
+
+The complete rationale and migration inventory are in
+[the model rationale](architecture/model-discussion.md). Until the migration
+lands, tests and demos prove the current compatibility contract rather than the
+target model.
 
 ## Product forms
 
@@ -50,7 +72,7 @@ Tearoom has one coordination contract and two product forms:
 - **Local Tearoom** is the current single-binary product. A user creates a Room beside a repository and agents exchange Events through the CLI or a self-hosted server.
 - **Hosted Tearoom** is the intended SaaS product. A user signs in with GitHub, creates and manages Rooms, and issues credentials that let agents from any product report to those Rooms.
 
-Hosted Tearoom does not replace the local product or create a second Event model. Both forms use the same Room, Actor, Event, cursor, idempotency, ordering, and visibility semantics.
+Hosted Tearoom does not replace the local product or create a second Event model. Both forms should use the same Room, Actor, Event, addressing, ordering, and read semantics.
 
 The live instance (as of 2026-08-29): the hosted API runs free at `[redacted deployment address]` (Render + Neon, Singapore) and the management UI at `[redacted deployment address]` (Cloudflare Pages). The runbook is [operations/deploy.md](operations/deploy.md).
 
@@ -73,10 +95,11 @@ The hosted product introduces account, organization, membership, credential, and
 
 The file Store remains a valid local implementation, and the relational Store now ships beside it on SQLite:
 
-- SQLite is the default local database, chosen per Room with `--store sqlite` and recorded in `.tearoom/store.json`.
+- The file Store remains the current local default. SQLite is an explicit local
+  choice selected with `--store sqlite` and recorded in `.tearoom/store.json`.
 - PostgreSQL is the intended hosted database; the schema and migration discipline are shared, and PostgreSQL validation is pending.
 - The ORM and database models remain inside the persistence layer and must not become domain types.
-- Database transactions enforce the same Store invariants that `flock` protects in the file Store: cursor freshness, idempotency, dense ordering, append-only Events, Actor admission, recipient validation, and visibility.
+- Database transactions must enforce the target Store invariants: dense ordering, append-only Events, stable Actor admission, membership visibility, and any explicitly adopted append capability. The current backends still carry older cursor and recipient-filtering behavior; see the migration table above.
 - A backend change must not alter the CLI, HTTP contract, or Event semantics.
 
 The relational Store was added beside the file Store rather than replacing it. Replacing or removing the file format requires an explicit compatibility and migration decision; it is not implied by the hosted direction.
@@ -91,8 +114,8 @@ The core does not know these applications, but it can carry them:
 - task claims and progress reports;
 - review and approval protocols;
 - harness workflows in which a planner, a generator, and an evaluator run a plan/generate/evaluate loop over one Room ([domain/harness-workflow.md](domain/harness-workflow.md));
-- group chat and direct messages;
-- games such as Werewolf, including private role events;
+- group chat and addressed messages;
+- games such as Werewolf, with private roles represented by separate Rooms when privacy is required;
 - any other protocol expressible as ordered facts among stable actors.
 
 ## What it refuses
@@ -101,8 +124,8 @@ The core does not know these applications, but it can carry them:
 - No task, lease, gate, thread, channel, or game entity in the kernel.
 - No browser or WebAssembly console in the current product; a hosted management interface may be added when the SaaS control plane exists.
 - No hidden compatibility model beside Room, Actor, and Event.
-- No silent success when the store is unavailable or a write is stale.
-- No claim that recipient filtering is security until server authentication exists.
+- No hidden read checkpoint, unread state, or mandatory stale-write precondition in the kernel.
+- No claim that `to` is security or process activation; authentication and activation are separate layers.
 
 ## Competitive context
 
@@ -110,7 +133,15 @@ The market evidence behind this product, and the near-term priorities it justifi
 
 ## Command surface
 
-The CLI exposes three top-level concerns rather than every domain entity:
+The target agent-facing path exposes actions rather than the transport model:
+
+```text
+tearoom send <content>
+tearoom read [--after <event>] [--since <time>] [--wait <duration>]
+```
+
+Lifecycle and operator commands may remain grouped below `room`, `server`, or
+`admin`. The current CLI compatibility surface is:
 
 ```text
 room:   init, info
@@ -120,23 +151,33 @@ event:  send, list, watch
 
 - `room` owns the local workspace lifecycle.
 - `server` owns the independent serving process.
-- `event` owns the normal interaction loop.
-- Actor registration is automatic on the first Event operation; it is not a separate user task. A directed Event may target only Actors already known to the Room. The current CLI intentionally has no member-management command: a recipient must previously have performed an Event operation or been admitted by another Store client.
+- `event` owns the current compatibility interaction loop.
+- Actor admission, membership management, and credential policy are not yet a
+  complete local security boundary. The current CLI still auto-registers an
+  Actor and accepts the older directed-recipient contract; this is an explicit
+  migration gap.
 
 The common path is intentionally short:
 
 ```bash
-tearoom room init
-tearoom event send "review worktree A"
-tearoom event list
-tearoom event watch
+tearoom send "review worktree A"
+tearoom read
+tearoom read --after e42 --wait 5m
 ```
 
-`event list` returns currently available Events and exits. `event watch` waits for a later Event when none is currently available.
+`read` is a repeatable query. `--after` is a caller-supplied exact boundary,
+and `--wait` is scoped to that invocation; neither creates durable delivery
+state.
 
-The CLI keeps a local session cursor for each Room and Actor in the user's Tearoom configuration directory; client progress is not written into shared Room state. `event list` and `event watch` start after that cursor and advance it after a successful read. `event send` uses that saved cursor as its expected Room version. It must not silently fetch the latest cursor before writing, because doing so would disable stale-write protection.
+The current CLI keeps a local session cursor for each Room and Actor and uses it
+for reads and writes. That behavior is retained only as a compatibility note;
+it is not the target contract and must not be used to justify mandatory stale
+writes or hidden read progress.
 
-The CLI derives a stable request id from the Actor, saved cursor, and Event content. If a request outcome is uncertain, repeating the same command from the same cursor reaches the Store with the same idempotency key. Advanced protocol controls remain available through `--body`, `--data`, `--type`, `--to`, `--caused-by`, `--cursor`, and `--id`, but none is required for an ordinary public text Event.
+The current CLI also exposes `--body`, `--data`, `--type`, `--to`,
+`--caused-by`, `--cursor`, and `--id`. These are compatibility/protocol
+controls. `type` and `caused_by` are not minimum Event fields; a protocol may
+retain an envelope if its evidence requires one.
 
 Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous fallback: an identity must be explicit so session state and Event authorship remain stable.
 
@@ -147,9 +188,16 @@ Tearoom is working only when all of the following are executable tests:
 - A later process in the same agent product resumes a stable actor and reads prior events.
 - A different agent product exchanges events through the same server.
 - Concurrent writers cannot assign the same room sequence.
-- A stale write is refused rather than recorded.
-- A repeated request does not create a duplicate event.
-- A directed event is not returned to unrelated actors.
-- The shipped `tearoom` binary performs all of the above through the documented `room`, `server`, and `event` commands without a browser component.
+- A caller can read the same Room history repeatedly and can resume from an
+  explicit Event boundary.
+- Concurrent writers receive distinct dense sequence numbers.
+- A repeated request is duplicate-safe when the append capability uses an
+  idempotency key.
+- Every Room member can inspect the same complete Event history; `to` remains
+  visible addressing rather than filtering.
+- The shipped `tearoom` binary performs the target send/read journey without a
+  browser component. Offline activation is a separate optional proof.
 
-`make check` is the repository-level proof of this standard. This standard is story **S1** in the [evaluation set](evaluations.md), which maps every user story to the evaluations that prove it.
+`make check` is currently the repository-level proof of the compatibility
+implementation, not of the target migration. The user stories and evaluations
+must be updated when the target contract is implemented.

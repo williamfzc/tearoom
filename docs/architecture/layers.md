@@ -1,46 +1,89 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: Package responsibilities and the rule that shared invariants live below every client.
+description: Package responsibilities and the boundary between the Room kernel, clients, and optional Agent activation.
 resource: internal/
 tags: [architecture, boundaries, layering]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Layers and dependency direction
 
-| Layer | Package | Owns |
+The target model has one durable coordination kernel and optional application
+capabilities above it:
+
+| Layer | Current package or owner | Target responsibility |
 |---|---|---|
-| Foundation | `internal/core` | Room, Actor, Event, Store, typed errors |
-| Domain | `internal/store` | File layout, cross-process locking, append invariants |
+| Foundation | `internal/core` | Room, Actor, Event, Store, and typed errors |
+| Persistence | `internal/store`, relational Store | Durable Room membership and ordered Event history |
+| Application | not yet implemented | Optional activation ledger, policy, runtime binding, and launcher |
 | Outside | `internal/transport` | HTTP encoding and remote Store implementation |
-| Outside | `internal/cli`, `cmd/tearoom` | Command routing, local session cursor, text/JSON output, process entry point |
+| Outside | `internal/cli`, `cmd/tearoom` | Command routing, session state during migration, output, and process entry |
 
-Dependencies point inward. `core` imports no project package. `store` and `transport` implement `core.Store`. `cli` depends on the interface and chooses a local or remote implementation.
+Dependencies point inward. `core` imports no project package. Persistence and
+transport implement `core.Store`; the CLI depends on that interface. A future
+activation service may consume and append through `core.Store`, but the kernel
+must not import a launcher, scheduler, Agent runtime, or hosted control plane.
 
-## Store boundary
+## Target Store boundary
 
-These rules are enforced inside every Store implementation, not remembered by callers:
+The Store owns the facts that every client must share:
 
-- joined Actor requirement;
-- recipient existence;
-- room cursor freshness;
-- idempotency key uniqueness;
-- dense sequence assignment;
-- append-only persistence;
-- visibility filtering.
+- Room identity and membership admission;
+- Actor identity and authorization checks supplied by the enclosing boundary;
+- recipient validity for public `to` addressing;
+- dense sequence assignment and append-only persistence;
+- immutable Event reads in Room order;
+- any explicitly adopted idempotency contract.
 
-The file Store checks and appends under one `flock`. The HTTP server delegates directly to Store, so a raw HTTP client cannot bypass rules that the CLI obeys.
+Membership determines visibility: every admitted Room member reads the complete
+Room history. `to` identifies members who should pay attention; it is not a
+secrecy filter and does not request process execution. Read progress is not
+hidden Store state: a pure read takes an explicit boundary such as `after seq`,
+or a separately named consumer identity may own durable delivery progress.
 
-A relational Store may later sit beside the file Store. Its ORM models and migrations remain inside persistence and implement `core.Store`; no upper layer depends on them. See [persistence.md](persistence.md).
+The current implementation does not yet satisfy this target boundary. Its
+Store still enforces a saved per-Actor cursor for writes and filters directed
+Events, while the CLI auto-registers Actors. Those are compatibility facts to
+remove through an explicit migration, not target invariants.
 
-## Why there is no projection layer yet
+## Activation boundary
 
-The previous model needed dedicated assembly and view packages because it stored several related entities and derived a board from them. The Room model has no built-in board. Reads return Events and a cursor directly, so those packages had no remaining responsibility and were removed rather than retained as empty architecture.
+Optional offline activation belongs in the application layer. Its durable state
+may record `(room, event sequence, target actor, activation)` with claim, lease,
+attempt, retry, and failure information. It must not be represented as Actor
+read progress or as an Event completion claim.
 
-Application-specific projections should live outside the kernel until they have multiple callers and a stable owner.
+The application layer owns policy and runtime bindings:
+
+```text
+addressed Event -> activation policy -> durable claim/lease
+                -> operator-owned launcher -> ephemeral Runtime
+                -> Runtime reads Room and appends a contribution
+```
+
+The Room Event remains the source of truth. Activation is at-least-once; a
+launcher and Runtime must make duplicate attempts safe. Without an activation
+service, sending an Event stops after durable append.
+
+## No projection layer yet
+
+The Room model has no built-in board, workflow, task, lease, or status view.
+Application-specific projections belong above the kernel until they have
+multiple callers and a stable owner. This keeps protocol conventions and
+replay views from becoming hidden core entities.
+
+## Migration note
+
+The existing code, tests, and HTTP contract still describe the older model:
+`event list`/`watch`, local saved cursors, directed visibility, and mandatory
+freshness on append. Any layer change must update those boundaries together and
+must not claim that optional activation exists before a real offline-runtime
+journey has been proven.
 
 ## Related
 
+- [model-discussion.md](model-discussion.md)
+- [persistence.md](persistence.md)
 - [../domain/concepts.md](../domain/concepts.md)
 - [../lessons/invariants-belong-in-the-store.md](../lessons/invariants-belong-in-the-store.md)

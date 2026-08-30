@@ -1,35 +1,46 @@
 ---
 type: domain
 title: Agent experience
-description: How cursors control observation cost and what attention features remain outside the core.
+description: How callers observe a Room and how optional activation differs from read progress.
 tags: [domain, attention, context, roadmap]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Agent experience
 
-Agents do not glance at a screen for free. Every observation consumes time and context, so Tearoom separates **knowing that the Room moved** from **reading visible Event bodies**.
+The target contract treats a Room as shared history, not as a per-Actor inbox. Every member can read the complete Event sequence. A caller chooses how much history to inspect and where to begin; Tearoom does not record an implicit unread position.
 
-## What exists
+## Target observation model
 
-- Every read returns a cursor.
-- `event list` returns currently available visible Events after the local session cursor, then advances it.
-- `event list --limit K` bounds the visible batch and saves the exact resume cursor.
-- `event watch` starts from the same cursor and blocks until the Room moves.
-- Directed Events keep unrelated bodies out of an Actor's feed.
+- `read` is a pure query. Its `after` boundary belongs to the caller and is not saved by the Room.
+- A caller may read from the beginning, from a known sequence, or from the boundary it keeps in its own session.
+- `read --wait` is an invocation-scoped wait for later Room movement. It is a mode of reading, not a separate delivery or acknowledgement protocol.
+- Every member sees the same complete history. `to`, when present, is public attention metadata; it is not a visibility filter or a process-control request.
+- A read boundary is not proof that an Actor read, understood, or completed an Event.
 
-A hidden Event still advances the cursor. The Actor learns only that the Room moved, then continues past it without being stuck.
+The minimum useful observation is therefore an Event reference and enough ordered history for the caller to reconstruct context. A caller may maintain a local boundary for convenience, but that state is not shared truth.
 
-## What does not exist
+## Optional activation
 
-- Durable per-Actor unread state on the server.
-- Mute or subscription rules.
-- Mentions as a separate delivery tier.
-- Scheduled wake-ups or deferred intent.
-- Automatic summaries or long-term Actor memory.
+Activation is above the Room. An activation service may observe an addressed Event, elect it according to policy, and deliver an Event reference to a launcher. The launcher may start or resume a Runtime. The Runtime reads the Room and appends its own contribution.
 
-These may become protocols over Events or derived indexes. None currently justifies a fourth core entity.
+Activation delivery state (pending, claimed, delivered, or failed) is operational consumer state. It must not be represented as an Actor read cursor or as task completion. Offline recovery, retry, leases, and duplicate-safe execution are not implemented by the current product and remain an open evaluation.
+
+## What the target does not promise
+
+- server-owned unread state or read acknowledgements;
+- mute, subscription, or mention tiers;
+- scheduled wake-ups as part of the Room kernel;
+- automatic summaries or long-term Actor memory;
+- private Event bodies inside one Room;
+- exactly-once Runtime execution.
+
+These may be application protocols or control-plane capabilities. None adds a fourth core entity to Room, Actor, and Event.
+
+## Current implementation note
+
+The shipped CLI still stores a per-Actor cursor, filters directed Events, and exposes `event list` and `event watch`. Those behaviors are implementation evidence for the old contract, not the target observation model. See [../reference/cli.md](../reference/cli.md) and [../architecture/model-discussion.md](../architecture/model-discussion.md).
 
 ## Design rule
 
-The cheapest observation must stay useful. A feature that forces every Actor to read more content by default must prove that the extra context is necessary.
+The cheapest observation must stay useful. A feature that forces every Actor to read more content or run a process must prove that the extra context or execution is necessary.

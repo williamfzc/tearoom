@@ -1,15 +1,18 @@
 ---
 type: domain
 title: Room, Actor, Event
-description: Canonical definitions of Tearoom's three domain entities and their invariants.
-resource: internal/core/core.go
+description: Canonical target definitions of Tearoom's three domain entities and their invariants.
+resource: docs/architecture/model-discussion.md
 tags: [domain, concepts, invariants]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Room, Actor, Event
 
-The product has exactly three domain entities. Their authoritative scope is in [the product definition](../product.md); `internal/core` is the canonical implementation.
+The product has exactly three minimum domain entities. Their target scope is in
+[the product definition](../product.md) and [the model discussion](../architecture/model-discussion.md).
+`internal/core` still contains a richer compatibility implementation; it is not
+the minimum schema.
 
 ## Room
 
@@ -19,36 +22,52 @@ A Room is deliberately more general than a task, thread, channel, repository, or
 
 ## Actor
 
-An Actor is a stable participant identity with an optional role label. Identity comes from `TEAROOM_ACTOR` or `--as`, not from the process, so a later session can resume the same participant. Event operations register that identity automatically.
+An Actor is a stable participant identity. Identity
+comes from `TEAROOM_ACTOR` or `--as`, not from the process, so a later session
+can resume the same participant. Admission and membership must be explicit for
+a real privacy boundary; the current local auto-registration path is not that
+boundary.
 
 An Actor may be a human, a coding agent, another agent product, or a game role controller. The core does not distinguish them.
 
 ## Event
 
-An Event is one immutable fact in the Room log. It carries:
+An Event is one immutable fact in the Room log. The minimum target shape is:
 
-- a dense room sequence and event id;
-- the actor that appended it;
-- a type and optional body or JSON data;
-- optional recipients;
-- an optional causing event;
-- an idempotency key.
+- `seq`, its dense position and precise replay address;
+- `actor`, the admitted stable author;
+- `at`, assigned when the Event is accepted;
+- optional `to`, naming Room members for attention or routing;
+- `content`, whose exact text/JSON shape remains open.
 
-Empty recipients mean public. Otherwise only the sender and named recipients receive the event from `Read`.
+Every Room member can read the complete history. `to` is visible addressing,
+not a visibility filter, secrecy mechanism, permission grant, or wake request.
+Privacy requires a separate Room. A protocol may wrap `content` with `type`,
+`caused_by`, or an idempotency key, but those are not minimum kernel fields.
+
+The current implementation still exposes those richer fields and filters
+directed Events; this is a documented migration gap rather than the target
+concept model.
 
 ## The write contract
 
-Every append supplies `Expected`, the cursor returned by the read on which the event is based.
+An ordinary append does not require `Expected`, a saved cursor, or proof of the
+writer's last read. The Store assigns the next dense sequence under its
+serialization boundary.
 
 ```text
-read -> cursor N
+read --after e42
 reason or act
-append(expected=N)
+send <content>
 ```
 
-If the Room has advanced to `N+1`, the append is rejected. The caller must read again and decide whether its event is still true. This turns stale context into an explicit conflict rather than a recorded falsehood.
+Some protocols may need an explicit conditional append such as “accept this only
+if the Room head is still e42.” That is a separate capability and remains open;
+it is not the default meaning of `send`.
 
-The idempotency key answers a different question: whether the same intended event has already landed. The same key and content return the original Event; the same key with different content is a conflict.
+An idempotency key, when an append API exposes one, answers whether the same
+intended Event has already landed. It is independent of read boundaries and is
+not part of the minimum Event value.
 
 ## Application protocols
 

@@ -1,179 +1,474 @@
 ---
 type: architecture
-title: Model discussion — recursion, room types, and the agent-facing surface
-description: Open design discussion on extending the Room model: entity/value split, recursive rooms, membership visibility, room types, and agent-friendly primitives.
+title: Model rationale — the minimum Room and Event
+description: Rationale and remaining hypotheses behind the adopted Room, Event, identity, and optional Agent activation model.
 resource: internal/core/core.go
-tags: [architecture, discussion, open, decision]
-timestamp: 2026-08-29
+tags: [architecture, rationale, decision]
+timestamp: 2026-08-30
 ---
 
-# Model discussion: recursion, room types, and the agent-facing surface
+# Model rationale: the minimum Room and Event
 
-> **Status: discussion draft.** Converged during a 2026-08-29 design conversation.
-> This is not a decision. Open questions are listed at the end; nothing here is
-> implemented or planned until it survives usage evidence.
+> **Status: adopted product rationale.** The 2026-08-29 and 2026-08-30
+> discussion converged on the minimum model adopted by
+> [product.md](../product.md). Open hypotheses remain open. The implementation
+> still exposes the previous contract; that migration gap is recorded below and
+> in [status.md](status.md).
 
 ## Thesis
 
-Tearoom is a coordination substrate: **the entity graph gives structure, the
-value stream gives order.** Rooms and Actors are entities (identity, lifecycle,
-membership, credentials); Events are values (immutable facts in an ordered
-stream). All semantics — scheduling, gates, quota, evidence — live in the
-protocol layer above; the kernel guarantees only order, CAS, and idempotency.
+Tearoom is, at minimum, a durable shared Room with membership and one ordered,
+immutable history. A Room gives Events their container and order; an Actor is a
+stable participant who can append and read; an Event records one contribution.
 
-## 1. Entity vs value
+Shared history is independently useful: a deployment may use Tearoom only as a
+simple shared space for people, Agents, or ordinary tools. An optional product
+hypothesis is stronger: an activation service can observe an addressed Event
+and activate a temporarily absent Agent, which re-enters the Room under its
+stable Actor identity, reads the relevant history, acts, and contributes the
+result. That recoverable collaboration loop may differentiate Tearoom from
+messaging, but it is not required for a Room to be valid or useful.
 
-The defining line is *reference semantics* vs *value semantics*:
+Anything beyond that minimum needs usage evidence. In particular, Tearoom must
+not assume that workflow types, causal links, unread state, or mandatory
+optimistic concurrency belong in the kernel merely because the current
+implementation contains them.
 
-| | Entity | Value |
-|---|---|---|
-| Members | Room, Actor | Event |
-| Semantics | Referenced: identity, lifecycle, credentials, membership | Immutable, append-only |
-| Operations | open, attach spec, authorize, watch | append and read only |
+## 1. Entity and value
 
-An Event has an address (`e<seq>`) and can be referenced (`caused_by`), which
-makes it look like an entity — but it is an *addressable value*: it has no
-lifecycle and no credentials. Only Rooms can be opened, authorized, and watched.
+Rooms and Actors are entities: they have identity, lifecycle, membership, and
+authorization. Events are immutable values in a Room's sequence. An Event may
+be addressed by its sequence, but it has no independent lifecycle or
+credentials.
 
-One consequence: an entity birth (opening a child room) is **a fact in the
-parent's stream plus a new entity**, not an event that *is* an entity. The two
-must stay separate in the model.
-
-## 2. Recursion and topology: rooms like directories, never merge order
-
-```
-Room  ::= Event+                 # a room is a sequence of events
-Event ::= Fact | BirthRecord     # a fact, or "a child room was born here"
-BirthRecord ⟹ new Room + its own event sequence
-```
-
-- Nesting is directory nesting; `room.open` is `mkdir`. Recursion happens on
-  **entities**, never inside a value stream.
-- **The rule that must not break: hierarchy is structure, not order.** A parent
-  room's `seq` contains only events appended to the parent (birth records,
-  milestones a referee fans in). A parent never merges children's event
-  streams — merging two dense sequences reintroduces partial order, vector
-  clocks, and complexity that this model exists to avoid.
-- The metaphor is literal in the file backend: `.tearoom/` is the room,
-  `events.jsonl` is the stream, `actors.json` is membership, `children/` would
-  be sub-rooms, `spec.json` would be the charter.
-
-## 3. Visibility = membership
-
-- **Everyone in a room sees everything that happens in the room.** The
-  visibility boundary is the container, not the content.
-- Today's directed filtering (`Event.VisibleTo`, `internal/core/core.go:70-80`,
-  enforced in every `Read`) would be removed. The `To` field stays as **routing
-  / attention metadata** (mention-style: everyone can see it, recipients treat
-  it as "this concerns you"), not as a secrecy mechanism.
-- Privacy is provided by **sub-rooms with membership**: private reviews, secret
-  game roles — each is its own room.
-- Benefits: the cursor-wedge problem disappears (no more "the room moved, I
-  don't know why", `docs/domain/boundaries.md:25-27`); membership already
-  exists (local: joined actors refuse unjoined reads, `boundaries.md:21`;
-  hosted: credentials bound to room + actor, `docs/domain/hosted-identity.md:40`).
-  This change closes the remaining gap rather than opening a new door.
-- Cost: breaking behavior change — `--to` semantics, the `note.whisper`
-  example, three doc files, and tests.
-
-## 4. Event extensibility
-
-- Today `--type` accepts any string and `Data` is arbitrary JSON
-  (`internal/cli/cli.go:374,386`). **Extending event types is zero kernel
-  change**; it is a protocol convention.
-- Recommended next step: an envelope layer — versioned type names
-  (`todo.claim@1`) or a `protocol` field — so conventions can evolve without
-  breaking old clients.
-- The type vocabulary should be **verbs**: an Event is "Actor did Type to
-  Room/Actor". `claimed`, `reviewed`, `approved`, `opened` — matching the
-  actor-verb-object structure of the model.
-
-## 5. Room types: the collaboration method
-
-A room can declare a `spec.json` — the room's charter — containing:
+The smallest Event shape discussed so far is:
 
 ```text
-type: goal@v1
-allowed:  [todo.claim, todo.update, gate.*, evidence, quota.*]
-gates:    gate.ask must be resolved before further work events
-referee:  ref-prod-1            # who may append decision events
-strict:   true                  # kernel rejects unlisted types
+Event ::= {
+  seq,
+  actor,
+  at,
+  to?,
+  content
+}
 ```
 
-- Different room types, different event gating: `chat-room@v1` (free-form,
-  no referee), `goal-room@v1` (vocabulary + gates + referee), `game-room@v1`
-  (role sub-rooms, game master).
-- **Plugins are template directories, not kernel code**: a room type is a
-  directory containing `spec.json` (+ a README teaching the collaboration
-  method); `room init --type goal@v1` copies the template. The "code" of a
-  room type lives in its referee, an ordinary external actor. Hook-style
-  plugins that register behavior into the kernel are the fourth entity in a
-  new costume and should be avoided.
-- The kernel participates only optionally: in `strict` mode it checks the
-  appended type against the room's declared vocabulary ("the room declares the
-  invariant, the store enforces it"). This extends — rather than contradicts —
-  the existing "invariants belong in the store" lesson
-  (`docs/lessons/invariants-belong-in-the-store.md`).
-- Additive by design: no type = today's behavior; type without strict =
-  documentation for referees; type + strict = one set-membership check at
-  append.
+- `seq` is the Event's position in its Room and its precise replay address.
+- `actor` is the author, established by Room identity rather than trusted from
+  caller-provided content.
+- `at` is assigned when the Event is accepted.
+- `to` is optional addressing or attention metadata naming Room members.
+- `content` is the contribution. Its exact text/JSON shape is still open.
 
-## 6. Agent-facing primitives
+`room` need not be repeated inside the Event when the container already owns
+that fact. An `e<seq>` identifier may be a presentation of `seq` rather than a
+second stored identity. `type` and `caused_by` are not part of this minimum
+schema. A protocol may prove that it needs an envelope containing such fields,
+but the kernel must not pre-empt that evidence.
 
-Current CLI is transport-shaped, not intent-shaped. The agent pays for it:
-the cursor dance (stale-write exit 2, then manual `list` to resync), raw feeds
-instead of distilled answers, `watch` waking on any movement, and protocol
-burden (conventions) left entirely to the agent.
+## 2. Visibility is membership
 
-Target shape, by cost-benefit order:
+Everyone in a Room can see the Room's complete Event history. Visibility is a
+property of the container, not of individual content.
 
-1. **Make stale-write failures actionable**: on exit 2, return the missed
-   events ("the room moved after your last read; here is what changed"). The
-   CAS must stay — it is correctness — but the refusal should be a decision
-   point, not an opaque error.
-2. **Add a `status` primitive**: a distilled summary (new public events,
-   events directed at me, gates waiting on me, cursor lag) instead of the raw
-   feed, so agents stop re-implementing parse-and-filter.
-3. **Watch with filter**: `watch --type gate.ask` — block until the *relevant*
-   event, replacing the wake → filter → sleep loop.
-4. **No side effects on read**: `list` should not advance the saved cursor
-   (`--no-advance`); cursor disappears from agent-facing help text.
+`to` is still a first-class Event field, just as `at` is, but it answers a
+different question:
 
-The reference shape is LoopX's small vocabulary — five commands
-(`quota should-run`, `todo claim`, `todo update`, `refresh-state`,
-`quota spend-slot`), each answering one agent question. Primitives are the
-integration contract.
+```text
+Who may read this Event?   Every member of the Room.
+Whom does it address?      The members named by Event.to, if any.
+```
 
-## 7. Long-horizon coordination (LoopX comparison)
+An absent `to` means that the Event has no particular addressee. It does not
+encode broadcast permissions and must not implicitly wake every member. A
+populated `to` is visible to every Room member and acts like a mention or
+routing hint, not a secrecy or process-control mechanism. An optional activation
+layer may observe it when selecting Agent runtimes, subject to an independently
+configured policy; neither the Event nor `to` itself requests or starts a
+process.
 
-Tearoom provides the physical layer of coordination: order, CAS, idempotency,
-membership, blocking wait. Long-horizon governance (quota, gates, evidence,
-claims — the LoopX state kernel) is **a `goal@v1` room type plus a referee**,
-not kernel functionality. The two genuinely missing thin layers:
+Privacy therefore requires a separate Room with separate membership. This is
+only a coherent security boundary after admission is real: reading or sending
+must not silently create membership. The current local auto-registration path
+does not yet satisfy that requirement.
 
-- an **external timer** that appends `schedule.wake` events (the bus holds
-  facts, not intent);
-- a **referee actor** that reads the stream and appends decision events
-  (safe as a single writer via `Expected`).
+## 3. No implicit read checkpoint
 
-Event TTL / retention / compaction remain an open question
-(`docs/domain/open-questions.md:29-31`).
+Tearoom does not know whether an Actor understood, handled, or committed an
+Event merely because bytes reached a CLI process. It therefore should not own
+per-Actor unread state, acknowledgements, or an implicit saved read cursor.
 
-## 8. Converged vs open
+Reading is a repeatable, side-effect-free query:
 
-**Converged in this discussion:** entity/value split; recursion on entities
-with never-merged order; visibility = membership; type vocabulary as verbs;
-plugins as template directories + referees.
+```text
+tearoom read
+tearoom read --after e42
+tearoom read --since 30m
+tearoom read --after e42 --wait 5m
+```
 
-**Explicitly undecided:**
+- With no boundary, `read` returns the current visible history.
+- `--after e42` is the precise incremental boundary supplied by the caller.
+- Time is a human-friendly filter, not a correctness boundary: timestamps may
+  coincide, while `seq` defines the Room's order.
+- `--wait` waits within that invocation; it does not persist a subscription or
+  progress after the command exits.
 
-1. Tree-as-truth vs log-as-truth: does a birth record stay in the parent's
-   stream, or is the directory structure itself the record? (A real
-   filesystem keeps no mkdir log; append-only philosophy leans toward
-   keeping one.)
-2. When the room-type system lands, and how far strict enforcement goes.
-3. Priority and sequencing of the primitive rework (§6).
-4. Event TTL / retention policy.
-5. Whether the file-system reading surface (direct `cat`/`tail -f` of the
-   JSONL stream) should be promoted to a supported interface or remain an
-   implementation detail.
+The Room still has a head and Events still have sequence addresses. Those are
+log structure, not a record of where any Actor has read. A future real consumer
+that needs durable delivery progress must introduce an explicit consumer or
+subscription identity instead of borrowing Actor identity invisibly.
+
+## 4. Append and freshness
+
+The Store assigns every accepted Event the next dense Room sequence under its
+serialization boundary. An ordinary append must not depend on hidden read
+progress: several Room members may contribute concurrently and the Store orders
+their Events.
+
+Some decisions may eventually require a conditional append such as "accept
+this only if the Room head is still e42." That remains an explicit Store
+capability and an open product question, not the default meaning of `send`.
+Room-wide head comparison is also coarse: an unrelated contribution would
+invalidate a task claim. A real protocol must prove whether this protection is
+useful before the CLI gains an `--if-head`-style surface.
+
+Idempotent append remains independently useful for uncertain retries; it does
+not require a saved read checkpoint.
+
+## 5. Agent-facing surface
+
+The common path should expose actions rather than the transport model:
+
+```text
+tearoom send <content>
+tearoom read [--after <event>] [--since <time>] [--wait <duration>]
+```
+
+Low-frequency lifecycle and operator commands may remain grouped below `room`,
+`server`, or `admin`. The current `event list` and `event watch` names are not
+honest: `list` mutates saved state and `watch` performs one blocking read rather
+than continuous observation. Waiting is a mode of pure `read`, not a separate
+durable subscription.
+
+The normal output should be line-oriented Events without a feed envelope or
+cursor header. Exact JSONL/text details remain a CLI contract question.
+
+## 6. Recursion is a deferred hypothesis
+
+A nested Room could provide a smaller membership boundary:
+
+```text
+Room ::= Event*
+Room may contain child Rooms
+```
+
+If recursion lands, hierarchy is structure, not merged order. A parent never
+folds child sequences into its own dense sequence. Child creation still needs
+one source of truth and an honest failure contract across the file and
+relational backends.
+
+No sub-Room, birth record, `spec.json`, strict Room type, template plugin, or
+referee is justified by the minimum model yet. These remain candidate protocol
+mechanisms, not current kernel design.
+
+## 7. Is this only IM?
+
+With membership, ordered history, authors, timestamps, addressees, append,
+read, and wait, Tearoom's user-visible surface is a small group-messaging
+system. Append-only storage, JSONL, and a Unix CLI are implementation choices;
+they do not by themselves make a new product category.
+
+The remaining hypothesis is narrower: a neutral, durable, machine-facing Room
+may let agents from different products resume work without a human relaying
+context. Dense order and idempotent append may make that shared history safer
+to automate than an ordinary human IM channel. This is not yet proven by the
+scripted demos.
+
+If an existing IM channel with bot credentials satisfies the same real
+multi-session journey at comparable integration and attention cost, Tearoom has
+no demonstrated differentiation for that journey. A user may still prefer the
+small local shared-space surface, but the next product evidence for a broader
+claim must compare that journey rather than add more model machinery.
+
+## 8. Actor identity and Agent activation
+
+Activation is an optional application capability above the minimum Room. A
+storage-only deployment needs only durable `send` and `read`. An online client
+may additionally use invocation-scoped `read --wait`. A deployment that wants
+temporarily absent Agents to act may add activation:
+
+```text
+shared space       Room + membership + send + read
+online waiting     shared space + read --wait
+Agent activation   shared space + runtime bindings + activation service
+```
+
+These modes share the same Room and Event model. Enabling activation must not
+change Event visibility, append semantics, or what `to` means.
+
+An Actor and a running Agent are not the same thing:
+
+```text
+Actor              durable identity and Room membership
+Credential         proof that a caller may act as that Actor in that Room
+Runtime binding    operator-owned description of how that Actor can run
+Runtime            one ephemeral execution of the Agent
+Activation         delivery of an Event reference to a Runtime or launcher
+```
+
+Only Actor belongs to the minimum collaboration model. Credentials belong to
+authorization. Runtime bindings, Runtimes, and activation delivery belong to an
+application or control-plane layer above the Room kernel. A credential proves
+who a caller is and what it may do; it is neither a process identity nor a wake
+destination.
+
+When activation is enabled for Bob, the optional collaboration loop is:
+
+```text
+an Event addressed to Bob is appended durably
+  -> Bob's configured activation policy elects or ignores it
+  -> Bob's runtime binding selects a launcher
+  -> the launcher starts or resumes Bob
+  -> Bob receives Room, Actor, and triggering Event reference
+  -> Bob reads the Room, acts, and appends a contribution
+```
+
+The trigger carries a reference, not a copied context transcript. The Runtime
+can read the exact triggering Event and whatever Room history its task needs.
+This preserves the Room as the source of truth and does not require an implicit
+Actor read cursor.
+
+### Delivery state is not read state
+
+Reliable offline activation cannot be derived from an in-memory notification.
+An activation worker may need durable operational state keyed by:
+
+```text
+(room, event sequence, target actor)
+```
+
+That state records whether a wake attempt is pending, claimed, delivered, or
+failed. It must not claim that the Actor read, understood, or completed the
+Event. Delivery should assume at-least-once attempts, and the launcher and
+Runtime must make duplicate triggers safe. This ledger is an explicit consumer
+mechanism owned by the activation service, not hidden progress attached to the
+Actor and not part of the Room's collaboration history.
+
+The activation policy must also bound cost and authority: which addressed
+Events are eligible, which senders may cause a run, which launcher may run,
+concurrency per Actor, and applicable rate or budget limits. Addressing Bob does
+not by itself request execution or grant permission to spend Bob's resources.
+
+An online Runtime can wait for Events. Waking an offline Agent requires a
+launcher outside the Room kernel, such as a local daemon, webhook receiver, or
+queue consumer. Tearoom should first prove one local launcher rather than
+prematurely becoming a general process scheduler.
+
+### Reference designs
+
+Several mature systems solve parts of this path, but none should define the
+Room model:
+
+- Temporal persists Workflow history and places work on Task Queues polled by
+  already-running Workers. Its useful lesson is durable intent plus replay, not
+  that a Room should become a deterministic Workflow.
+- NATS JetStream durable consumers track acknowledgement, redelivery, delivery
+  limits, and backpressure. Its useful lesson is at-least-once delivery with
+  explicit consumer state, not that broker acknowledgement means an Agent
+  completed a collaboration task.
+- Restate Awakeables persist a callback token and resume suspended work after
+  an external response. They are a useful completion primitive, but an
+  Awakeable is not a stable Actor or shared Room history.
+- `launchd`, systemd, and D-Bus activation demonstrate the local process
+  boundary: a small supervisor or endpoint can remain available while an
+  expensive service process is started only on demand. They do not provide
+  Room delivery semantics themselves.
+
+The August 2026 `grok-bot-0.18-reconstructed` repository is an unofficial
+source-oriented reconstruction from a distributed Grok Bot application, not a
+confirmed release of Anysphere's original source. It is evidence about shipped
+behavior, with that limitation. Its useful patterns include:
+
+- external trigger adapters are separated from execution;
+- a fire is revalidated against enabled state, trigger matching, and definition
+  revision before it runs;
+- each Agent has one active run, with queued user, Agent, and background lanes;
+- wake identifiers and grouping keys suppress redundant launches;
+- pending background wake markers survive host restart and are rearmed.
+
+Tearoom can borrow those behavior patterns without copying reconstructed code.
+In particular, quiet hours, authorization, budgets, and executable bindings
+must be enforced as code-owned policy. Prompt instructions may express a soft
+preference, but they are not an execution safety boundary.
+
+### Relationship to Grabhub
+
+The sibling Grabhub product already implements a narrower form of durable
+activation:
+
+```text
+Schedule -> Execution -> Trace
+```
+
+The canonical Grabhub sources for this comparison are
+`grabhub/docs/product-design/scheduled-trigger-model.md`,
+`grabhub/internal/grabhub/service.go`, and
+`grabhub/internal/grabhub/schedule_runtime.go` in the sibling repository.
+
+Its service polls on a short interval, selects schedules whose
+`next_fire_at <= now`, atomically claims one occurrence with
+`claimed_execution_id`, launches the configured ACP provider with a preset
+prompt, records process-level evidence, and advances or ends the Schedule. A
+due Schedule does not occupy a momentary notification window: it remains due
+until claimed. A late or restarted service can therefore discover it again.
+
+That is structurally similar to Event activation:
+
+```text
+Grabhub:  due time       -> claim Schedule occurrence -> run preset prompt
+Tearoom:  addressed Event -> claim Actor activation    -> read Room and act
+```
+
+The overlap is the small runtime boundary: discover durable intent, claim it
+atomically, start an Agent process, record execution-level evidence, and recover
+after restart. Grabhub also keeps execution status honest: process success does
+not mean that the scheduled goal succeeded. Tearoom should retain that
+distinction between a settled Runtime invocation and a collaboration outcome.
+
+The products are not the same model. Grabhub has no Room, shared history, stable
+participant addressing, or event-driven handoff; its current product boundary
+explicitly excludes signal ingestion and alternate queue or worker models. A
+Schedule owns a prewritten prompt and trigger time. A Tearoom activation owns a
+reference to an immutable Event; the Agent reconstructs context from the Room.
+Grabhub's service heartbeat prevents duplicate service instances, while its
+schedule claim parks one occurrence until normal completion or restart
+recovery. That is not yet a renewable per-activation lease or a guarantee
+against repeated external effects. Even an old claim remains parked during
+ordinary ticking; only service recovery clears it. The current behavior is
+restart recovery, not a general lease-expiry retry policy.
+
+The honest reuse direction is therefore design reuse first, not repository
+coupling. Grabhub's due-query, atomic-claim, execution-evidence, service-guard,
+and restart-recovery patterns can inform a Tearoom activation boundary. Its
+Schedule schema and schedule-only service loop must not be imported into the
+Room kernel or expanded in place to become Tearoom's event runner.
+
+### Minimum reliable activation path
+
+The first implementation should keep four explicit owners:
+
+```text
+Room Event log       durable collaboration truth
+Activation ledger   claim, lease, attempt, retry, budget, and failure state
+Runner host          operator-owned Actor bindings and process supervision
+Agent Runtime        Room reading, domain action, and Event append
+```
+
+For each Event elected by an enabled policy, an activation ID can be derived
+from `(room, seq, actor)` so a repeated scan creates the same work identity. A
+relational activation service may consume an outbox or project from the Event
+log. A file-backed service can rescan ordered Events and insert the deterministic
+activation idempotently. Its scan checkpoint is rebuildable operational state,
+not Actor read progress. When no activation service is configured, append stops
+after recording the Event; it must not create dormant delivery machinery.
+
+A Runner claims pending or expired work atomically, records a bounded lease,
+and initially permits only one active invocation per Actor. It starts the
+configured command with an activation reference, never with Event content
+interpolated into a shell command. A long-running invocation renews its lease;
+lease expiry permits another attempt. Online notification may lower latency,
+but periodic reconciliation against the durable ledger remains the recovery
+path.
+
+The system should promise at-least-once activation, not exactly-once execution.
+Result Event append can be idempotent by activation ID. External effects such as
+deployment, payment, or deletion require their own idempotency or approval
+contract. Runtime settlement records that one invocation ended; only Events in
+the Room express what the collaboration achieved.
+
+## 9. Activation product proof
+
+The first credible vertical slice for the optional activation capability is
+deliberately narrow:
+
+1. Bob is a Room member but has no running process.
+2. A permitted Actor appends an Event whose `to` names Bob.
+3. A local daemon discovers the durable Event and starts Bob's configured
+   command; duplicate discovery is safely coalesced or retried without an
+   unsafe duplicate effect.
+4. Bob receives its Actor identity and the triggering Event reference, reads
+   the Room, and appends a response.
+5. Daemon restart preserves the activation opportunity, while an Event that
+   Bob's policy does not elect causes no process execution.
+
+A trivial responder should prove this mechanism before a model runtime is
+integrated. A `plan -> develop -> verify` harness can then prove multi-Actor
+handoff and human intervention. A substantially different second use case,
+such as a game referee waking the next player, is evidence for an extension
+boundary. It is not a reason to design a plugin SDK in advance.
+
+The shared-space product does not depend on this experiment. Until the
+offline-Bob journey works, however, Tearoom may claim a collaboration record
+layer but not a demonstrated Agent activation runtime. `read --wait` waking an
+already connected process is insufficient proof of that optional capability.
+
+## 10. Adopted and open
+
+**Adopted in the product definition:**
+
+1. Room membership, not Event content, determines visibility.
+2. Every Room member sees the complete history; `to` is public addressing or
+   attention metadata in the Event schema.
+3. Tearoom owns no implicit read checkpoint, unread state, or acknowledgement;
+   reading is a pure query whose boundary belongs to the caller.
+4. The minimum Event discussion contains `seq`, `actor`, `at`, optional `to`,
+   and `content`; `type` and `caused_by` are not assumed kernel fields.
+5. Ordinary append does not derive a mandatory write precondition from read
+   progress.
+6. The normal CLI path is `send` and `read`; waiting is a `read` mode.
+7. Actor identity is durable and independent of any Agent process or session.
+8. `to` remains public addressing. An optional activation service may observe
+   it, but process execution is neither encoded nor requested by the Event.
+9. Activation delivery state, if required, is explicit operational consumer
+   state and must not be presented as Actor read or task-completion state.
+10. A Room remains valid without runtime bindings, an activation service, or
+    any Agent process.
+
+**Explicitly open:**
+
+1. Whether reliable offline activation and recoverable collaboration prove
+   value beyond an existing IM channel, queue, or workflow engine.
+2. The exact `content` schema and JSONL/text CLI contract.
+3. Whether any real protocol needs conditional append, idempotency keys exposed
+   to callers, typed envelopes, or causal references.
+4. Admission and membership management, especially before sub-Room privacy can
+   be claimed.
+5. Whether recursive Rooms are necessary, and the atomic child-creation
+   contract if they are.
+6. Event retention and compaction.
+7. Whether direct `cat`/`tail -f` access to the file log is supported or remains
+   an implementation detail.
+8. The first runtime-binding format, launcher contract, activation policy, and
+   safe duplicate-handling contract.
+9. Whether durable activation delivery is necessary after the local vertical
+   slice, and which application-layer component owns it.
+
+## 11. Migration gap in the current implementation
+
+The product definition now adopts this model, but no code behavior has changed:
+
+- `internal/core.Event` still contains `Room`, `ID`, `Type`, `Data`, and
+  `CausedBy`, and `VisibleTo` still filters directed Events.
+- The CLI still auto-registers an Actor, persists local session cursors, advances
+  them on reads and sends, and exposes `room`, `server`, `event`, and `hosted`
+  command groups.
+- The harness and Werewolf demos depend on typed, causally linked, directed
+  Events. They prove the current model, not this draft.
+- The current broadcaster wakes only waiters connected to the same server
+  process. There is no durable activation delivery, runtime binding, offline
+  launcher, retry policy, or duplicate-safe handoff.
+
+The documentation migration defines the target and makes that gap explicit.
+Implementation work must still change the Store, CLI, transports, tests, demos,
+and integration skill before the target contract can be called shipped.

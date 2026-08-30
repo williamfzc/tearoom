@@ -4,7 +4,7 @@ title: Invariants belong under the Store interface
 description: A rule enforced only by one client disappears as soon as a second client arrives.
 resource: internal/store/file.go
 tags: [lesson, invariants, layering]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Invariants belong under the Store interface
@@ -19,20 +19,25 @@ If a statement must be true of the Room rather than of one interface, enforce it
 
 The current Store owns:
 
-- Actor admission and recipient validation;
-- cursor freshness;
+- Room membership and addressed-member validation;
+- authenticated Actor attribution;
 - sequence assignment;
-- idempotency-key uniqueness;
 - append-only persistence;
-- visibility filtering.
+- idempotency-key uniqueness when the capability is used.
+
+All members read the same Room history, so the target Store has no directed
+visibility filter. Read boundaries belong to callers, and ordinary append has
+no implicit cursor-freshness rule.
 
 The HTTP server delegates to this boundary, so a raw HTTP caller and the CLI receive the same result.
 
 ## Guarded by
 
-- Store tests for stale writes, duplicate retries, hidden Events, and concurrent writers.
-- HTTP tests proving typed stale conflicts survive transport.
-- `scripts/session-smoke.sh`, which sends a stale request through raw HTTP and expects 409.
+- Existing Store and HTTP tests guard the v0.1 behavior.
+- The migration must replace hidden-Event and mandatory stale-write cases with
+  membership visibility, pure reads, and concurrent ordinary append cases.
+- Duplicate-retry tests remain relevant if explicit append idempotency survives
+  the migration.
 
 ## Related
 

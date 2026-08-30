@@ -1,60 +1,56 @@
 ---
 type: domain
 title: Hosted identity and access
-description: Human ownership, GitHub sign-in, Room membership, and Agent credentials for a future hosted Tearoom.
+description: Human ownership, Room membership, and stable Actor credentials for hosted Tearoom.
 tags: [domain, identity, authentication, saas]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Hosted identity and access
 
-Hosted Tearoom separates the human control plane from the agent coordination plane.
+Hosted Tearoom separates the human control plane from the Actor coordination plane. A human account manages a Room; an agent or integration acts as a stable Actor with a credential scoped to that Room.
 
 ## Human identity
 
-A human signs in with GitHub. Tearoom maps that external identity to an internal account and may later associate the account with organizations.
-
-GitHub sign-in answers who may manage hosted resources. It does not become an Actor identity inside Event history, and a GitHub access token is never handed to an agent.
+A human signs in with GitHub or another supported identity provider. The external login answers who may manage hosted resources. It does not become an Actor in the Event history, and its access token is never handed to an agent.
 
 ## Room ownership and membership
 
-A Room belongs to an account or organization. Membership grants management or participation rights such as:
+A Room belongs to an account or organization. Membership grants management or participation rights such as owner, maintainer, participant, or viewer. Exact role names remain open; the durable rule is that membership is explicit, scoped, and revocable.
 
-- owner: manage the Room, members, and credentials;
-- maintainer: manage members and agent credentials;
-- participant: inspect or append according to granted scope;
-- viewer: inspect allowed history without appending.
+All members of a Room share its complete Event history. Hosted authorization controls who may enter and append; it does not turn `to` into a private-message mechanism. Private game or collaboration data needs a separate Room or an admission boundary that is not part of the current Event contract.
 
-The exact role names may change when the hosted interface is designed. The durable rule is that Room access is explicit, scoped, and revocable.
+## Actor credentials
 
-## Agent identity
-
-An agent joins with three pieces of configuration:
+An agent joins with:
 
 - the Room server URL;
 - a stable Actor identity;
-- a Room credential issued for that agent or integration.
+- a credential issued for that Actor and Room.
 
-Credentials are separate from human login sessions. They should be stored hashed at rest, shown only when created, individually revocable, and optionally expiring. A credential may be limited to one Room and to capabilities such as reading, appending, or managing Actors.
+Credentials are separate from human login sessions. They should be stored hashed at rest, shown only on creation, individually revocable, and optionally expiring. A credential may be limited to reading, appending, or managing membership. A later Runtime session may resume the same Actor, but the Runtime process and its native session ID are not identity.
 
-The server binds the authenticated credential to allowed Rooms and Actor identities before calling Store. The Store still enforces ordering, freshness, idempotency, recipient validity, and visibility; authentication does not replace those invariants.
+The server authenticates and authorizes the credential before accepting Room operations. Authorization is not a read checkpoint, Event acknowledgement, or activation request.
 
-## Hosted user stories
+## Target hosted stories
 
-- A developer signs in with GitHub, creates a Room for a repository, and receives setup instructions for an agent.
-- The developer connects agents from different products to that Room without sharing either product's account credentials.
-- An agent process ends; a later session resumes the same Actor and cursor.
-- The owner revokes one compromised agent credential without closing the Room or signing out other agents.
-- An organization member can inspect Room history according to membership while unrelated accounts cannot discover or read it.
-- A service operator can rotate signing secrets and database credentials without changing Room or Actor identity.
+- A developer signs in, creates a Room, and receives setup instructions for an agent.
+- Agents from different products join the same Room without sharing either product's account credentials.
+- A later process resumes the same Actor and replays the Room from a caller-selected boundary.
+- The owner revokes one compromised credential without closing the Room or changing other Actors.
+- An organization member can enter according to membership while an unrelated account cannot discover or read the Room.
+
+Offline activation, Runtime binding, and process restart recovery are not implied by hosted identity. They are optional application-layer capabilities and remain unimplemented evaluations.
 
 ## Security boundary
 
-The current unauthenticated HTTP server remains suitable only for trusted environments. Hosted operation requires TLS, authenticated requests, per-Room authorization, credential rotation and revocation, audit records for control-plane changes, abuse controls, and a recovery policy.
+The current unauthenticated HTTP server is suitable only for trusted environments. Hosted operation requires TLS, authenticated requests, per-Room authorization, credential rotation and revocation, audit records for control-plane changes, abuse controls, and a recovery policy.
 
-Directed Event filtering is useful inside a cooperative Room but becomes a security promise only after the server authenticates Actor identity and authorizes Room access.
+The target Room contract has no private Event body inside one Room. Any current recipient filtering is an implementation behavior, not a security promise of the target model.
 
-These stories are **S5–S10** in the [evaluation set](../evaluations.md), deferred until the hosted product exists.
+## Current implementation note
+
+The shipped hosted API still binds credentials to the current Actor and cursor-based Store contract. The development admin bearer and current endpoint behavior are documented in [../reference/http-api.md](../reference/http-api.md); those details are implementation evidence, not proof of the target stories above.
 
 ## Related
 

@@ -1,55 +1,53 @@
 ---
 type: domain
 title: Harness workflow
-description: User story: planner, generator, and evaluator agents run one plan/generate/evaluate loop through a Room.
+description: A multi-round agent handoff expressed as ordinary Room Events rather than a kernel workflow.
 tags: [domain, protocol, harness, user-story]
-timestamp: 2026-08-29
+timestamp: 2026-08-30
 ---
 
 # Harness workflow
 
-## User story
+## Target user story
 
-A harness — planner, generator, and evaluator agents from different products — needs one durable channel to run an evaluation loop on a task. The story:
+A harness operator starts a planner, generator, and evaluator from different products in one Room. The planner proposes work; the generator reports an attempt; the evaluator reports a decision; the planner or generator continues through one or more revision rounds; and a human may intervene before the work closes. No process relays the entire context by hand: every participant can replay the same ordered Room history.
 
-> As a harness operator, I start three agents — planner, generator, evaluator — in one Room. The planner proposes a plan, the generator waits for it and reports generated code, the evaluator waits and reports a verdict, the loop iterates until approval, and the planner closes the task. Nobody relays context by hand; every agent reads exactly what became visible since its own cursor.
+The kernel does not define plan, generation, evaluation, revision, or closure. They are conventions in Event content or projections over the log. The story is useful only if it still works when one process ends and a later process reads the Room from an explicitly chosen boundary.
 
-This is the "task protocol outside the kernel" evidence item in [status.md](../architecture/status.md): if the loop runs on Room, Actor, Event alone, the three entities remain enough.
+## Protocol convention
 
-## The protocol
+An application may use content such as:
 
-Application-level event types, not kernel entities:
-
-| Type | Actor | Meaning |
+| Round | Actor | Content convention |
 |---|---|---|
-| `plan.proposed` | planner | The task and the plan to implement it |
-| `generation.reported` | generator | Code produced, chained to the plan or to a revision request |
-| `evaluation.reported` | evaluator | Structured verdict in `data` (`score`, `verdict`), chained to the artifact under review |
-| `note.whisper` | any | A directed note (`--to`) that stays private to its recipients |
-| `task.completed` | planner | The loop closes, chained to the approved evaluation |
+| 1 | planner | propose the task and intended plan |
+| 2 | generator | report an implementation attempt |
+| 3 | evaluator | report evidence and a verdict |
+| 4 | planner or generator | revise the plan or implementation |
+| 5 | evaluator | report the next verdict |
+| 6 | planner | close after the evidence is sufficient |
 
-The rules of the road are exactly the product invariants:
+These labels are examples, not kernel fields. The minimal Event still consists of an ordered position, author, time, optional public `to` metadata, and content. A future application may define a richer content schema, but it must not make `type`, `caused_by`, or a workflow entity mandatory in the Room.
 
-- **Watch is the handoff.** Each agent blocks on `event watch` until the Room moves past its cursor, so a loop participant never polls and never misses a step.
-- **`caused-by` is the chain.** Every step names the Event it responds to; the loop's history is one trace, replayable in order.
-- **Directed Events keep reviews private.** A reviewer note targeted at the generator never appears in the planner's feed, but still advances the planner's cursor past it — the planner learns the Room moved, not why.
-- **Stale writes are the resync signal.** A participant who acts on old knowledge is refused (exit 2) rather than recorded, then reads to the head and retries. The planner's close in the scenario lands this way on purpose.
+## State invariants
 
-## Executable scenario
+- Every accepted Event remains in the one ordered Room history.
+- Every Room member can inspect the same history, including earlier rounds.
+- A caller chooses its read boundary; the Room does not advance or store one for the Actor.
+- A response may mention an earlier Event in its content, but causal links are an application convention rather than a kernel field.
+- A participant may be offline. That is ordinary replay until an optional activation service is added; activation is not implied by append.
+- A process outcome is not a collaboration outcome. Only appended Events express what the group decided or produced.
 
-[scripts/harness-demo.sh](../../scripts/harness-demo.sh) runs the story against the shipped binary and is part of `make check`. It proves:
+## Target evaluation
 
-1. one full plan → generate → evaluate → revise → approve → close loop, seven Events, no human relay;
-2. the full `caused-by` trace e1→e2→e3→e4→e5 and the whisper chained to the approval;
-3. the whisper reaches the generator and stays hidden from the planner;
-4. the planner's stale close is refused, then succeeds after the list/resync pattern.
+The target evaluation should run at least two products through three rounds, stop one process between rounds, let a human append an intervention, and have a later process replay the complete history before contributing. It must check that no saved Room cursor, private Event filter, mandatory type, causal field, or stale-write precondition is needed.
 
-## Real-agent trial
+Offline activation and restart recovery are a separate open evaluation. A waiting online process is not evidence that an offline Actor can be woken safely.
 
-On 2026-08-29 three real agents — one planner, one generator, one evaluator, each an independent agent session — ran this loop for real against a shared Room server. Each read the skill and used the CLI as taught. The loop ran end to end: plan → generate → revise → generate v2 → approve → close, six Events threaded by `caused_by` with no stale writes and no retries. Measured over local HTTP: send latency 13–31 ms, event-to-delivery latency 18–20 ms (watch returned that long after the event's server timestamp). The agents' skill feedback went back into [.claude/skills/tearoom/SKILL.md](../../.claude/skills/tearoom/SKILL.md): the send flags reference, the watch batch semantics, and the feed shape are now stated explicitly.
+## Current implementation note
 
-## Why not new entities
+The shipped [harness-demo.sh](../../scripts/harness-demo.sh) proves an older protocol: typed and causally linked Events, directed notes, saved cursors, and stale-write recovery. It remains useful as a regression fixture for the current binary, but it is not proof of this target story. The superseded behavior is recorded in [../evaluations.md](../evaluations.md).
 
-A task, a claim, an artifact, and a verdict are event types and projections, not core entities. The loop above is the product's "what it enables" claim ([product.md](../product.md)) in executable form: no workflow engine, scheduler, or DAG inside the kernel.
+## Why no new entities
 
-This story is **S2** in the [evaluation set](../evaluations.md); its proof is evaluation E5 (`harness-demo`).
+A task, claim, artifact, verdict, round, or handoff is a projection or content convention over Room, Actor, and Event. A runner, activation ledger, or workflow engine belongs outside the Room if a later experiment proves that one is needed.

@@ -1,15 +1,51 @@
 ---
 type: architecture
 title: Convergence
-description: Why Tearoom exposes workspace, server, and Event concerns with a short common path.
+description: The minimum Room and Event model, its intended CLI shape, and the boundary with the current implementation.
 resource: internal/cli/cli.go
 tags: [architecture, cli, convergence, decision]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Convergence
 
-Mirroring every domain entity into a CLI resource made internal structure more visible than user intent. The CLI now groups commands around three operational concerns:
+`model-discussion.md` is the current design baseline. It describes the smallest
+honest product: a durable shared Room, membership, one ordered immutable Event
+history, stable Actor identities, and optional Agent activation above that
+kernel. This document records the corresponding command and layer shape.
+
+The baseline is not yet the implementation. The executable still exposes the
+older `room`, `server`, and `event` command groups, auto-registers Actors,
+advances a saved local cursor on reads, filters directed Events, and requires a
+fresh cursor for append. Those differences are intentional migration debt, not
+facts to hide behind the target vocabulary.
+
+## Target responsibilities
+
+| Concern | Target surface | Responsibility |
+|---|---|---|
+| `room` | `init`, `info` | Local or hosted Room lifecycle and membership admission |
+| `server` | `start` | Optional local service process |
+| common interaction | `send`, `read` | Append and repeatable history queries |
+| activation | application-owned service | Optional wake, claim, retry, and runtime binding |
+
+The target common path is deliberately small:
+
+```bash
+tearoom send "review worktree A"
+tearoom read
+tearoom read --after e42 --wait 5m
+```
+
+`to` is public addressing metadata. It identifies Room members who should pay
+attention; it does not change visibility and does not itself start a process.
+An activation policy may observe an addressed Event, but activation remains an
+optional application capability.
+
+## Current command boundary
+
+Until the migration is designed and implemented, the supported executable path
+remains:
 
 ```text
 tearoom room init|info
@@ -17,39 +53,26 @@ tearoom server start
 tearoom event send|list|watch
 ```
 
-## Responsibilities
+The current `event list` and `event watch` semantics are implementation facts,
+not the target contract: they use local session cursors and `watch` waits for a
+batch. Do not describe them as a durable subscription or as proof of offline
+Agent activation. The current broadcaster can wake only waiters connected to
+the same server process.
 
-| Concern | Commands | Responsibility |
-|---|---|---|
-| `room` | `init`, `info` | Local workspace lifecycle |
-| `server` | `start` | Independent service process |
-| `event` | `send`, `list`, `watch` | Normal observation and action loop |
+## Migration boundary
 
-Actor remains a domain entity, but registration is automatic on the first Event operation. It does not deserve a separate user ritual.
+The migration must be explicit and cross-layer:
 
-## Common path and protocol path
+1. replace implicit Actor read checkpoints with caller-supplied `--after` or an
+   explicitly named consumer identity;
+2. make Room membership the visibility boundary, leaving `to` as routing or
+   attention metadata;
+3. make ordinary append independent of a saved read cursor;
+4. retain stable Actor identity while separating it from credentials, runtime
+   bindings, and process executions;
+5. add activation only as an application-layer experiment, with durable
+   delivery state separate from Room history.
 
-The common path has no protocol bookkeeping:
-
-```bash
-tearoom event send "review worktree A"
-tearoom event list
-tearoom event watch
-```
-
-The CLI supplies the default Event type, saved cursor, and derived id. Less common protocol controls remain explicit flags: `--body`, `--data`, `--type`, `--to`, `--caused-by`, `--cursor`, and `--id`.
-
-## Local state boundary
-
-The saved Actor cursor is local client state, not Room truth. `list` and `watch` advance it after a successful read. `send` uses it as the expected Room version. It never refreshes the cursor before writing, because freshness must describe what the Actor actually observed.
-
-The Store remains authoritative for Actor admission, stale-write refusal, idempotency, ordering, persistence, and visibility.
-
-## Naming rules
-
-- `room` and `server` are low-frequency management concerns.
-- `event` is the only normal interaction namespace.
-- `send` accepts positional text because text is its primary object.
-- `list` means return currently available Events and exit.
-- `watch` means wait when no later Event exists.
-- No aliases preserve earlier command grammars.
+The code, evaluation scripts, and reference documents still prove the older
+model. A future migration is complete only when those surfaces agree; this
+document does not claim that it has happened.

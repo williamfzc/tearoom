@@ -1,125 +1,57 @@
 ---
 type: reference
 title: CLI reference
-description: Tearoom workspace, server, and Event commands.
+description: Target Room commands and the current implementation boundary.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # CLI reference
 
+This document separates the target command shape from the commands currently
+shipped by `internal/cli/cli.go`. The target follows the model rationale:
+`read` is the normal observation command, waiting is a read mode, and no
+command depends on a server-owned Actor cursor.
+
+## Target command contract
+
 ```text
-tearoom <command> [subcommand] [flags]
+tearoom <command> [flags]
+
+tearoom room init
+tearoom room info
+tearoom server start
+tearoom send "review worktree A"
+tearoom read [--after 12] [--wait 5m]
 ```
 
-The top-level concerns are `room`, `server`, and `event`. Room manages local workspace state, Server runs the service process, and Event is the normal interaction path.
+`room` manages local workspace state. `server` serves a shared Room. `send` appends one Event. `read` returns Events after the caller-supplied `--after` boundary and may wait for later Room movement when `--wait` is present. A caller may keep its own boundary in a session, but Tearoom does not save or advance one in shared Room state.
 
-## Conventions
+The target Event surface is deliberately small: ordered position, author, time, optional public `to` metadata, and content. The CLI must not require `type`, `caused_by`, a directed-private mode, or a mandatory expected cursor for ordinary append.
+
+Target conventions:
 
 - JSON is the default output; `--format text` selects compact human output.
 - Actor identity comes from `TEAROOM_ACTOR` or `--as`.
-- The first Event operation registers the Actor automatically.
-- `TEAROOM_SERVER` switches from the nearest local `.tearoom` directory to a shared server.
-- A local session file stores one cursor per Room and Actor.
-- Every command level supports `--help`.
+- A caller authenticates as an Actor when the hosted service requires it.
+- `--after` is an explicit observation boundary owned by the caller.
+- `--wait` is invocation-scoped and does not acknowledge or mark Events read.
+- A `to` value is visible addressing metadata; it does not hide the Event from Room members or request process execution.
 
-## Room
+## Current implementation boundary
 
-### `tearoom room init`
+The shipped binary still exposes `event send`, `event list`, and `event watch`, auto-registers Actors, persists local per-Actor cursors, filters directed Events, and uses cursor-bound append with `type`, `caused_by`, and idempotency flags. Those commands are legacy implementation behavior and are not the target contract above.
 
-```bash
-tearoom room init --name project
-```
+Current command names and flags remain available for compatibility:
 
-Creates `.tearoom` in the current directory and refuses to overwrite an existing Room.
+- `tearoom event send "..."` currently sends a public `message` Event.
+- `tearoom event list` currently starts after and advances a saved local cursor.
+- `tearoom event watch` currently waits after and advances that saved cursor.
+- `--body`, `--data`, `--type`, `--to`, `--caused-by`, `--cursor`, and `--id` are current compatibility flags, not target requirements.
 
-```bash
-tearoom room init --store sqlite
-```
+The current behavior is documented only so an operator can identify the implementation being migrated. It must not be used as evidence that the target model is shipped.
 
-`--store` selects the storage backend. `file` (the default) uses the flock-protected JSON layout; `sqlite` uses a GORM-backed SQLite database. The choice is recorded in `.tearoom/store.json` and later read automatically by every command and by `server start`.
+## Activation boundary
 
-### `tearoom room info`
-
-```bash
-tearoom room info
-```
-
-Shows the current Room.
-
-## Server
-
-### `tearoom server start`
-
-```bash
-tearoom server start --address :8787 --directory /path/to/project
-```
-
-Exposes one local Room over HTTP. No browser application is served.
-
-## Event
-
-### `tearoom event send`
-
-```bash
-tearoom event send "review worktree A"
-```
-
-The common path sends a public `message` Event. The CLI uses the Actor's saved cursor as the expected Room version and derives an idempotency key from Actor, cursor, type, content, recipients, and cause.
-
-A successful send advances the saved cursor to the appended Event. A stale write exits 2 and does not advance local state.
-
-Optional protocol controls:
-
-- `--as`: Actor identity; defaults to `TEAROOM_ACTOR`.
-- `--body`: text body instead of positional text.
-- `--data`: JSON data instead of text.
-- `--type`: Event type; defaults to `message`.
-- `--to`: comma-separated recipients.
-- `--caused-by`: causing Event id.
-- `--cursor`: override the saved expected cursor.
-- `--id`: override the derived idempotency key.
-
-The CLI never reads the latest cursor immediately before sending. That would turn an obsolete assumption into an apparently fresh write.
-
-### `tearoom event list`
-
-```bash
-tearoom event list
-```
-
-Returns Events currently available after the Actor's saved cursor and exits immediately. A successful list advances the cursor, including past directed Events hidden from that Actor.
-
-Optional controls:
-
-- `--as`: Actor identity.
-- `--cursor`: override the saved starting cursor.
-- `--limit`: maximum visible Events; zero means all.
-
-### `tearoom event watch`
-
-```bash
-tearoom event watch --timeout 5m
-```
-
-Starts after the saved cursor. If the Room has already advanced, it returns immediately; otherwise it waits. A successful watch returns the same Feed shape as `event list` and advances the cursor. Timeout exits 3 without changing local state.
-
-Against a server the wait is held by the server (long-poll, sliced into requests of at most 30 seconds), so a quiet Room costs the waiting client and the server nothing until an Event appears. Against a local Room the CLI polls at `--poll-interval`.
-
-Optional controls:
-
-- `--as`: Actor identity.
-- `--cursor`: override the saved starting cursor.
-- `--timeout`: maximum wait.
-- `--poll-interval`: local polling interval; ignored when `TEAROOM_SERVER` is set.
-
-## Actor bootstrap and directed Events
-
-An Event operation registers its own Actor automatically. A directed Event still requires every recipient to exist in the Room. The current short CLI has no member-management command, so a recipient must previously have performed an Event operation or been admitted through the HTTP API. This keeps recipient validation in Store without adding another top-level command prematurely.
-
-## Session state
-
-Local session state lives in the user configuration directory, outside the Room workspace. `TEAROOM_HOME` overrides that location for isolated clients and tests. Each filename is derived from the Room scope and Actor identity; the file contains the Actor id and last observed cursor. Session state is local convenience, not shared truth. The Store still validates every Event append.
-
-When `TEAROOM_SERVER` is set, the normalized server URL scopes session state, so clients do not need a local `.tearoom` directory. Reusing the same Actor and server URL resumes the same cursor across processes.
+The CLI does not currently wake offline Actors. A future activation service may observe an Event, deliver its reference to a launcher, and let a Runtime invoke `read` and `send`. That service owns delivery attempts and recovery; neither `read` nor `send` should acquire a hidden read cursor or scheduler responsibility.

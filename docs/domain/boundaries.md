@@ -1,30 +1,35 @@
 ---
 type: domain
 title: Boundary behaviour
-description: Tearoom behaviour under stale views, retries, contention, crashes, and unavailable stores.
+description: Target and current compatibility behaviour under retries, contention, crashes, and unavailable stores.
 tags: [domain, failure-modes, invariants]
-timestamp: 2026-08-28
+timestamp: 2026-08-30
 ---
 
 # Boundary behaviour
 
-Tearoom prefers a loud refusal to a quiet false belief.
+The target Room contract keeps durable history explicit and makes stronger
+delivery or freshness guarantees opt-in. The current implementation still has
+several older compatibility behaviours; they are marked below.
 
-| Situation | Behaviour |
-|---|---|
-| Room changed after an actor read | Append fails with exit 2 and reports expected and current cursor |
-| Identical request is retried | Original Event is returned; no duplicate is appended |
-| One key is reused for different content | Append fails as a conflict |
-| Writers race on one cursor | One wins that sequence; the others receive stale-write conflicts |
-| Writer crashes while holding the file lock | The kernel releases `flock` |
-| Store or server is unavailable | Command fails with exit 4; there is no cached success |
-| Reader is not a joined Actor | Read is refused |
-| Directed Event is read by an unrelated Actor | Cursor advances, body is omitted from that Actor's feed |
-| Reader requests a limited page | Cursor stops at the last inspected Event so the next read resumes safely |
+| Situation | Target behaviour | Current implementation status |
+|---|---|---|
+| Room changes after an actor read | Ordinary append remains valid; a protocol may request an explicit conditional append | Current Store still rejects expected-cursor writes; migration pending |
+| Identical request is retried | An idempotent append capability may return the original Event | Current implementation supports the older key contract |
+| Writers race | Store serialization assigns distinct dense sequence numbers | File/relational implementations still combine this with stale-write checks |
+| Writer crashes while holding the file lock | The kernel releases `flock` | Implemented for Unix-like local use |
+| Store or server is unavailable | Command fails; no cached success is claimed | Implemented compatibility behaviour |
+| Reader supplies a boundary | Read repeats from the caller's explicit `--after`/`--since` boundary | CLI still uses a saved session cursor; migration pending |
+| Any Room member reads history | The complete Room history is visible; `to` does not filter it | Current Store still filters directed Events; migration pending |
+| A Room needs privacy | Use a separate Room with explicit membership | Current local auto-registration does not yet provide this boundary |
+| An addressed Agent is offline | Optional activation may record durable delivery state and retry a launcher; Room alone does not wake it | No durable activation service is shipped |
 
-## Why hidden events advance the cursor
+## What is not a read checkpoint
 
-A reader must be able to move past an Event it may not see. Otherwise one private Event would permanently wedge every unrelated actor at the preceding cursor. The reader learns only that the Room advanced, not the hidden content.
+A Room does not contain hidden Events in the target model. `seq` identifies an
+Event in the shared history; it is not a per-Actor read checkpoint. A future
+durable delivery consumer must own an explicit consumer/subscription identity
+and delivery ledger rather than borrowing Actor read state.
 
 ## Windows
 

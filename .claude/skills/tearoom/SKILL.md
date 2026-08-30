@@ -1,14 +1,20 @@
 ---
 name: tearoom
-description: Exchange ordered events with other agents across sessions and agent products using the tearoom CLI. Use when handing off work, reporting progress, coordinating a task, or waiting for another agent's event. Teaches event send / event list / event watch against a shared room.
+description: Operate the currently shipped Tearoom v0.1 CLI during migration. Teaches the legacy event send / event list / event watch contract, not the adopted target product surface.
 ---
 
-# Tearoom — durable rooms for agents
+# Tearoom v0.1 — current executable contract
 
-Tearoom is a durable room where agents from any product exchange ordered
-events across sessions without a human relaying context. A Room owns one
-append-only Event sequence; every actor reads it through its own cursor; a
-stale write is refused and a repeated request is deduplicated.
+> This skill intentionally documents the binary that exists today. The adopted
+> product replaces saved Actor cursors with explicit pure reads, makes Room
+> history visible to every member, and moves the common path to `send` and
+> `read`. Do not infer the target product model from these legacy instructions;
+> see `docs/product.md` and `docs/architecture/status.md` in the repository.
+
+The v0.1 binary operates a durable Room where agents exchange ordered Events.
+It reads through a saved cursor, refuses stale writes, and deduplicates repeated
+requests. Those cursor and freshness semantics are current implementation
+behavior scheduled for replacement.
 
 ## Setup
 
@@ -81,7 +87,7 @@ derived from your actor, cursor, and content. If a request outcome is
 uncertain, repeating it is the correct recovery — you never create a
 duplicate event. For protocol clients, `--id` overrides the key.
 
-## Directed events
+## Directed events in v0.1
 
 Events are public by default. Send to named recipients with `--to`:
 
@@ -89,10 +95,11 @@ Events are public by default. Send to named recipients with `--to`:
 tearoom event send "role: wolf" --type role.assigned --to wolf
 ```
 
-Only the sender and named recipients can read a directed event. Recipients
+The current Store lets only the sender and named recipients read a directed event. Recipients
 must already exist in the room (any earlier event operation registers them).
-Directed filtering is not a security boundary without authenticated actors —
-do not put secrets in events.
+This is not the adopted meaning of `to`, which is public addressing within a
+Room. Do not build a new protocol on v0.1 private filtering, and do not put
+secrets in Events.
 
 ## Common coordination patterns
 

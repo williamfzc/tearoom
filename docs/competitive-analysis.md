@@ -1,59 +1,173 @@
 ---
 type: product
 title: Competitive analysis
-description: The 2026 agent-coordination market, Tearoom's differentiation, and the near-term priorities that follow.
-tags: [product, market, priorities]
-timestamp: 2026-08-29
+description: Evidence-based 2026 comparison of the minimum Room/Event model, optional offline activation, and replayable human-Agent collaboration.
+tags: [product, market, competition, priorities]
+timestamp: 2026-08-30
 ---
 
 # Competitive analysis
 
-This document records what the 2026 agent-coordination market shows and what it justifies. [product.md](product.md) remains authoritative over scope; this document only orders work that is already named there.
+This document tests three Tearoom hypotheses against current substitutes. It is
+not evidence that the current executable has the target behavior: the code
+still uses saved Actor cursors and directed Event filtering, as recorded in
+[architecture/status.md](architecture/status.md).
 
-## The landscape
+## The three hypotheses
 
-Four groups of players surround the Room, Actor, Event kernel:
+| Hypothesis | Product promise | Competitive reading |
+|---|---|---|
+| A | Durable shared Room with `send` and `read` | Table stakes; many systems already persist messages or Events |
+| B | Optional activation of an offline Agent | Promising only when activation is cross-product, durable, and restart-safe |
+| C | Replayable human-Agent collaboration | Valuable audit layer, but a crowded and expensive workspace category |
 
-**Protocols.** The market has converged on two standards: MCP for model-to-tool access and A2A for agent-to-agent tasks. IBM's ACP merged into A2A in 2025-08, A2A reached v1.0 in 2026-03 under Linux Foundation governance, and both now sit under AAIF. Neither standardizes a durable coordination contract: A2A is task request/response with no ordered event history, replay, cursors, or idempotency. The industry's own summary is that A2A defines the transport and MCP the tool interface, while the memory contract between agents remains undefined.
+## A: durable shared Room
 
-**Memory products.** Mem0, Letta, and Zep are per-agent, retrieval-shaped memory: they answer what one agent knows, not what happened in what order across agents. Cross-agent shared memory is repeatedly named as the remaining gap, and conflict resolution in production systems is still last-write-wins or orchestrator arbitration.
+A alone is not defensible. Matrix already defines Rooms as persisted Event
+streams with synchronization cursors, while Slack and Mattermost expose durable
+channel/thread history. [Matrix Client-Server API](https://spec.matrix.org/v1.7/client-server-api/),
+[Slack history](https://docs.slack.dev/reference/methods/conversations.history/),
+and [Mattermost REST API](https://docs.mattermost.com/integrations-guide/restful-api.html)
+are direct evidence, not merely adjacent analogies.
 
-**Coding-agent tooling.** The ecosystem hands off work through static files (AGENTS.md, handoff documents) and SQLite message buses with no ordering or concurrency guarantees. Claude Code's native cross-session messaging (2026-08) is ephemeral and text-only: a platform risk, not yet a durable log.
+Agent-specific substitutes are closer still. MCP Agent Mail provides durable
+inbox/outbox, memorable identities, searchable history, and voluntary file
+reservation leases ([source repository](https://github.com/Dicklesworthstone/mcp_agent_mail)).
+aweb describes durable mail/chat, delivery events, presence, identities, and
+cross-machine coordination ([source repository](https://github.com/awebai/aweb)). Agent Room
+provides shared Rooms, structured collaboration messages, presence, and task
+state ([source repository](https://github.com/agent-room-alkl/agent-room)).
 
-**Direct overlaps.** A dozen small projects implement one aspect of an agent event log — Provara (per-actor hash chains), AgentLog (JSONL topics with offsets), ActiveGraph, statefold, Eventloom, and others. None combines dense ordering, per-actor cursors, stale-write rejection, idempotency, and directed visibility.
+Tearoom can still be useful as a smaller local protocol kernel if it makes
+membership, ordered immutable history, explicit addressing, idempotent append,
+and portable export substantially easier than those products. Those are
+migration conveniences, not a moat. A user will not leave Slack, Matrix, or
+Agent Mail merely for another `send`/`read` API.
 
-## Differentiation
+## B: optional offline Agent activation
 
-The combination above is Tearoom's substantive edge: a stale write is refused at the Store boundary rather than reconciled, a retry is deduplicated, and every actor reads a consistent ordered history through its own cursor. The combination is copyable, so distribution speed and protocol experience in real use matter more than the semantics themselves.
+B is the strongest near-term wedge, but “wake an Agent” is not unique. aweb's
+official material explicitly describes waking the right recipient and leaves
+process lifecycle to an orchestrator ([aweb documentation](https://aweb.ai/docs/)).
+Agent Room documents signed webhook wake-up for resident assistants
+([README](https://github.com/agent-room-alkl/agent-room)). A2A v1 standardizes
+Tasks, streaming, and push notifications for disconnected or long-running
+work ([A2A specification](https://github.com/a2aproject/A2A/blob/main/docs/specification.md));
+the official roadmap records v1 work in March 2026 ([roadmap](https://github.com/a2aproject/A2A/blob/main/ROADMAP.md)).
 
-## Near-term priorities
+Execution infrastructure is mature but solves a different layer. Temporal
+provides durable Workflow history and replay around Workers
+([Workflows](https://docs.temporal.io/workflows)); Restate provides durable
+promises, external events, timers, and recovery ([Workflows](https://docs.restate.dev/tour/workflows));
+NATS JetStream provides durable consumers, acknowledgements, redelivery, and
+replay ([JetStream](https://docs.nats.io/concepts/jetstream)). These systems do
+not make a human-readable Room, stable cross-product Actor identity, or an
+Agent's collaboration history the canonical object.
 
-The analysis justifies three priorities before any new surface:
+The narrow gap is therefore a neutral, local-first activation contract:
 
-1. **Replace the watch poll loop with a server-held wait.** `event watch` currently polls every 250 ms ([internal/cli/cli.go](../internal/cli/cli.go)). Every poll takes the store lock and rescans the log, so a quiet Room with several waiting actors still burns constant lock and scan work, and a waiting actor sees a new Event up to one interval late. Long-poll or SSE makes watch idle-cheap and immediate. **Shipped 2026-08-29 as long-poll** ([reference/http-api.md](reference/http-api.md)): the server wakes on appends it serves and checks an idle probe between, so a quiet Room costs nothing; the client slices long waits into 30-second requests. SSE remains deferred until a caller needs a stream instead of batches.
-2. **Add the relational Store, SQLite first.** This is the existing direction in [architecture/persistence.md](architecture/persistence.md); the analysis only confirms the sequencing. The file Store's full scan under one lock degrades as Rooms grow busy. **Shipped 2026-08-29 as `tearoom room init --store sqlite`** ([reference/storage-layout.md](reference/storage-layout.md)): a GORM-backed SQLite database, selected per Room and dispatched from `.tearoom/store.json`, enforcing the same append contract in one transaction — cursor freshness, idempotency, dense ordering, admission, and visibility. PostgreSQL validation remains pending behind the same schema and migration discipline.
-3. **Ship one cross-agent skill over the CLI.** A skill is a folder of instructions every major agent product reads in 2026, so a skill that teaches `event send`, `event list`, and `event watch` is the cross-product integration surface with zero new server code. A dedicated MCP server waits for a caller that needs structured tool results instead of shell commands. **Shipped 2026-08-29 as [.claude/skills/tearoom/SKILL.md](../.claude/skills/tearoom/SKILL.md)**, a self-contained SKILL.md that teaches setup, cursor semantics, safe retries, and directed events; other products install it by copying the folder.
+```text
+addressed Event -> durable activation claim/lease
+                -> operator-owned launcher
+                -> offline Agent resumes as its stable Actor
+                -> Agent reads the Room and appends a contribution
+```
 
-## Risks
+The Event must remain the source of truth; the trigger carries a reference, not
+a copied transcript. Delivery is at-least-once, and read/completion state must
+not be inferred from a wake attempt. This is the precise place where Tearoom
+could migrate users from chat, queues, or workflow engines: it joins their
+strengths without pretending that a queue acknowledgement is collaboration
+success.
 
-- Claude Code's native cross-session messaging could grow durable history.
-- An A2A working group could add an event-log specification.
-- Both make distribution and real-use protocol experience the only durable advantages.
+## C: replayable human-Agent collaboration
 
-## Sources
+C is compelling but crowded. Tutti presents itself as a multi-user,
+multi-Agent real-time collaboration space; its VM offering includes cross-device
+and shared-workspace features but is marked early access
+([source repository](https://github.com/tutti-os/tutti)). Another Agent Room
+project includes persistent coworker memory, scheduled jobs, runtime state,
+sessions, and an audit trail ([source repository](https://github.com/parlali/agent_room)).
 
-- [Agent Communication Is Solved — Agent Memory Is Not](https://blog.clawpilot.ai/posts/ai-ops-trend-2026-agent-communication-is-solved-agent-memory-is-not)
-- [A2A Agent State and Data Consistency (CockroachDB)](https://www.cockroachlabs.com/blog/a2a-agent-state-data-layer/)
-- [The Missing Layer in Agent Memory](https://mnemoverse.com/docs/library/agent-memory-interop-gap)
-- [Google A2A Protocol in 2026: Adoption, Hype, and Reality](https://dev.to/rosgluk/google-a2a-protocol-in-2026-adoption-hype-and-reality-51d6)
-- [A2A joins AAIF (Axios, 2026-08)](https://www.axios.com/2026/08/17/a2a-agentic-ai-foundation-open-ai-standards)
-- [A2A surpasses 150 organizations (Linux Foundation)](https://www.linuxfoundation.org/press/a2a-protocol-surpasses-150-organizations-lands-in-major-cloud-platforms-and-sees-enterprise-production-use-in-first-year)
-- [Agent memory architecture showdown: Letta vs Zep vs Mem0](https://agentmarketcap.ai/blog/2026/04/06/agent-memory-architecture-showdown-letta-zep-mem0-in-context-postgresql)
-- [AI agents as CRDT peers (ElectricSQL, 2026-04)](https://electric.ax/blog/2026/04/08/ai-agents-as-crdt-peers-with-yjs.md)
-- [Claude Code issue #87023: cross-session amnesia](https://github.com/anthropics/claude-code/issues/87023)
-- [ActiveGraph: The Log is the Agent](https://arxiv.org/html/2605.21997)
-- [Provara Protocol](https://github.com/provara-protocol/provara)
-- [AgentLog](https://github.com/sumant1122/agentlog)
+Vendor workspaces are strong substitutes in coding. Claude Code Agent Teams
+has shared tasks, inter-Agent messaging, and centralized management, but remains
+experimental and disabled by default ([official documentation](https://code.claude.com/docs/en/agent-teams)).
+The Codex App announcement on 2026-02-02, updated 2026-03-04, positions
+parallel Agents, automations, and long-running tasks as a command-center
+workflow ([official announcement](https://openai.com/index/introducing-the-codex-app/)).
+GitHub Copilot coding agent turns an Issue into asynchronous background work,
+then a PR and human review ([agent feature](https://github.com/features/copilot/agents),
+[2026-02-13 changelog](https://github.blog/changelog/2026-02-13-network-configuration-changes-for-copilot-coding-agent/)).
+
+Replay can differentiate only if it reconstructs more than messages: Actor
+identity, Event order, decisions, activation attempts, tool/result references,
+permissions, and caller-supplied replay boundaries. The August 24, 2026 AgentRoom paper is early
+research evidence that shared state and explicit concurrent claims may improve
+coding-agent outcomes, not market validation ([paper](https://arxiv.org/abs/2608.23740)).
+Building the full workspace, file editor, CRDT, permissions, and artifact
+system before proving that replay changes a real workflow would make Tearoom
+compete on the most expensive surface.
+
+## Position and migration reasons
+
+The most credible position is **B plus a thin C**:
+
+> An offline-safe addressed Agent Inbox: a durable Room/Event history, stable
+> Actor identity, optional activation adapters, and human replay of the exact
+> handoff.
+
+This gives each substitute a specific migration reason:
+
+- from Slack, Discord, Matrix, or Mattermost: agent-native addressing,
+  explicit delivery/recovery, and no dependency on a chat bot's session;
+- from MCP Agent Mail or aweb: a smaller, portable Event kernel whose optional
+  launcher is separated from storage and whose replay record can be exported;
+- from Temporal, Restate, or NATS: human-readable shared history and stable
+  Agent identity rather than only workflow or consumer state;
+- from GitHub, Tutti, Claude Teams, or Codex: product-neutral ownership of the
+  collaboration record, without requiring one hosted coding workspace.
+
+These are hypotheses, not demonstrated advantages. The first bake-off should
+run the same offline → wake → crash → restart → response → human replay journey
+through Tearoom, aweb, Agent Room, A2A push, and one durable execution system.
+Measure lost Events, duplicate attempts, recovery latency, operator setup, and
+whether a human can reconstruct the handoff without vendor-specific logs.
+
+## Moat and falsification
+
+Room CRUD and schemas have a weak moat. A stronger, still uncertain moat could
+come from interoperable activation adapters, conformance tests for restart and
+duplicate behavior, and portable replay bundles adopted by several Agent
+products. Network effects are possible only if the same Actor/Event contract is
+used across products; A2A and MCP standardization make an incompatible private
+protocol a liability.
+
+The thesis is falsified if any of these hold:
+
+1. users accept a single vendor's hosted Agent workspace and do not need a
+   neutral coordination layer;
+2. local process wake-up is too risky or unreliable to enable in practice;
+3. aweb or Agent Room already passes the same heterogeneous offline journey;
+4. people want task assignment or PR review but do not value replay;
+5. A2A/MCP quickly provide the needed delivery and recovery contract;
+6. C expands into a workspace project whose cost exceeds the value of B.
+
+Until the first bake-off passes, Tearoom should claim durable collaboration
+records, not a demonstrated offline activation runtime.
+
+## Primary sources
+
+- [Matrix Client-Server API](https://spec.matrix.org/v1.7/client-server-api/)
+- [MCP Agent Mail](https://github.com/Dicklesworthstone/mcp_agent_mail)
+- [aweb](https://github.com/awebai/aweb) and [aweb docs](https://aweb.ai/docs/)
 - [Agent Room](https://github.com/agent-room-alkl/agent-room)
-- [Deepgram AgentRooms](https://github.com/deepgram/AgentRooms)
-- [open-agent-room](https://github.com/cch123/open-agent-room)
+- [Tutti](https://github.com/tutti-os/tutti)
+- [A2A specification](https://github.com/a2aproject/A2A/blob/main/docs/specification.md)
+- [MCP Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
+- [Temporal Workflows](https://docs.temporal.io/workflows)
+- [Restate Workflows](https://docs.restate.dev/tour/workflows)
+- [NATS JetStream](https://docs.nats.io/concepts/jetstream)
+- [Claude Code Agent Teams](https://code.claude.com/docs/en/agent-teams)
+- [Codex App](https://openai.com/index/introducing-the-codex-app/)
+- [GitHub Copilot agents](https://github.com/features/copilot/agents)
+- [AgentRoom paper](https://arxiv.org/abs/2608.23740)
