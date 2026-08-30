@@ -241,177 +241,27 @@ Actor read cursor.
 
 ### Delivery state is not read state
 
-Reliable offline activation cannot be derived from an in-memory notification.
-An activation worker may need durable operational state keyed by:
+Reliable offline activation needs explicit delivery-control state, but that
+state is neither Room history nor Actor read progress. It must distinguish a
+claimed or settled invocation from an Agent contribution and bound who may
+spend an Actor's runtime resources. The adopted component boundary, identity
+model, state machine, lease fencing, retry, crash recovery, launcher contract,
+security controls, reference systems, and first vertical slice live in the
+canonical [activation technical design](activation.md).
 
-```text
-(room, event sequence, target actor)
-```
-
-That state records whether a wake attempt is pending, claimed, delivered, or
-failed. It must not claim that the Actor read, understood, or completed the
-Event. Delivery should assume at-least-once attempts, and the launcher and
-Runtime must make duplicate triggers safe. This ledger is an explicit consumer
-mechanism owned by the activation service, not hidden progress attached to the
-Actor and not part of the Room's collaboration history.
-
-The activation policy must also bound cost and authority: which addressed
-Events are eligible, which senders may cause a run, which launcher may run,
-concurrency per Actor, and applicable rate or budget limits. Addressing Bob does
-not by itself request execution or grant permission to spend Bob's resources.
-
-An online Runtime can wait for Events. Waking an offline Agent requires a
-launcher outside the Room kernel, such as a local daemon, webhook receiver, or
-queue consumer. Tearoom should first prove one local launcher rather than
-prematurely becoming a general process scheduler.
-
-### Reference designs
-
-Several mature systems solve parts of this path, but none should define the
-Room model:
-
-- Temporal persists Workflow history and places work on Task Queues polled by
-  already-running Workers. Its useful lesson is durable intent plus replay, not
-  that a Room should become a deterministic Workflow.
-- NATS JetStream durable consumers track acknowledgement, redelivery, delivery
-  limits, and backpressure. Its useful lesson is at-least-once delivery with
-  explicit consumer state, not that broker acknowledgement means an Agent
-  completed a collaboration task.
-- Restate Awakeables persist a callback token and resume suspended work after
-  an external response. They are a useful completion primitive, but an
-  Awakeable is not a stable Actor or shared Room history.
-- `launchd`, systemd, and D-Bus activation demonstrate the local process
-  boundary: a small supervisor or endpoint can remain available while an
-  expensive service process is started only on demand. They do not provide
-  Room delivery semantics themselves.
-
-The August 2026 `grok-bot-0.18-reconstructed` repository is an unofficial
-source-oriented reconstruction from a distributed Grok Bot application, not a
-confirmed release of Anysphere's original source. It is evidence about shipped
-behavior, with that limitation. Its useful patterns include:
-
-- external trigger adapters are separated from execution;
-- a fire is revalidated against enabled state, trigger matching, and definition
-  revision before it runs;
-- each Agent has one active run, with queued user, Agent, and background lanes;
-- wake identifiers and grouping keys suppress redundant launches;
-- pending background wake markers survive host restart and are rearmed.
-
-Tearoom can borrow those behavior patterns without copying reconstructed code.
-In particular, quiet hours, authorization, budgets, and executable bindings
-must be enforced as code-owned policy. Prompt instructions may express a soft
-preference, but they are not an execution safety boundary.
-
-### Relationship to Grabhub
-
-The sibling Grabhub product already implements a narrower form of durable
-activation:
-
-```text
-Schedule -> Execution -> Trace
-```
-
-The canonical Grabhub sources for this comparison are
-`grabhub/docs/product-design/scheduled-trigger-model.md`,
-`grabhub/internal/grabhub/service.go`, and
-`grabhub/internal/grabhub/schedule_runtime.go` in the sibling repository.
-
-Its service polls on a short interval, selects schedules whose
-`next_fire_at <= now`, atomically claims one occurrence with
-`claimed_execution_id`, launches the configured ACP provider with a preset
-prompt, records process-level evidence, and advances or ends the Schedule. A
-due Schedule does not occupy a momentary notification window: it remains due
-until claimed. A late or restarted service can therefore discover it again.
-
-That is structurally similar to Event activation:
-
-```text
-Grabhub:  due time       -> claim Schedule occurrence -> run preset prompt
-Tearoom:  addressed Event -> claim Actor activation    -> read Room and act
-```
-
-The overlap is the small runtime boundary: discover durable intent, claim it
-atomically, start an Agent process, record execution-level evidence, and recover
-after restart. Grabhub also keeps execution status honest: process success does
-not mean that the scheduled goal succeeded. Tearoom should retain that
-distinction between a settled Runtime invocation and a collaboration outcome.
-
-The products are not the same model. Grabhub has no Room, shared history, stable
-participant addressing, or event-driven handoff; its current product boundary
-explicitly excludes signal ingestion and alternate queue or worker models. A
-Schedule owns a prewritten prompt and trigger time. A Tearoom activation owns a
-reference to an immutable Event; the Agent reconstructs context from the Room.
-Grabhub's service heartbeat prevents duplicate service instances, while its
-schedule claim parks one occurrence until normal completion or restart
-recovery. That is not yet a renewable per-activation lease or a guarantee
-against repeated external effects. Even an old claim remains parked during
-ordinary ticking; only service recovery clears it. The current behavior is
-restart recovery, not a general lease-expiry retry policy.
-
-The honest reuse direction is therefore design reuse first, not repository
-coupling. Grabhub's due-query, atomic-claim, execution-evidence, service-guard,
-and restart-recovery patterns can inform a Tearoom activation boundary. Its
-Schedule schema and schedule-only service loop must not be imported into the
-Room kernel or expanded in place to become Tearoom's event runner.
-
-### Minimum reliable activation path
-
-The first implementation should keep four explicit owners:
-
-```text
-Room Event log       durable collaboration truth
-Activation ledger   claim, lease, attempt, retry, budget, and failure state
-Runner host          operator-owned Actor bindings and process supervision
-Agent Runtime        Room reading, domain action, and Event append
-```
-
-For each Event elected by an enabled policy, an activation ID can be derived
-from `(room, seq, actor)` so a repeated scan creates the same work identity. A
-relational activation service may consume an outbox or project from the Event
-log. A file-backed service can rescan ordered Events and insert the deterministic
-activation idempotently. Its scan checkpoint is rebuildable operational state,
-not Actor read progress. When no activation service is configured, append stops
-after recording the Event; it must not create dormant delivery machinery.
-
-A Runner claims pending or expired work atomically, records a bounded lease,
-and initially permits only one active invocation per Actor. It starts the
-configured command with an activation reference, never with Event content
-interpolated into a shell command. A long-running invocation renews its lease;
-lease expiry permits another attempt. Online notification may lower latency,
-but periodic reconciliation against the durable ledger remains the recovery
-path.
-
-The system should promise at-least-once activation, not exactly-once execution.
-Result Event append can be idempotent by activation ID. External effects such as
-deployment, payment, or deletion require their own idempotency or approval
-contract. Runtime settlement records that one invocation ended; only Events in
-the Room express what the collaboration achieved.
+The rationale remains: an online Runtime can wait, but waking an offline Agent
+requires an operator-owned launcher outside the Room kernel. The design must
+first prove one local launcher and a trivial responder instead of turning
+Tearoom into a general scheduler or Runtime platform.
 
 ## 9. Activation product proof
 
-The first credible vertical slice for the optional activation capability is
-deliberately narrow:
-
-1. Bob is a Room member but has no running process.
-2. A permitted Actor appends an Event whose `to` names Bob.
-3. A local daemon discovers the durable Event and starts Bob's configured
-   command; duplicate discovery is safely coalesced or retried without an
-   unsafe duplicate effect.
-4. Bob receives its Actor identity and the triggering Event reference, reads
-   the Room, and appends a response.
-5. Daemon restart preserves the activation opportunity, while an Event that
-   Bob's policy does not elect causes no process execution.
-
-A trivial responder should prove this mechanism before a model runtime is
-integrated. A `plan -> develop -> verify` harness can then prove multi-Actor
-handoff and human intervention. A substantially different second use case,
-such as a game referee waking the next player, is evidence for an extension
-boundary. It is not a reason to design a plugin SDK in advance.
-
-The shared-space product does not depend on this experiment. Until the
-offline-Bob journey works, however, Tearoom may claim a collaboration record
-layer but not a demonstrated Agent activation runtime. `read --wait` waking an
-already connected process is insufficient proof of that optional capability.
+The offline-Bob journey remains the falsifiable product hypothesis. Its detailed
+technical contract is [activation.md](activation.md), while P2/E5 in
+[evaluations.md](../evaluations.md) is the sole proof definition. Until that
+evaluation passes, Tearoom may claim a durable collaboration record but not a
+demonstrated offline Agent activation runtime. An already running process using
+`read --wait` is not that proof.
 
 ## 10. Adopted and open
 
@@ -440,8 +290,9 @@ already connected process is insufficient proof of that optional capability.
 1. Whether reliable offline activation and recoverable collaboration prove
    value beyond an existing IM channel, queue, or workflow engine.
 2. The exact `content` schema and JSONL/text CLI contract.
-3. Whether any real protocol needs conditional append, idempotency keys exposed
-   to callers, typed envelopes, or causal references.
+3. Whether any P0/P1 protocol needs conditional append or typed/causal envelope
+   fields. Request-level append idempotency is required only if P2 activation
+   proceeds and remains outside the Event schema.
 4. Admission and membership management, especially before sub-Room privacy can
    be claimed.
 5. Whether recursive Rooms are necessary, and the atomic child-creation

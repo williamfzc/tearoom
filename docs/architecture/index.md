@@ -18,6 +18,7 @@ notes below are rationale or evidence, not proof that the target is shipped.
 |---|---|
 | [layers.md](layers.md) | Package ownership, dependency direction, and the optional activation boundary |
 | [persistence.md](persistence.md) | Room membership, immutable Event history, and backend persistence |
+| [activation.md](activation.md) | Canonical technical design for optional, restart-safe offline Agent activation |
 | [convergence.md](convergence.md) | Target `send`/`read` path and its explicit migration boundary |
 | [hosted-plan.md](hosted-plan.md) | Hosted control plane around the unchanged coordination kernel |
 | [status.md](status.md) | Sole implementation-gap source: what the code implements and what remains |

@@ -40,15 +40,17 @@ progress unless evidence justifies a separate capability.
 ## Offline activation proof
 
 Does a durable activation loop for an absent Agent provide value beyond an IM
-bot, queue, or workflow engine? The first experiment should define the runtime
-binding, activation policy, durable delivery ledger, lease/retry semantics, and
-duplicate-safe result append before any general scheduler or plugin surface.
+bot, queue, or workflow engine? The technical boundary is now defined in
+[activation.md](../architecture/activation.md); the open question is whether
+the P2 experiment demonstrates enough recovery, latency, cost, and integration
+value to justify implementation beyond the trivial responder.
 
 ## Event envelope evidence
 
-Which protocol has evidence for `type`, `caused_by`, or an idempotency key as a
-shared envelope? Keep them above the minimum `seq`/`actor`/`at`/`to`/`content`
-shape until two independent callers require the same contract.
+Which protocol has evidence for `type` or `caused_by` as a shared envelope?
+Keep them above the minimum `seq`/`actor`/`at`/`to`/`content` shape until two
+independent callers require the same contract. Request-level append idempotency
+is a transport/Store retry contract, not an Event field.
 
 ## Hosted authorization details
 

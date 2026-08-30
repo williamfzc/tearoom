@@ -90,8 +90,9 @@ start a process without policy.
 
 The first proof should be one local launcher: a member with no running process
 receives an addressed Event, resumes after daemon restart, reads the Room, and
-appends a response exactly once at the collaboration layer. Until that exists,
-the hosted service must not advertise offline wakeup.
+uses request-level append idempotency to avoid duplicate response Events. Until
+that exists, the hosted service must not advertise offline wakeup. The complete
+technical contract is [activation.md](activation.md).
 
 ## Deployment shape
 

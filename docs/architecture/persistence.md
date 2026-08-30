@@ -72,9 +72,10 @@ seq`; it does not silently advance Actor state. If reliable delivery progress
 becomes necessary, an explicitly named consumer or activation identity owns
 that state outside the Actor's identity.
 
-Idempotent append may remain an explicit retry contract. If adopted, an
-identical retry returns the original Event and reusing a key for different
-content is a conflict. This is independent of read progress.
+Idempotent append is optional for P0/P1 and required before the P2 activation
+design can pass. An identical retry returns the original Event and reusing a
+key for different content is a conflict. The key is request metadata, not an
+Event field, and is independent of read progress.
 
 ## Clean-break storage cutover
 
@@ -87,17 +88,12 @@ snapshot.
 
 ## Activation persistence
 
-When optional activation is implemented, its ledger must be an application
-boundary keyed by an Event reference and target Actor, for example:
-
-```text
-(room, event sequence, target actor, activation id)
-```
-
-It may record pending, claimed, leased, delivered, failed, and retry state. It
-must not be confused with Room history, Actor membership, read progress, or a
-claim that the Agent completed the collaboration. The Room/Event append path
-remains usable with no activation tables or runtime bindings.
+When optional activation is implemented, its ledger remains an application
+persistence boundary. The canonical identity, state, retention, and recovery
+contract is in [activation.md](activation.md). It must not be confused with
+Room history, Actor membership, read progress, or a claim that the Agent
+completed the collaboration. The Room/Event append path remains usable with no
+activation tables or runtime bindings.
 
 ## Migration discipline
 
@@ -113,6 +109,7 @@ choices rather than silently interchangeable formats.
 ## Related
 
 - [model-discussion.md](model-discussion.md)
+- [activation.md](activation.md)
 - [layers.md](layers.md)
 - [hosted-plan.md](hosted-plan.md)
 - [../domain/hosted-identity.md](../domain/hosted-identity.md)

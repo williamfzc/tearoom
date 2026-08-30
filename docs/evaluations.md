@@ -53,7 +53,9 @@ Go/no-go: go when the journey works without an orchestrator-specific transcript 
 
 Story: S4. Evaluation: E5.
 
-Entry conditions: P1 passes; a concrete offline-Actor journey justifies process wake; the launcher command, activation policy, and duplicate-handling contract are written down.
+Entry conditions: P1 passes; a concrete offline-Actor journey justifies process
+wake; and the launcher, policy, retry, fencing, and duplicate-handling contracts
+in [activation.md](architecture/activation.md) are accepted.
 
 Executable acceptance:
 
@@ -62,8 +64,15 @@ Executable acceptance:
 3. A daemon claims the work, starts or resumes Bob, and passes an Event reference; Bob reads the Room and appends a response.
 4. Killing and restarting the daemon preserves the opportunity, and retries do not create duplicate collaboration Events.
 5. An Event ignored by policy does not start a process.
+6. A retryable failure succeeds within its bound, while an exhausted retry
+   budget produces visible `dead` operational state instead of an infinite loop
+   or a false collaboration result.
 
-Go/no-go: go only if activation is at-least-once, restart-safe, and materially better than manual launch or ordinary polling at measured cost. No-go means keep activation out of the product claim; it must not invalidate P0 or P1, and it must not turn the Room into a scheduler or queue.
+Go/no-go: go only if activation has bounded at-least-once attempts, is
+restart-safe, and is materially better than manual launch or ordinary polling
+at measured cost. No-go means keep activation out of the product claim; it must
+not invalidate P0 or P1, and it must not turn the Room into a general scheduler
+or queue.
 
 ### P3 — Second-domain stress test and hosted hardening
 
@@ -86,7 +95,7 @@ Go/no-go: go when the second domain works without adding game entities or hidden
 | S1 | Members of one Room append and read one complete, ordered, durable history across processes and sessions | open | P0 | [product.md](product.md) |
 | S2 | Agents from different products complete a multi-round handoff without a human relaying context | open | P1 | [domain/harness-workflow.md](domain/harness-workflow.md) |
 | S3 | A later process can replay the Room from an explicitly chosen boundary without server-owned read progress | open | P0 | [domain/agent-experience.md](domain/agent-experience.md) |
-| S4 | An optional activation service wakes an offline Actor from a durable Event reference and survives restart | open | P2 | [model-discussion.md](architecture/model-discussion.md) |
+| S4 | An optional activation service wakes an offline Actor from a durable Event reference and survives restart | open | P2 | [activation.md](architecture/activation.md) |
 | S5 | A human creates a hosted Room and grants or revokes an agent credential without changing Actor identity | open | P3 | [domain/hosted-identity.md](domain/hosted-identity.md) |
 | S6 | A public Werewolf protocol can be replayed in one Room; private role information is not promised by that Room | open | P3 | [product.md](product.md) |
 | S7 | A human can intervene in a running collaboration and the intervention remains part of the replayable history | open | P1 | [model-discussion.md](architecture/model-discussion.md) |

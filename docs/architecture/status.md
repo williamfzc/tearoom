@@ -153,6 +153,10 @@ lease and retry a wake attempt, and invoke an operator-owned runtime. The
 ledger is not part of the Room/Event kernel, does not alter visibility, and
 does not imply that the Agent read or completed the Event.
 
+The canonical component, identity, state-machine, recovery, launch, and safety
+contracts are in [activation.md](activation.md). This status records when that
+design is implemented; it does not restate the design.
+
 Prove one local offline-to-response journey, including daemon restart and
 duplicate-safe at-least-once delivery. Do not add a scheduler, hosted wake
 product, or replay workspace until this boundary is real.

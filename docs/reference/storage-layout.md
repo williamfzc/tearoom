@@ -41,11 +41,19 @@ The Event log is the durable collaboration truth. It contains no per-Actor read 
 
 ## Append invariant
 
-An append validates the Actor's admission, obtains the next dense Room sequence under the backend's atomic write boundary, and writes one immutable Event. Events are never rewritten through the Store API. No ordinary append needs to prove which Event a caller last read. Conditional append and idempotency remain open until a real protocol requires them.
+An append validates the Actor's admission, obtains the next dense Room sequence
+under the backend's atomic write boundary, and writes one immutable Event.
+Events are never rewritten through the Store API. No ordinary append needs to
+prove which Event a caller last read. Conditional append remains open.
+Request-level idempotency is optional for P0/P1 but is a prerequisite for the
+P2 activation design; it is never stored as an Event field.
 
 ## Operational state boundary
 
-An optional activation service may keep its own ledger for pending, claimed, delivered, or failed delivery attempts. That ledger must be recoverable and idempotent, but it is not part of `.tearoom` Room history unless a later product decision gives it an explicit owner and format.
+An optional activation service keeps its operational ledger outside Room
+history. Its owner, durability, and recovery contract are defined in
+[activation.md](../architecture/activation.md); this target Room layout does not
+store Actor read progress, delivery attempts, bindings, or Runtime state.
 
 The two backends are separate creation choices. The clean break does not import
 pre-adoption Room data or session state. PostgreSQL targets hosted operation
