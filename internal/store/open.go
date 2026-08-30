@@ -30,6 +30,10 @@ const BackendSQLite Backend = "sqlite"
 // incompatible; there is no import or automatic upgrade.
 const formatVersion = 2
 
+// FormatVersion reports the store layout version accepted by this release.
+// It is exposed for diagnostics so callers do not duplicate this invariant.
+func FormatVersion() int { return formatVersion }
+
 const markerName = "store.json"
 
 // marker declares the layout format and backend of a room.

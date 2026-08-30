@@ -16,7 +16,36 @@ import (
 	"github.com/williamfzc/tearoom/internal/core"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
+	"github.com/williamfzc/tearoom/internal/version"
 )
+
+func TestVersionReportsBuildMetadataAndStoreFormat(t *testing.T) {
+	originalVersion, originalCommit := version.Version, version.Commit
+	version.Version, version.Commit = "1.2.3", "abc1234"
+	t.Cleanup(func() { version.Version, version.Commit = originalVersion, originalCommit })
+
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"--version"}); code != ExitOK {
+		t.Fatalf("--version exit = %d", code)
+	}
+	want := "tearoom version=1.2.3 commit=abc1234 store-format=2\n"
+	if out.String() != want {
+		t.Fatalf("--version output = %q, want %q", out.String(), want)
+	}
+
+}
+
+func TestRootHelpDocumentsVersionOption(t *testing.T) {
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"--help"}); code != ExitOK {
+		t.Fatalf("--help exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "--version") {
+		t.Fatalf("root help = %q, want --version", out.String())
+	}
+}
 
 func TestRootAndCommandHelp(t *testing.T) {
 	for _, test := range []struct {

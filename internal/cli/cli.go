@@ -20,6 +20,7 @@ import (
 	"github.com/williamfzc/tearoom/internal/core"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
+	"github.com/williamfzc/tearoom/internal/version"
 )
 
 const (
@@ -39,6 +40,9 @@ Commands:
   send      append one event
   read      read events, optionally waiting for later ones
   server    serve the nearest room over HTTP
+
+Options:
+  --version show build and store format information
 
 Environment:
   TEAROOM_ACTOR    stable actor identity
@@ -82,6 +86,10 @@ func New() *App {
 func (a *App) Run(args []string) int {
 	if len(args) == 0 || isHelp(args[0]) {
 		fmt.Fprint(a.Out, rootHelp)
+		return ExitOK
+	}
+	if isVersion(args[0]) {
+		fmt.Fprintf(a.Out, "tearoom version=%s commit=%s store-format=%d\n", version.Version, version.Commit, store.FormatVersion())
 		return ExitOK
 	}
 	var err error
@@ -574,6 +582,8 @@ func parseNoArgs(flags *flag.FlagSet, args []string) error {
 }
 
 func isHelp(value string) bool { return value == "-h" || value == "--help" }
+
+func isVersion(value string) bool { return value == "--version" }
 
 func newFlags(name string, out io.Writer, help string) *flag.FlagSet {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)

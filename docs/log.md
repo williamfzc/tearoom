@@ -8,6 +8,16 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-08-30 — Define the public binary release boundary
+
+The canonical release contract is recorded in
+[operations/releasing.md](operations/releasing.md): private source, public
+binary artifacts in R2 only, immutable version prefixes, a mutable
+`latest.json` pointer, SHA256 verification, credential rotation, and matched
+format-2 rollback snapshots. The `Release` workflow and its actual package,
+check, and upload steps are described there without conflating package checks
+with the separate `make check` project gate.
+
 ## 2026-08-30 — Execute the P0 clean-break cutover
 
 The clean break planned above shipped as one cutover branch, in three

@@ -76,6 +76,18 @@ make check
 the docs-bundle check. See [docs/operations/building.md](docs/operations/building.md)
 for the macOS linker and module-proxy requirements of this machine.
 
+## Binary releases
+
+Source stays private while compiled binaries are public artifacts. Cloudflare
+R2 is the single public artifact source: pin an immutable version URL, download
+its `SHA256SUMS`, and verify SHA256 before installation. `latest.json` is
+only a mutable convenience pointer. Tagged releases run repository checks,
+deterministic package checks, and public readback. See the [release runbook](docs/operations/releasing.md)
+for supported-platform policy, R2 credential rotation, publication, and
+format-2 rollback. Release archives carry both `LICENSE` and generated
+`THIRD_PARTY_NOTICES`; a released binary can be reverse-engineered and contains
+no secrets by design.
+
 ## License
 
 MIT

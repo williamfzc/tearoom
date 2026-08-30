@@ -1,0 +1,50 @@
+# Tag-driven R2 publication; packaging and verification live in scripts/.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tearoom-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Check AWS CLI
+        run: aws --version
+
+      - name: Run repository verification
+        run: make check
+
+      - name: Build and verify release artifacts
+        run: make package RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}" VERSION_LDFLAGS="-s -w -X github.com/williamfzc/tearoom/internal/version.Version=${GITHUB_REF_NAME} -X github.com/williamfzc/tearoom/internal/version.Commit=${GITHUB_SHA}"
+
+      - name: Verify release artifacts again
+        run: make release-check RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}"
+
+      - name: Publish to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
+        run: make release-upload RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}" R2_ENDPOINT="${R2_ENDPOINT}" R2_BUCKET="${R2_BUCKET}" R2_PUBLIC_BASE_URL="${R2_PUBLIC_BASE_URL}"

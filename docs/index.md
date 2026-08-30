@@ -39,7 +39,7 @@ Use one source for each kind of claim:
 | [domain/](domain/index.md) | Room, Actor, Event, and boundary behaviour |
 | [architecture/](architecture/index.md) | Design rationale, layer ownership, optional activation design, and the target-to-implementation gap |
 | [reference/](reference/index.md) | The target CLI, HTTP, exit, storage, and Agent integration contracts |
-| [operations/](operations/index.md) | Non-normative build and deployment state; read only after status |
+| [operations/](operations/index.md) | Non-normative build, release, and serving state; read only after status |
 | [lessons/](lessons/index.md) | Durable lessons behind the current design |
 | [log.md](log.md) | Historical decisions and migration evidence; not a specification |
 

@@ -64,4 +64,9 @@ Design and status belong in
 - audit records for control-plane changes;
 - tamper-evident history and recovery policy.
 
+Public binary distribution does not change this trust model. A released
+binary is reversible and must contain no secrets; release write credentials
+stay in the private build control plane. The canonical artifact and rollback
+rules are in [releasing.md](../operations/releasing.md).
+
 Self-hosting remains possible because callers depend on the Store contract rather than one backend.
