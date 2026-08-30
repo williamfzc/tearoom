@@ -19,6 +19,7 @@ the proof source. Current implementation details do not belong in this tree.
 | [http-api.md](http-api.md) | The only Room HTTP protocol |
 | [exit-codes.md](exit-codes.md) | Target machine-readable outcomes |
 | [storage-layout.md](storage-layout.md) | Target Room storage and operational-state boundary |
+| [agent-integration.md](agent-integration.md) | Minimal Agent integration and replay guide |
 
 Agents and Agent products should consume only these contracts. Human text
 output may improve without changing the protocol. Current implementation

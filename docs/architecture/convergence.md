@@ -25,7 +25,7 @@ Low-frequency lifecycle commands remain separate from normal collaboration:
 
 ```text
 tearoom room init [--as <actor>] [--store file|sqlite]
-tearoom room join [--as <actor>]
+tearoom room join <actor>
 tearoom room members
 tearoom send <content> [--to <member>]... [--idempotency-key <key>]
 tearoom read [--after e<seq>] [--limit N] [--wait <duration>]

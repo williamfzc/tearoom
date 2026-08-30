@@ -23,17 +23,18 @@ a different Room with different membership.
 ## Quick start
 
 ```bash
-make build                 # bin/tearoom
-
-cd /tmp/example
-tearoom room init --as planner
-tearoom room join --as developer
-tearoom send "review this" --to developer
-tearoom read --as developer
-tearoom read --after e1 --wait 5m
+make build                 # builds ./bin/tearoom
+tearoom_bin="$PWD/bin/tearoom"
+room_dir="$(mktemp -d)"
+cd "$room_dir"
+export TEAROOM_ACTOR=planner
+"$tearoom_bin" room init
+"$tearoom_bin" room join developer
+"$tearoom_bin" send "review this" --to developer
+TEAROOM_ACTOR=developer "$tearoom_bin" read
 ```
 
-- `room init` creates a Room and admits the creator; `room join` admits other
+- `room init` creates a Room and admits the creator; `room join <actor>` admits other
   members explicitly. A Room is the `.tearoom` directory beside your work;
   `--store sqlite` selects the SQLite backend.
 - `send` prints the appended Event as JSON. Plain text is encoded as a JSON
@@ -41,8 +42,18 @@ tearoom read --after e1 --wait 5m
 - `read` prints JSONL, one Event per line. Reading is side-effect free: no
   cursor is saved. `--after e<seq>` sets the caller's boundary; `--wait` holds
   only the current invocation and exits 3 on timeout.
-- `server start` serves the Room over HTTP on `127.0.0.1:8787` (loopback only
-  in P0); set `TEAROOM_SERVER` to point other processes at it.
+- `server start` serves the nearest Room over HTTP on `127.0.0.1:8787`
+  (loopback only in P0); set `TEAROOM_SERVER` to point other processes at it.
+
+To see the timeout contract without a long pause, run this optional check:
+
+```bash
+if TEAROOM_ACTOR=developer "$tearoom_bin" read --after e1 --wait 1s; then
+  :
+else
+  test "$?" -eq 3
+fi
+```
 
 ## Optional Agent activation
 

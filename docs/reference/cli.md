@@ -17,7 +17,7 @@ Implementation status belongs in [status.md](../architecture/status.md).
 
 ```text
 tearoom room init [--as <actor>] [--store file|sqlite]
-tearoom room join [--as <actor>]
+tearoom room join <actor>
 tearoom room members
 
 tearoom send <text> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
@@ -25,26 +25,25 @@ tearoom send --json <json> [--as <actor>] [--to <member>]...
 
 tearoom read [--as <actor>] [--after e<seq>] [--limit N] [--wait <duration>]
 
-tearoom server start [--address 127.0.0.1:8787] [--directory <dir>]
+tearoom server start [--address 127.0.0.1:8787]
 ```
 
 - `room init` atomically creates the Room and admits the creator as its first
   member. The Room identity comes from the directory that owns `.tearoom`;
   there is no `--name` flag. `--store` selects the backend: `file` (default)
   or `sqlite`.
-- `room join` is explicit admission within the trust domain of one OS user.
-  Joining an already-admitted Actor returns the existing Actor.
+- `room join <actor>` is explicit admission within the trust domain of one OS
+  user. Joining an already-admitted Actor returns the existing Actor.
 - `room members` lists the admitted Actors.
 - `send` appends one Event and prints it as one JSON object. Plain text is
   encoded as a JSON string; `--json` passes the raw JSON content verbatim.
-  `--to` names addressees (repeatable, comma-separated values are accepted)
-  and is public addressing metadata, never a visibility boundary.
+  `--to` names addressees and is repeatable. It is public addressing metadata,
+  never a visibility boundary.
 - `read` prints JSONL: one Event per line, no envelope and no cursor. An empty
-  result prints nothing and exits 0. `--after` accepts the presentation
-  address `e<seq>` (a bare sequence is also accepted) as the exclusive
-  caller-owned boundary. `--limit` truncates the result. `--wait` holds only
-  the current invocation until an Event past the boundary exists, and exits 3
-  when the bound elapses with nothing new.
+  result prints nothing and exits 0. `--after` accepts only the presentation
+  address `e<seq>` as the exclusive caller-owned boundary. `--limit` truncates
+  the result. `--wait` holds only the current invocation until an Event past
+  the boundary exists, and exits 3 when the bound elapses with nothing new.
 - `server start` serves the nearest Room over HTTP. P0 refuses non-loopback
   listen addresses: the HTTP contract carries no authentication, so the
   service must not be exposed to a network.

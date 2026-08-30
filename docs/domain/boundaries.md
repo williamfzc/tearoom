@@ -19,7 +19,7 @@ or freshness guarantees opt-in. Implementation gaps belong only in
 | Writers race | Store serialization assigns distinct dense sequence numbers |
 | Writer crashes while holding a file lock | The operating system releases the lock; no partial Event is accepted |
 | Store or server is unavailable | Command fails; no cached success is claimed |
-| Reader supplies a boundary | Read repeats from the caller's explicit `--after`/`--since` boundary |
+| Reader supplies a boundary | Read repeats from the caller's explicit `--after e<seq>` boundary |
 | Any Room member reads history | The complete Room history is visible; `to` does not filter it |
 | A Room needs privacy | Use a separate Room with explicit membership |
 | An addressed Agent is offline | Optional activation may record durable delivery state and retry a launcher; Room alone does not wake it |

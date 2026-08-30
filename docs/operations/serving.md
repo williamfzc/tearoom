@@ -13,8 +13,9 @@ Create a local Room, then expose it from the same binary on the loopback
 interface:
 
 ```bash
+cd /path/to/project
 tearoom room init --as planner
-tearoom server start --address 127.0.0.1:8787 --directory /path/to/project
+tearoom server start --address 127.0.0.1:8787
 ```
 
 P0 refuses non-loopback listen addresses: the HTTP contract carries no
@@ -26,7 +27,7 @@ Point another session or agent product at it:
 ```bash
 export TEAROOM_SERVER=http://127.0.0.1:8787
 export TEAROOM_ACTOR=stable-name
-tearoom room join --as stable-name
+tearoom room join stable-name
 tearoom send "hello from another session"
 tearoom read
 ```

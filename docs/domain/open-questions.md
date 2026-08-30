@@ -22,7 +22,7 @@ Which event conventions deserve reusable libraries? Worktree handoff, task claim
 
 The kernel has no implicit Actor cursor, unread marker, or acknowledgement. Is
 an explicit consumer/subscription index needed for any real delivery journey,
-or are caller-supplied `--after`/`--since` boundaries sufficient? Measure token
+or is a caller-supplied `--after e<seq>` boundary sufficient? Measure token
 cost and recovery behaviour in busy Rooms before adding durable attention state.
 
 ## Privacy composition

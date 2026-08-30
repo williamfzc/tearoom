@@ -119,7 +119,7 @@ Semantics:
 
 ```text
 tearoom room init --as planner [--store file|sqlite]
-tearoom room join --as developer
+tearoom room join developer
 tearoom room members
 
 tearoom send "review this" --as planner [--to developer]...

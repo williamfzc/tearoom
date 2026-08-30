@@ -50,7 +50,7 @@ privacy boundary must be explicit and durable. `to` alone cannot make content
 private: all members of one Room share its complete history. Private roles or
 confidential collaboration require a separate Room with separate membership.
 
-Reads are repeatable queries bounded by the caller (`--after`, `--since`, or an
+Reads are repeatable queries bounded by the caller (`--after` or an
 invocation-scoped `--wait`). Authentication and admission remain separate
 requirements for hostile environments.
 

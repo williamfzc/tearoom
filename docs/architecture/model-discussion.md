@@ -105,7 +105,6 @@ Reading is a repeatable, side-effect-free query:
 ```text
 tearoom read
 tearoom read --after e42
-tearoom read --since 30m
 tearoom read --after e42 --wait 5m
 ```
 
@@ -144,7 +143,7 @@ The common path should expose actions rather than the transport model:
 
 ```text
 tearoom send <content>
-tearoom read [--after <event>] [--since <time>] [--wait <duration>]
+tearoom read [--after e<seq>] [--wait <duration>]
 ```
 
 Low-frequency lifecycle and operator commands may remain grouped below `room`,
