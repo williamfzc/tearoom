@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -386,6 +387,33 @@ func TestServerStartRefusesNonLoopback(t *testing.T) {
 		if code := app.Run([]string{"server", "start", "--address", address}); code != ExitError {
 			t.Fatalf("server start %s exit = %d, want %d", address, code, ExitError)
 		}
+	}
+}
+
+func TestRemoteServerRefusesNonLoopback(t *testing.T) {
+	t.Setenv("TEAROOM_SERVER", "http://192.0.2.1:8787")
+	var errOut bytes.Buffer
+	app := &App{Out: io.Discard, Err: &errOut, Dir: t.TempDir()}
+	if code := app.Run([]string{"send", "hello", "--as", "planner"}); code != ExitError {
+		t.Fatalf("send exit = %d, want %d", code, ExitError)
+	}
+	if !strings.Contains(errOut.String(), "loopback") {
+		t.Fatalf("error = %q, want loopback validation", errOut.String())
+	}
+}
+
+func TestReadWaitHonorsCancellation(t *testing.T) {
+	dir := initRoom(t, "planner")
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	_, err = app.readWithWait(ctx, st, "planner", 0, 0, time.Second)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("readWithWait error = %v, want context cancellation", err)
 	}
 }
 

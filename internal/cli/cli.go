@@ -69,14 +69,15 @@ Commands:
 `
 
 type App struct {
-	Out io.Writer
-	Err io.Writer
-	Dir string
+	Out     io.Writer
+	Err     io.Writer
+	Dir     string
+	Context context.Context
 }
 
 func New() *App {
 	dir, _ := os.Getwd()
-	return &App{Out: os.Stdout, Err: os.Stderr, Dir: dir}
+	return &App{Out: os.Stdout, Err: os.Stderr, Dir: dir, Context: context.Background()}
 }
 
 func (a *App) Run(args []string) int {
@@ -182,11 +183,8 @@ Flags:
 	if err != nil {
 		return err
 	}
-	st, err := store.Init(a.Dir, backend)
+	st, err := store.Init(a.Dir, backend, actor)
 	if err != nil {
-		return err
-	}
-	if _, err := st.AdmitActor(context.Background(), actor); err != nil {
 		return err
 	}
 	room, err := st.Room(context.Background())
@@ -356,7 +354,11 @@ func (a *App) runRead(args []string) error {
 	if err != nil {
 		return err
 	}
-	events, err := a.readWithWait(context.Background(), st, actor, boundary, *limit, *wait)
+	ctx := a.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	events, err := a.readWithWait(ctx, st, actor, boundary, *limit, *wait)
 	if err != nil {
 		return err
 	}
@@ -405,7 +407,15 @@ func (a *App) readWithWait(ctx context.Context, st core.Store, actor string, aft
 			if remaining < step {
 				step = remaining
 			}
-			time.Sleep(step)
+			timer := time.NewTimer(step)
+			select {
+			case <-timer.C:
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return nil, ctx.Err()
+			}
 		}
 	}
 }
@@ -480,6 +490,9 @@ func requireLoopback(address string) error {
 // local room. room init never runs through this path: room creation is local.
 func (a *App) openStore() (core.Store, error) {
 	if server := strings.TrimRight(strings.TrimSpace(os.Getenv("TEAROOM_SERVER")), "/"); server != "" {
+		if err := transport.RequireLoopbackURL(server); err != nil {
+			return nil, err
+		}
 		return transport.NewClient(server), nil
 	}
 	return store.Open(a.Dir)

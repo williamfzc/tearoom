@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -40,6 +42,28 @@ func (w wireError) decode() error {
 type Client struct {
 	Base string
 	HTTP *http.Client
+}
+
+const maxWaitRequest = 60 * time.Second
+
+// RequireLoopbackURL enforces the unauthenticated P0 transport boundary.
+// The served API has no credentials, so a client target must be loopback too.
+func RequireLoopbackURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("TEAROOM_SERVER must be an http(s) loopback URL")
+	}
+	if parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("TEAROOM_SERVER must be a bare loopback server URL")
+	}
+	host := parsed.Hostname()
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	return fmt.Errorf("TEAROOM_SERVER must target loopback, got %q", host)
 }
 
 func NewClient(base string) *Client {
@@ -108,12 +132,84 @@ func (c *Client) Read(ctx context.Context, actor string, after uint64, limit int
 	return c.read(ctx, actor, after, limit, 0)
 }
 
-// ReadWait extends Read with a server-held wait: the server returns as soon as
-// an event past after appears, or after wait with an empty list. The request
-// gets its own client timeout so the server's hold is never cut short by the
-// shared default.
+// ReadWait waits for the caller's full budget. The server caps each held
+// request at 60 seconds, so a longer wait is retried without changing the
+// caller-owned boundary.
 func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
-	return c.read(ctx, actor, after, limit, wait)
+	if wait <= 0 {
+		return c.Read(ctx, actor, after, limit)
+	}
+	deadline := time.Now().Add(wait)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return []core.Event{}, nil
+		}
+		seconds := int64(remaining / time.Second)
+		if seconds > int64(maxWaitRequest/time.Second) {
+			seconds = int64(maxWaitRequest / time.Second)
+		}
+		if seconds == 0 {
+			attemptCtx, cancel := context.WithTimeout(ctx, remaining)
+			events, err := c.Read(attemptCtx, actor, after, limit)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				if !time.Now().Before(deadline) && errors.Is(err, context.DeadlineExceeded) {
+					return []core.Event{}, nil
+				}
+				return nil, err
+			}
+			if len(events) > 0 {
+				return events, nil
+			}
+			remaining = time.Until(deadline)
+			if remaining <= 0 {
+				return []core.Event{}, nil
+			}
+			timer := time.NewTimer(remaining)
+			select {
+			case <-timer.C:
+				return []core.Event{}, nil
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return nil, ctx.Err()
+			}
+		}
+		requestWait := time.Duration(seconds) * time.Second
+		attemptTimeout := requestWait + time.Second
+		if remaining < attemptTimeout {
+			attemptTimeout = remaining
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
+		events, err := c.read(attemptCtx, actor, after, limit, requestWait)
+		cancel()
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if time.Now().Before(deadline) && errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if !time.Now().Before(deadline) {
+				return []core.Event{}, nil
+			}
+			return nil, err
+		}
+		if len(events) > 0 {
+			return events, nil
+		}
+	}
 }
 
 func (c *Client) read(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,9 +21,15 @@ import (
 	"github.com/williamfzc/tearoom/internal/store"
 )
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
 func newPair(t *testing.T) (*Client, *store.File) {
 	t.Helper()
-	st, err := store.Init(t.TempDir(), store.BackendFile)
+	st, err := store.Init(t.TempDir(), store.BackendFile, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,6 +42,77 @@ func newPair(t *testing.T) (*Client, *store.File) {
 func TestClientSatisfiesStore(t *testing.T) {
 	var _ core.Store = (*Client)(nil)
 	var _ core.Store = (*store.File)(nil)
+}
+
+func TestClientReadWaitRetriesPastServerCap(t *testing.T) {
+	var requests int
+	client := NewClient("http://tearoom.test")
+	client.HTTP.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if got := request.URL.Query().Get("wait"); got != "60" {
+			t.Fatalf("request %d wait = %q, want 60", requests, got)
+		}
+		body := "[]"
+		if requests == 2 {
+			body = `[{"seq":1,"actor":"a","at":"2026-01-01T00:00:00Z","content":"ok"}]`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    request,
+		}, nil
+	})
+	events, err := client.ReadWait(context.Background(), "a", 0, 0, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || len(events) != 1 || events[0].Seq != 1 {
+		t.Fatalf("requests = %d, events = %+v", requests, events)
+	}
+}
+
+func TestClientReadWaitHonorsSubsecondBudget(t *testing.T) {
+	client := NewClient("http://tearoom.test")
+	client.HTTP.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("[]")),
+			Request:    request,
+		}, nil
+	})
+	started := time.Now()
+	events, err := client.ReadWait(context.Background(), "a", 0, 0, 20*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want empty", events)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("wait took %s, want under one second", elapsed)
+	}
+}
+
+func TestRequireLoopbackURL(t *testing.T) {
+	for _, test := range []struct {
+		url string
+		ok  bool
+	}{
+		{"http://127.0.0.1:8787", true},
+		{"http://[::1]:8787", true},
+		{"http://localhost:8787", true},
+		{"http://192.0.2.1:8787", false},
+		{"https://example.test", false},
+	} {
+		t.Run(test.url, func(t *testing.T) {
+			err := RequireLoopbackURL(test.url)
+			if (err == nil) != test.ok {
+				t.Fatalf("RequireLoopbackURL(%q) error = %v, want ok=%v", test.url, err, test.ok)
+			}
+		})
+	}
 }
 
 func TestRoomAndJoinThroughHTTP(t *testing.T) {
@@ -318,6 +396,33 @@ func TestAppendRejectsOldFields(t *testing.T) {
 				t.Fatalf("old field %q: code %q, want invalid", field, envelope.Error.Code)
 			}
 		})
+	}
+}
+
+func TestAppendRejectsTrailingJSON(t *testing.T) {
+	client, _ := newPair(t)
+	if _, err := client.AdmitActor(context.Background(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodPost, client.Base+"/api/events", strings.NewReader(`{"content":"x"}{"type":"legacy"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set(actorHeader, "a")
+	response, err := client.HTTP.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.StatusCode)
+	}
+	var envelope errorEnvelope
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Error.Code != "invalid" {
+		t.Fatalf("code = %q, want invalid", envelope.Error.Code)
 	}
 }
 

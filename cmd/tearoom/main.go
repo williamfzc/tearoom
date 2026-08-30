@@ -2,11 +2,18 @@
 package main
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/williamfzc/tearoom/internal/cli"
 )
 
 func main() {
-	os.Exit(cli.New().Run(os.Args[1:]))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	app := cli.New()
+	app.Context = ctx
+	os.Exit(app.Run(os.Args[1:]))
 }
