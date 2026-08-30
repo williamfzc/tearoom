@@ -464,7 +464,30 @@ Flags:
 		root = r.Root()
 	}
 	fmt.Fprintf(a.Err, "tearoom serving %s on %s\n", root, *address)
-	return server.ListenAndServe()
+	ctx := a.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.ListenAndServe() }()
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+			return err
+		}
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 // requireLoopback rejects any listen address whose host is not a loopback

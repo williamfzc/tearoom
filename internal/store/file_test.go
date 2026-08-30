@@ -17,7 +17,7 @@ import (
 
 func newTestStore(t *testing.T) *File {
 	t.Helper()
-	st, err := Init(t.TempDir(), BackendFile)
+	st, err := Init(t.TempDir(), BackendFile, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestFileStoreConformsToCoreContract(t *testing.T) {
 
 func TestInitWritesFormat2Marker(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile); err != nil {
+	if _, err := Init(dir, BackendFile, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, Dir, markerName))
@@ -90,7 +90,7 @@ func TestRoomIdentityFromDirectory(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, err := Init(dir, BackendFile)
+	st, err := Init(dir, BackendFile, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +119,32 @@ func TestAdmitJoiningAgainReturnsExistingActor(t *testing.T) {
 	actors, err := file.Actors(context.Background())
 	if err != nil || len(actors) != 1 {
 		t.Fatalf("actors = %+v, %v", actors, err)
+	}
+}
+
+func TestReopenPreservesRoomMembershipAndEvents(t *testing.T) {
+	file := newTestStore(t)
+	ctx := context.Background()
+	if _, err := file.Append(ctx, "planner", core.AppendRequest{Content: json.RawMessage(`"durable"`)}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(file.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := reopened.Read(ctx, "planner", 0, 0)
+	if err != nil || len(events) != 1 || string(events[0].Content) != `"durable"` {
+		t.Fatalf("reopened events = %+v, %v", events, err)
+	}
+}
+
+func TestCorruptRecordFailsClosed(t *testing.T) {
+	file := newTestStore(t)
+	if err := os.WriteFile(filepath.Join(file.Root(), "events.jsonl"), []byte("{\"legacy\":\"event\"}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.Read(context.Background(), "planner", 0, 0); err == nil {
+		t.Fatal("legacy-shaped event record was accepted")
 	}
 }
 

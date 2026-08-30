@@ -38,6 +38,13 @@ type record struct {
 
 // OpenAt opens the file-backed room at an existing .tearoom root.
 func OpenAt(root string) (*File, error) {
+	m, err := readMarker(root)
+	if err != nil {
+		return nil, err
+	}
+	if m.Format != formatVersion || m.Backend != string(BackendFile) {
+		return nil, fmt.Errorf("incompatible file store at %s: format %d backend %q", root, m.Format, m.Backend)
+	}
 	f := &File{root: root, now: time.Now}
 	if _, err := f.Room(context.Background()); err != nil {
 		return nil, err
@@ -144,7 +151,10 @@ func (f *File) Append(_ context.Context, actorID string, request core.AppendRequ
 	}
 	to := core.NormalizeTo(request.To)
 	key := strings.TrimSpace(request.IdempotencyKey)
-	fingerprint := core.Fingerprint(actorID, to, content)
+	var fingerprint []byte
+	if key != "" {
+		fingerprint = core.Fingerprint(actorID, to, content)
+	}
 
 	unlock, err := f.lock()
 	if err != nil {
@@ -153,6 +163,11 @@ func (f *File) Append(_ context.Context, actorID string, request core.AppendRequ
 	defer unlock()
 	if err := f.requireActor(actorID); err != nil {
 		return nil, err
+	}
+	for _, recipient := range to {
+		if err := f.requireActor(recipient); err != nil {
+			return nil, fmt.Errorf("recipient %q: %w", recipient, err)
+		}
 	}
 
 	var head uint64
@@ -233,11 +248,16 @@ func (f *File) scanRecords(fn func(record) (bool, error)) error {
 	defer file.Close()
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var expectedSeq uint64
 	for scanner.Scan() {
 		var rec record
 		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
 			return fmt.Errorf("decode event log: %w", err)
 		}
+		if err := validateRecord(rec, expectedSeq+1); err != nil {
+			return err
+		}
+		expectedSeq = rec.Event.Seq
 		keep, err := fn(rec)
 		if err != nil {
 			return err
@@ -247,6 +267,35 @@ func (f *File) scanRecords(fn func(record) (bool, error)) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func validateRecord(rec record, expectedSeq uint64) error {
+	if rec.Event.Seq != expectedSeq {
+		return fmt.Errorf("invalid event log sequence %d: want %d", rec.Event.Seq, expectedSeq)
+	}
+	if strings.TrimSpace(rec.Event.Actor) == "" || rec.Event.Actor != strings.TrimSpace(rec.Event.Actor) {
+		return errors.New("invalid event log actor")
+	}
+	if rec.Event.At.IsZero() {
+		return fmt.Errorf("invalid event log event %d: timestamp is required", rec.Event.Seq)
+	}
+	content, err := core.CompactJSON(rec.Event.Content)
+	if err != nil || !bytes.Equal(content, rec.Event.Content) {
+		return fmt.Errorf("invalid event log event %d: content is not compact valid JSON", rec.Event.Seq)
+	}
+	if normalized := core.NormalizeTo(rec.Event.To); !equalStrings(rec.Event.To, normalized) {
+		return fmt.Errorf("invalid event log event %d: to is not normalized", rec.Event.Seq)
+	}
+	if rec.Idempotency == "" && len(rec.Fingerprint) != 0 {
+		return fmt.Errorf("invalid event log event %d: fingerprint without idempotency key", rec.Event.Seq)
+	}
+	if rec.Idempotency != "" {
+		want := core.Fingerprint(rec.Event.Actor, rec.Event.To, rec.Event.Content)
+		if !bytes.Equal(rec.Fingerprint, want) {
+			return fmt.Errorf("invalid event log event %d: idempotency fingerprint mismatch", rec.Event.Seq)
+		}
+	}
+	return nil
 }
 
 func (f *File) readJSON(name string, out any) error {
@@ -264,11 +313,19 @@ func (f *File) writeJSON(name string, value any) error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp := f.path(name + ".tmp")
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
+	return durableReplace(f.path(name), data, 0o644)
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	return os.Rename(tmp, f.path(name))
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 var _ core.Store = (*File)(nil)

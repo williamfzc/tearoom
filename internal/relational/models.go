@@ -6,6 +6,8 @@ package relational
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -67,14 +69,38 @@ type MetaRow struct {
 // coreEvent converts a stored row back into the domain Event. The To column
 // is JSON we wrote ourselves, so an unmarshal failure can only mean file
 // corruption; the empty list is the safe reading.
-func (r EventRow) coreEvent() core.Event {
+func (r EventRow) coreEvent() (core.Event, error) {
+	if r.Seq == 0 || strings.TrimSpace(r.Actor) == "" || r.Actor != strings.TrimSpace(r.Actor) || r.At.IsZero() {
+		return core.Event{}, fmt.Errorf("invalid stored event %d", r.Seq)
+	}
 	var to []string
-	_ = json.Unmarshal([]byte(r.To), &to)
+	if err := json.Unmarshal([]byte(r.To), &to); err != nil {
+		return core.Event{}, fmt.Errorf("decode stored event %d recipients: %w", r.Seq, err)
+	}
+	if normalized := core.NormalizeTo(to); !equalStrings(to, normalized) {
+		return core.Event{}, fmt.Errorf("stored event %d recipients are not normalized", r.Seq)
+	}
+	content, err := core.CompactJSON(json.RawMessage(r.Content))
+	if err != nil || string(content) != r.Content {
+		return core.Event{}, fmt.Errorf("stored event %d content is not compact valid JSON", r.Seq)
+	}
 	return core.Event{
 		Seq:     r.Seq,
 		Actor:   r.Actor,
 		At:      r.At,
 		To:      to,
-		Content: json.RawMessage(r.Content),
+		Content: content,
+	}, nil
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
 	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

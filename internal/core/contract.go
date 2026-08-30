@@ -70,6 +70,19 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 		}
 	})
 
+	t.Run("UnjoinedRecipientRejected", func(t *testing.T) {
+		st := newStore(t)
+		admit(t, st, "sender")
+		if _, err := st.Append(ctx, "sender", AppendRequest{
+			To: []string{"missing"}, Content: json.RawMessage(`"hi"`),
+		}); !errors.Is(err, ErrUnknownActor) {
+			t.Fatalf("unknown recipient error = %v, want %v", err, ErrUnknownActor)
+		}
+		if events := readAll(t, st, "sender", 0); len(events) != 0 {
+			t.Fatalf("unknown recipient appended events: %+v", events)
+		}
+	})
+
 	t.Run("DenseSequence", func(t *testing.T) {
 		st := newStore(t)
 		admit(t, st, "a", "b")
@@ -249,6 +262,49 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 		// The key is scoped per (room, actor, key): another actor may reuse it.
 		if _, err := st.Append(ctx, "b", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); err != nil {
 			t.Fatalf("key reuse by another actor: %v", err)
+		}
+	})
+
+	t.Run("ConcurrentIdempotency", func(t *testing.T) {
+		st := newStore(t)
+		admit(t, st, "a")
+		const attempts = 8
+		var group sync.WaitGroup
+		results := make(chan *Event, attempts)
+		errorsCh := make(chan error, attempts)
+		for i := 0; i < attempts; i++ {
+			group.Add(1)
+			go func() {
+				defer group.Done()
+				event, err := st.Append(ctx, "a", AppendRequest{
+					IdempotencyKey: "concurrent-key",
+					Content:        json.RawMessage(`{"same":true}`),
+				})
+				results <- event
+				errorsCh <- err
+			}()
+		}
+		group.Wait()
+		close(results)
+		close(errorsCh)
+		var first *Event
+		for event := range results {
+			if event == nil {
+				t.Fatal("concurrent idempotent append returned nil event")
+			}
+			if first == nil {
+				first = event
+			} else if event.Seq != first.Seq {
+				t.Fatalf("concurrent idempotent sequences = %d and %d", first.Seq, event.Seq)
+			}
+		}
+		for err := range errorsCh {
+			if err != nil {
+				t.Fatalf("concurrent idempotent append: %v", err)
+			}
+		}
+		if events := readAll(t, st, "a", 0); len(events) != 1 {
+			t.Fatalf("concurrent idempotent append created %d events", len(events))
 		}
 	})
 

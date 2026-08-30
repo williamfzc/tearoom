@@ -12,13 +12,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
-	st, err := Init(t.TempDir())
+	st, err := Init(t.TempDir(), "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,10 +43,10 @@ func TestSQLiteStoreContract(t *testing.T) {
 
 func TestInitRefusesExistingDatabase(t *testing.T) {
 	root := t.TempDir()
-	if _, err := Init(root); err != nil {
+	if _, err := Init(root, "planner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(root); err == nil {
+	if _, err := Init(root, "planner"); err == nil {
 		t.Fatal("second Init over an existing database accepted")
 	}
 }
@@ -56,7 +57,7 @@ func TestRoomIdentityFromDirectory(t *testing.T) {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, err := Init(root)
+	st, err := Init(root, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,6 +67,17 @@ func TestRoomIdentityFromDirectory(t *testing.T) {
 	}
 	if room.ID != "planning" || room.Created.IsZero() {
 		t.Fatalf("room = %+v, want id planning with a creation time", room)
+	}
+}
+
+func TestInitAdmitsCreatorAtomically(t *testing.T) {
+	st, err := Init(t.TempDir(), "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors, err := st.Actors(context.Background())
+	if err != nil || len(actors) != 1 || actors[0].ID != "planner" {
+		t.Fatalf("initial actors = %+v, %v", actors, err)
 	}
 }
 
@@ -110,7 +122,7 @@ func TestOpenRefusesPreCutoverDatabase(t *testing.T) {
 
 func TestOpenRefusesWrongFormatMarker(t *testing.T) {
 	root := t.TempDir()
-	st, err := Init(root)
+	st, err := Init(root, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +135,37 @@ func TestOpenRefusesWrongFormatMarker(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "incompatible") {
 		t.Fatalf("wrong-format refusal is not a clear incompatible error: %v", err)
+	}
+}
+
+func TestMigrateRefusesWrongMarkerBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	db, err := openSQLite(filepath.Join(root, "room.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&MetaRow{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&MetaRow{Key: formatKey, Value: "1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(db); err == nil || !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("Migrate wrong marker error = %v", err)
+	}
+	if db.Migrator().HasTable(&EventRow{}) {
+		t.Fatal("Migrate mutated schema after rejecting wrong marker")
+	}
+}
+
+func TestNewRefusesUngatedDatabase(t *testing.T) {
+	root := t.TempDir()
+	db, err := openSQLite(filepath.Join(root, "room.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(db, "room"); err == nil || !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("New ungated database error = %v", err)
 	}
 }
 
@@ -178,5 +221,20 @@ func TestAppendRejectsEmptyActor(t *testing.T) {
 	st := newTestStore(t)
 	if _, err := st.Append(context.Background(), "  ", core.AppendRequest{Content: json.RawMessage(`"x"`)}); err == nil {
 		t.Fatal("blank actor accepted")
+	}
+}
+
+func TestReadCorruptRecipientsFailsClosed(t *testing.T) {
+	st := newTestStore(t)
+	admit(t, st, "planner")
+	row := EventRow{
+		RoomID: st.roomID, Seq: 1, Actor: "planner",
+		At: time.Now().UTC(), To: "[", Content: `"bad"`,
+	}
+	if err := st.db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Read(context.Background(), "planner", 0, 0); err == nil {
+		t.Fatal("corrupt recipient JSON was accepted")
 	}
 }

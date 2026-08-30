@@ -18,7 +18,7 @@ import (
 
 func TestOpenReturnsFileBackend(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile); err != nil {
+	if _, err := Init(dir, BackendFile, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	st, err := Open(dir)
@@ -36,7 +36,7 @@ func TestOpenReturnsFileBackend(t *testing.T) {
 
 func TestOpenReturnsSQLiteBackend(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendSQLite); err != nil {
+	if _, err := Init(dir, BackendSQLite, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	st, err := Open(dir)
@@ -51,6 +51,10 @@ func TestOpenReturnsSQLiteBackend(t *testing.T) {
 	room, err := st.Room(ctx)
 	if err != nil || room.ID == "" {
 		t.Fatalf("room = %+v, %v", room, err)
+	}
+	actors, err := st.Actors(ctx)
+	if err != nil || len(actors) != 1 || actors[0].ID != "planner" {
+		t.Fatalf("creator membership = %+v, %v", actors, err)
 	}
 	if _, err := st.AdmitActor(ctx, "a"); err != nil {
 		t.Fatal(err)
@@ -98,19 +102,63 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 	}
 }
 
+func TestOpenAtRejectsMissingMarker(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Init(dir, BackendFile, "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := st.(*File).Root()
+	if err := os.Remove(filepath.Join(root, markerName)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenAt(root); err == nil || !strings.Contains(err.Error(), "incompatible") {
+		t.Fatalf("OpenAt missing marker error = %v", err)
+	}
+}
+
 func TestInitRejectsUnknownBackend(t *testing.T) {
-	if _, err := Init(t.TempDir(), Backend("oracle")); err == nil {
+	if _, err := Init(t.TempDir(), Backend("oracle"), "planner"); err == nil {
 		t.Fatal("unknown backend accepted by Init")
 	}
 }
 
 func TestInitRefusesExistingRoom(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile); err != nil {
+	if _, err := Init(dir, BackendFile, "planner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(dir, BackendFile); err == nil {
+	if _, err := Init(dir, BackendFile, "planner"); err == nil {
 		t.Fatal("second Init over an existing room accepted")
+	}
+}
+
+func TestInitAdmitsCreatorBeforePublishingRoom(t *testing.T) {
+	dir := t.TempDir()
+	st, err := Init(dir, BackendFile, "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors, err := st.Actors(context.Background())
+	if err != nil || len(actors) != 1 || actors[0].ID != "planner" {
+		t.Fatalf("initial actors = %+v, %v", actors, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != Dir {
+		t.Fatalf("initialization left temporary siblings: %+v", entries)
+	}
+}
+
+func TestInitRejectsBlankCreatorWithoutRoom(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, BackendFile, "  "); err == nil {
+		t.Fatal("blank creator accepted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, Dir)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("blank creator left room path: %v", err)
 	}
 }
 
@@ -123,7 +171,7 @@ func TestFindWalksUpAndFailsOutsideARoom(t *testing.T) {
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(dir, BackendFile); err != nil {
+	if _, err := Init(dir, BackendFile, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	found, err := Find(nested)

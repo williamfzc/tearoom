@@ -36,10 +36,14 @@ type Store struct {
 	now    func() time.Time
 }
 
-// Init creates a fresh format-2 Room database under root (a .tearoom
-// directory). The Room identity is the directory that owns root, matching the
-// file backend, so both backends answer the same identity for one workspace.
-func Init(root string) (*Store, error) {
+// Init creates a fresh format-2 Room database and explicitly admits creator in
+// one transaction. Callers should expose the containing Room only after this
+// method returns successfully.
+func Init(root, creator string) (*Store, error) {
+	creator = strings.TrimSpace(creator)
+	if creator == "" {
+		return nil, errors.New("creator actor is required")
+	}
 	path := filepath.Join(root, "room.db")
 	if _, err := os.Stat(path); err == nil {
 		return nil, fmt.Errorf("room database already exists at %s", path)
@@ -55,7 +59,12 @@ func Init(root string) (*Store, error) {
 	}
 	s := &Store{root: root, db: db, roomID: roomIDFor(root), now: time.Now}
 	room := core.Room{ID: s.roomID, Created: s.now().UTC()}
-	if err := db.Create(&RoomRow{ID: room.ID, CreatedAt: room.Created, Head: 0}).Error; err != nil {
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&RoomRow{ID: room.ID, CreatedAt: room.Created, Head: 0}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&ActorRow{RoomID: room.ID, ID: creator, JoinedAt: room.Created}).Error
+	}); err != nil {
 		return nil, err
 	}
 	return s, nil
@@ -106,8 +115,22 @@ func OpenPostgres(dsn string) (*gorm.DB, error) {
 // tenant key: many Stores may share one *gorm.DB as long as their room ids
 // differ. The caller is responsible for schema creation (Migrate) and the
 // Room row; the PostgreSQL battery and future hosted operation use this.
-func New(db *gorm.DB, roomID string) *Store {
-	return &Store{db: db, roomID: roomID, now: time.Now}
+func New(db *gorm.DB, roomID string) (*Store, error) {
+	s := &Store{db: db, roomID: roomID, now: time.Now}
+	if err := s.gate(context.Background()); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// Close releases the underlying database connection. It is used by the
+// atomic local initializer before publishing a temporary database directory.
+func (s *Store) Close() error {
+	db, err := s.db.DB()
+	if err != nil {
+		return err
+	}
+	return db.Close()
 }
 
 // Room returns the Room identity this database holds.
@@ -188,7 +211,11 @@ func (s *Store) Read(ctx context.Context, actorID string, after uint64, limit in
 	}
 	events := make([]core.Event, 0, len(rows))
 	for _, row := range rows {
-		events = append(events, row.coreEvent())
+		event, err := row.coreEvent()
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
 	}
 	return events, nil
 }
@@ -227,6 +254,11 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 		if err := s.requireActorTx(tx, actorID); err != nil {
 			return err
 		}
+		for _, recipient := range to {
+			if err := s.requireActorTx(tx, recipient); err != nil {
+				return fmt.Errorf("recipient %q: %w", recipient, err)
+			}
+		}
 
 		// 3. Resolve an existing idempotency key: an equal fingerprint
 		// returns the original Event, a different one conflicts.
@@ -248,7 +280,10 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 				if original.Seq == 0 {
 					return fmt.Errorf("idempotency key %q lost its original event", key)
 				}
-				event := original.coreEvent()
+				event, err := original.coreEvent()
+				if err != nil {
+					return err
+				}
 				appended = &event
 				return nil
 			}

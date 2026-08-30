@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -37,31 +38,76 @@ type marker struct {
 	Backend string `json:"backend"`
 }
 
-// Init creates a Room under dir with the named backend.
-func Init(dir string, backend Backend) (core.Store, error) {
+// Init creates a Room and explicitly admits creator as one atomic operation.
+// The room is assembled in a private sibling directory and exposed only after
+// all files, the backend schema, and the creator membership are durable.
+func Init(dir string, backend Backend, creator string) (core.Store, error) {
+	creator = strings.TrimSpace(creator)
+	if creator == "" {
+		return nil, errors.New("creator actor is required")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
 	root := filepath.Join(dir, Dir)
 	if _, err := os.Stat(root); err == nil {
 		return nil, fmt.Errorf("room already exists at %s", root)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	tmp, err := os.MkdirTemp(dir, ".tearoom-init-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return nil, err
+	}
+
+	var st core.Store
+	switch backend {
+	case BackendFile:
+		if _, err := initFile(tmp, creator); err != nil {
+			return nil, err
+		}
+		if err := writeMarker(tmp, marker{Format: formatVersion, Backend: string(BackendFile)}); err != nil {
+			return nil, err
+		}
+		st, err = OpenAt(tmp)
+	case BackendSQLite:
+		st, err = relational.Init(tmp, creator)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeMarker(tmp, marker{Format: formatVersion, Backend: string(BackendSQLite)}); err != nil {
+			_ = st.(*relational.Store).Close()
+			return nil, err
+		}
+		if err := st.(*relational.Store).Close(); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("unknown backend %q", backend)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Rename(tmp, root); err != nil {
+		if sqlite, ok := st.(*relational.Store); ok {
+			_ = sqlite.Close()
+		}
+		return nil, err
+	}
+	if err := syncDirectory(dir); err != nil {
 		return nil, err
 	}
 	switch backend {
 	case BackendFile:
-		if err := writeMarker(root, marker{Format: formatVersion, Backend: string(BackendFile)}); err != nil {
-			return nil, err
-		}
-		return initFile(root)
+		return OpenAt(root)
 	case BackendSQLite:
-		if err := writeMarker(root, marker{Format: formatVersion, Backend: string(BackendSQLite)}); err != nil {
-			return nil, err
-		}
-		return relational.Init(root)
-	default:
-		return nil, fmt.Errorf("unknown backend %q", backend)
+		return relational.Open(root)
 	}
+	return nil, fmt.Errorf("unsupported store backend %q at %s", backend, root)
 }
 
 // Open finds the nearest room and opens the backend its marker declares.
@@ -131,22 +177,62 @@ func writeMarker(root string, m marker) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(root, markerName), data, 0o644)
+	return durableReplace(filepath.Join(root, markerName), data, 0o644)
 }
 
 // initFile lays out a file-backed Room under an existing, empty root. The room
 // identity is the name of the directory that owns .tearoom.
-func initFile(root string) (*File, error) {
+func initFile(root, creator string) (*File, error) {
 	f := &File{root: root, now: time.Now}
 	room := core.Room{ID: filepath.Base(filepath.Dir(root)), Created: f.now().UTC()}
 	if err := f.writeJSON("room.json", room); err != nil {
 		return nil, err
 	}
-	if err := f.writeJSON("actors.json", []core.Actor{}); err != nil {
+	if err := f.writeJSON("actors.json", []core.Actor{{ID: creator, Joined: f.now().UTC()}}); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(f.path("events.jsonl"), nil, 0o644); err != nil {
+	if err := durableReplace(f.path("events.jsonl"), nil, 0o644); err != nil {
 		return nil, err
 	}
 	return f, nil
+}
+
+func durableReplace(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return err
+	}
+	return syncDirectory(filepath.Dir(path))
+}
+
+func syncDirectory(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	if err := dir.Sync(); err != nil {
+		_ = dir.Close()
+		return err
+	}
+	return dir.Close()
 }

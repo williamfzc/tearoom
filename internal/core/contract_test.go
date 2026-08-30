@@ -12,7 +12,7 @@ import (
 
 func TestFileStoreContract(t *testing.T) {
 	core.StoreContract(t, func(t *testing.T) core.Store {
-		st, err := store.Init(t.TempDir(), store.BackendFile)
+		st, err := store.Init(t.TempDir(), store.BackendFile, "planner")
 		if err != nil {
 			t.Fatal(err)
 		}

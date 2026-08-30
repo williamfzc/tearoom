@@ -38,7 +38,10 @@ func newPGStore(t *testing.T) core.Store {
 		t.Fatal(err)
 	}
 	roomID := "pgtest-" + hex.EncodeToString(raw)
-	st := New(db, roomID)
+	st, err := New(db, roomID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&RoomRow{ID: roomID, CreatedAt: st.now().UTC(), Head: 0}).Error; err != nil {
 		t.Fatal(err)
 	}

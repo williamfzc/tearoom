@@ -390,6 +390,24 @@ func TestServerStartRefusesNonLoopback(t *testing.T) {
 	}
 }
 
+func TestServerStartStopsOnContextCancellation(t *testing.T) {
+	dir := initRoom(t, "planner")
+	ctx, cancel := context.WithCancel(context.Background())
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir, Context: ctx}
+	result := make(chan error, 1)
+	go func() { result <- app.serverStart([]string{"--address", "127.0.0.1:0"}) }()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("serverStart error = %v, want clean cancellation", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serverStart did not stop after context cancellation")
+	}
+}
+
 func TestRemoteServerRefusesNonLoopback(t *testing.T) {
 	t.Setenv("TEAROOM_SERVER", "http://192.0.2.1:8787")
 	var errOut bytes.Buffer

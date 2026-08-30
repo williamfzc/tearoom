@@ -20,22 +20,40 @@ const formatVersion = 2
 // formatKey names the meta row that records the layout format.
 const formatKey = "format"
 
-// Migrate creates the format-2 schema on an existing connection: the five
-// tables and the format marker. It is idempotent and safe to run on every
-// open; the format gate in Store.Open runs first, so old databases are
-// refused before any schema statement touches them.
+// Migrate creates or advances the format-2 schema. A completely empty
+// database receives the schema and marker in one transaction. An existing
+// database must already carry the exact format-2 marker before any schema
+// mutation; old, missing, or wrong markers are refused.
 func Migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}); err != nil {
-		return err
+	if db.Migrator().HasTable(&MetaRow{}) {
+		if err := checkMarker(db); err != nil {
+			return err
+		}
+		return db.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{})
 	}
+	for _, table := range []string{"schema_versions", "rooms", "actors", "events", "append_idempotency"} {
+		if db.Migrator().HasTable(table) {
+			return fmt.Errorf("incompatible database: existing table %q has no format-%d marker; no automatic upgrade", table, formatVersion)
+		}
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}); err != nil {
+			return err
+		}
+		return tx.Create(&MetaRow{Key: formatKey, Value: strconv.Itoa(formatVersion)}).Error
+	})
+}
+
+func checkMarker(db *gorm.DB) error {
 	var marker MetaRow
 	if err := db.Where("key = ?", formatKey).Limit(1).Find(&marker).Error; err != nil {
 		return err
 	}
-	if marker.Key != "" {
-		return nil
+	want := strconv.Itoa(formatVersion)
+	if marker.Key == "" || marker.Value != want {
+		return fmt.Errorf("incompatible database: format %q, want %q; no automatic upgrade", marker.Value, want)
 	}
-	return db.Create(&MetaRow{Key: formatKey, Value: strconv.Itoa(formatVersion)}).Error
+	return nil
 }
 
 // gate refuses a database that predates the cutover. The marker table is the
@@ -48,16 +66,5 @@ func (s *Store) gate(ctx context.Context) error {
 			s.root, formatVersion,
 		)
 	}
-	var marker MetaRow
-	if err := s.db.WithContext(ctx).Where("key = ?", formatKey).Limit(1).Find(&marker).Error; err != nil {
-		return err
-	}
-	want := strconv.Itoa(formatVersion)
-	if marker.Key == "" || marker.Value != want {
-		return fmt.Errorf(
-			"incompatible database at %s: format %q, want %q; no automatic upgrade",
-			s.root, marker.Value, want,
-		)
-	}
-	return nil
+	return checkMarker(s.db.WithContext(ctx))
 }
