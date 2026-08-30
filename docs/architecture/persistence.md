@@ -47,13 +47,15 @@ The minimum durable coordination data is:
 
 - Rooms with identity, lifecycle metadata, membership, and an ordered head;
 - Actors admitted to a Room with stable identity;
-- Events with sequence, author, acceptance time, optional `to`, and content.
+- Events with sequence, author, acceptance time, optional `to`, and content as
+  arbitrary valid JSON.
 
-The exact content representation remains open. `type`, `caused_by`, or other
-envelope fields may be protocol conventions later, but they are not required by
-the minimum model. Hosted control-plane tables such as accounts, memberships,
-credentials, and billing records remain outside coordination data; they
-authorize access but do not change Event semantics.
+Content is stored and transported as compact JSON; plain text is represented as
+a JSON string. `type`, `caused_by`, or other envelope fields may be protocol
+conventions later, but they are not required by the minimum model. Hosted
+control-plane tables such as accounts, memberships, credentials, and billing
+records remain outside coordination data; they authorize access but do not
+change Event semantics.
 
 Room membership is the visibility boundary. Every admitted member may read the
 complete Room history. `to` is public addressing metadata, not an Event-level

@@ -165,7 +165,7 @@ The clean break deleted, rather than aliased, these old surfaces:
 | HTTP | old actor/cursor query parameters, old append body and response envelope, `ReadWait` server subscriptions, stale-write wire errors, old long-poll semantics, `Broadcaster` |
 | Scripts and Makefile | `smoke.sh`, `smoke-sqlite.sh`, `session-smoke.sh`, `harness-demo.sh`, `game-demo.sh`, `worktree-demo.sh`, `hosted-demo.sh`, `pg-smoke.sh`, and their Makefile targets |
 | Hosted | `internal/control`, `internal/hosted`, the hosted CLI, the `web/` SPA, `render.yaml`, `Dockerfile`, `.dockerignore`, `docs/operations/deploy.md` |
-| Docs | the stale reference pages above; nothing in shipped docs uses cursors, directed visibility, the `event` group, or hosted admission |
+| Docs | normative product/reference pages contain no old contract; migration manifests, historical rationale, evaluation legacy ledgers, and negative rejection tests may name removed surfaces as evidence |
 
 No item in this table is kept as a deprecated alias, dual decoder, dual writer,
 shadow projection, or compatibility route.
@@ -191,8 +191,11 @@ preserve this direction rather than reintroduce a deprecated layer.
 
 The migration is complete only when the new core, both Stores, transport,
 CLI, tests, evaluations, and OKF docs agree; `make check` and `make docs`
-pass; and repository searches find none of the deletion-manifest surfaces. A
-green test run against old semantics is not completion. The P0 evaluations
+pass; and scoped searches over shipped runtime code and normative entry points
+find none of the deletion-manifest surfaces. Those searches explicitly exclude
+migration manifests, historical rationale, evaluation legacy ledgers, and
+negative rejection tests, which preserve removed names as evidence. A green
+test run against old semantics is not completion. The P0 evaluations
 (`make target-room`, `make target-replay`) are the executable completion
 proof; P1, Activation, and Hosted remain open or deferred in
 [evaluations.md](../evaluations.md).

@@ -35,7 +35,9 @@ tearoom server start [--address 127.0.0.1:8787]
 `send` appends one contribution. `read` is a repeatable, side-effect-free
 query. `--after` is supplied by the caller; no Actor session silently advances
 or supplies a checkpoint. `--wait` lasts only for that invocation and does not
-create a subscription.
+create a subscription. It is invocation-scoped transport behavior for the
+current request, not the deleted durable Feed/ReadWait abstraction, and never
+creates cursor or delivery state.
 
 `to` is public addressing or attention metadata. All admitted Room members can
 read the complete history; an addressed Event does not become private and does
@@ -59,7 +61,7 @@ skills, demos, and evaluations were rewritten in the same release.
 
 | Concern | Owner | Responsibility |
 |---|---|---|
-| Room lifecycle and membership | Room boundary / hosted control plane | Admit and authorize Actors |
+| Room lifecycle and membership | Room boundary; future hosted control plane | Admit and authorize Actors |
 | collaboration history | `core.Store` implementations | Append and read ordered immutable Events |
 | client interaction | CLI and transport | Translate `send`/`read`, never own shared invariants |
 | offline activation | application service | Observe addressed Events, claim/lease, launch and retry |
@@ -78,8 +80,9 @@ The layers must cut over in this order:
    contract.
 2. `internal/store` and `internal/relational` implement it with a new storage
    shape; old records are not read and no old/new double write exists.
-3. `internal/transport`, `internal/hosted`, and `internal/control` publish only
-   the new HTTP and admission contract.
+3. `internal/transport` publishes the new HTTP contract. A future hosted or
+   control-plane implementation may add authenticated admission around the
+   unchanged Store contract.
 4. `internal/cli`, `cmd/tearoom`, skills, examples, tests, and evaluations
    publish only `send`/`read` and explicit boundaries.
 5. An application-owned activation service is added only after the first four
@@ -94,10 +97,13 @@ versions.
 
 ## Completion and rollback
 
-The migration is complete when repository searches find no old command, Event
-field, cursor session, directed-visibility filter, stale-write route, or old
-HTTP shape; both Stores and hosted/local journeys pass the new boundary tests;
-and `make check` plus `make docs` pass.
+The migration is complete when scoped repository searches over shipped runtime
+code and normative entry points find no old command, Event field, cursor
+session, directed-visibility filter, stale-write route, or old HTTP shape; both
+Stores and the local journey pass the new boundary tests; future hosted work
+remains deferred; and `make check` plus `make docs` pass. Migration manifests,
+historical rationale, evaluation legacy ledgers, and negative rejection tests
+are evidence and are excluded from those searches.
 
 Before the storage cutover, rollback means redeploying the previous Git
 revision. After storage cutover, rollback means redeploying that revision with

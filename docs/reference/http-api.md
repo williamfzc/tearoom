@@ -28,7 +28,9 @@ the loopback interface only in P0. Implementation status belongs in
   cursor. `after` is the exclusive caller-owned boundary; the server never
   saves or advances it. `wait` is an integer number of seconds: the request
   holds until an Event past `after` exists or the wait elapses, then returns
-  an array (possibly empty). An empty array is "nothing new", not an error.
+  an array (possibly empty). This is invocation-scoped transport behavior, not
+  a durable Feed/ReadWait abstraction; it creates no cursor or delivery state.
+  An empty array is "nothing new", not an error.
 - `POST /api/actors` is explicit join under loopback/OS trust. The body is
   `{"id":"<actor>"}`.
 - `POST /api/events` appends one Event. The body carries only `to` and

@@ -184,10 +184,10 @@ Tearoom is working only when all of the following are executable tests:
 
 - A later process in the same agent product resumes a stable actor and reads prior events.
 - A different agent product exchanges events through the same server.
-- Concurrent writers cannot assign the same room sequence.
 - A caller can read the same Room history repeatedly and can resume from an
   explicit Event boundary.
-- Concurrent writers receive distinct dense sequence numbers.
+- Concurrent writers receive distinct dense sequence numbers under the Room
+  serialization boundary.
 - A repeated request is duplicate-safe when the append capability uses an
   idempotency key.
 - Every Room member can inspect the same complete Event history; `to` remains

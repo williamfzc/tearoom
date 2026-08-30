@@ -55,6 +55,8 @@ Use one source for each kind of claim:
 7. [operations/index.md](operations/index.md) — non-normative operational state, only when needed
 
 Only after this path should a reader open rationale, lessons, or the historical
-log. Product adoption in the docs does not imply that the Store, CLI, hosted
-service, or demos have already migrated. The old Agent skill has been removed;
-no executable integration guide exists until the target CLI lands.
+log. Product intent in the docs does not by itself establish hosted or
+activation implementation; current implementation status is recorded in
+[architecture/status.md](architecture/status.md). The old Agent skill has been
+removed; the target CLI contract and executable quick start are documented in
+[reference/cli.md](reference/cli.md) and [README.md](../README.md).
