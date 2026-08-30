@@ -72,18 +72,16 @@ type Store interface {
 }
 
 // NormalizeTo returns the canonical form of the To addressing list: each value
-// is trimmed, comma-split, deduplicated, and sorted. Stores persist and compare
-// To in this single canonical form.
+// is trimmed, deduplicated, and sorted. A comma is part of an actor identity;
+// callers that address multiple actors provide multiple values.
 func NormalizeTo(values []string) []string {
 	seen := map[string]bool{}
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		for _, part := range strings.Split(value, ",") {
-			part = strings.TrimSpace(part)
-			if part != "" && !seen[part] {
-				seen[part] = true
-				out = append(out, part)
-			}
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			out = append(out, value)
 		}
 	}
 	sort.Strings(out)

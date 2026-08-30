@@ -53,8 +53,8 @@ file_room="$WORK/file-room"
 mkdir -p "$file_room"
 
 expect "room init admits the creator" "$file_room" "$BIN" room init --as planner
-expect "explicit join bob" "$file_room" "$BIN" room join --as bob
-expect "explicit join carol" "$file_room" "$BIN" room join --as carol
+expect "explicit join bob" "$file_room" "$BIN" room join bob
+expect "explicit join carol" "$file_room" "$BIN" room join carol
 
 members="$(in_dir "$file_room" "$BIN" room members)"
 rc=0
@@ -85,12 +85,12 @@ sys.exit(0 if any(e.get("to") == ["bob"] and "bob" in e["content"] for e in even
 check "the event addressed to bob remains visible to carol" "$rc"
 
 # A freshly joined actor appends without ever reading the room first.
-expect "join dave" "$file_room" "$BIN" room join --as dave
+expect "join dave" "$file_room" "$BIN" room join dave
 expect "append without any prior read" "$file_room" "$BIN" send "first word" --as dave
 
 # Six writers append concurrently; the store must issue one dense sequence.
 for id in erin frank grace hank iris joy; do
-  expect "join $id" "$file_room" "$BIN" room join --as "$id"
+  expect "join $id" "$file_room" "$BIN" room join "$id"
 done
 pids=()
 for id in erin frank grace hank iris joy; do
@@ -126,8 +126,8 @@ sqlite_room="$WORK/sqlite-room"
 mkdir -p "$sqlite_room"
 
 expect "sqlite room init admits the creator" "$sqlite_room" "$BIN" room init --as planner --store sqlite
-expect "sqlite join bob" "$sqlite_room" "$BIN" room join --as bob
-expect "sqlite join carol" "$sqlite_room" "$BIN" room join --as carol
+expect "sqlite join bob" "$sqlite_room" "$BIN" room join bob
+expect "sqlite join carol" "$sqlite_room" "$BIN" room join carol
 reject "sqlite unjoined read rejected" "$sqlite_room" "$BIN" read --as stranger
 reject "sqlite unjoined send rejected" "$sqlite_room" "$BIN" send hi --as stranger
 expect "sqlite send addressed to bob" "$sqlite_room" "$BIN" send "for bob" --to bob --as planner
@@ -145,7 +145,7 @@ sys.exit(0 if any(e.get("to") == ["bob"] for e in events) else 1)
 check "sqlite: to=bob remains visible to carol" "$rc"
 
 for id in dave erin frank grace; do
-  expect "sqlite join $id" "$sqlite_room" "$BIN" room join --as "$id"
+  expect "sqlite join $id" "$sqlite_room" "$BIN" room join "$id"
 done
 pids=()
 for id in dave erin frank grace; do
@@ -172,7 +172,7 @@ echo "E1: HTTP leg"
 http_room="$WORK/http-room"
 mkdir -p "$http_room"
 expect "http room init" "$http_room" "$BIN" room init --as planner
-expect "http join bob" "$http_room" "$BIN" room join --as bob
+expect "http join bob" "$http_room" "$BIN" room join bob
 
 PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 URL="http://127.0.0.1:$PORT"
@@ -188,7 +188,7 @@ for _ in $(seq 1 100); do
 done
 check "http server becomes ready on 127.0.0.1:$PORT" "$([ "$ready" -eq 1 ] && echo 0 || echo 1)"
 
-expect "http join carol" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" room join --as carol
+expect "http join carol" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" room join carol
 expect "http send addressed to bob" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send "for bob" --to bob --as planner
 expect "http send a second event" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send --json '{"plan":"http"}' --as planner
 

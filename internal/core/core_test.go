@@ -15,7 +15,8 @@ func TestNormalizeTo(t *testing.T) {
 		want []string
 	}{
 		{name: "sorts and deduplicates", in: []string{"bob", "carol", "bob", "alice"}, want: []string{"alice", "bob", "carol"}},
-		{name: "splits and trims", in: []string{" bob ,carol", "alice"}, want: []string{"alice", "bob", "carol"}},
+		{name: "trims each value", in: []string{" bob ", "carol", "alice"}, want: []string{"alice", "bob", "carol"}},
+		{name: "keeps commas in an identity", in: []string{"a,b", " a,b ", "c"}, want: []string{"a,b", "c"}},
 		{name: "drops empties", in: []string{"", "  ", "alice"}, want: []string{"alice"}},
 		{name: "nil stays nil", in: nil, want: nil},
 		{name: "empty stays empty", in: []string{}, want: []string{}},

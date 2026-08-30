@@ -335,6 +335,26 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 			t.Fatalf("to = %v, want %v", event.To, want)
 		}
 	})
+
+	t.Run("ToKeepsLiteralCommaIdentity", func(t *testing.T) {
+		st := newStore(t)
+		admit(t, st, "sender", "a,b")
+		event, err := st.Append(ctx, "sender", AppendRequest{
+			To: []string{" a,b ", "a,b"}, IdempotencyKey: "comma-key", Content: json.RawMessage(`"m"`),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := []string{"a,b"}; !equalStrings(event.To, want) {
+			t.Fatalf("to = %v, want literal comma identity %v", event.To, want)
+		}
+		retry, err := st.Append(ctx, "sender", AppendRequest{
+			To: []string{"a,b"}, IdempotencyKey: "comma-key", Content: json.RawMessage(`"m"`),
+		})
+		if err != nil || retry.Seq != event.Seq {
+			t.Fatalf("literal comma identity retry = %+v, %v; want original seq %d", retry, err, event.Seq)
+		}
+	})
 }
 
 func equalStrings(a, b []string) bool {
