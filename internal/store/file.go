@@ -5,6 +5,7 @@ package store
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,7 +14,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -21,54 +21,25 @@ import (
 
 const Dir = ".tearoom"
 
+// File implements core.Store on one .tearoom directory.
 type File struct {
-	root  string
-	now   func() time.Time
-	probe struct {
-		mu    sync.Mutex
-		size  int64
-		mtime time.Time
-	}
+	root string
+	now  func() time.Time
 }
 
-func Find(start string) (string, error) {
-	dir, err := filepath.Abs(start)
-	if err != nil {
-		return "", err
-	}
-	for {
-		candidate := filepath.Join(dir, Dir)
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", core.ErrNoRoom
-		}
-		dir = parent
-	}
+// record is the internal JSONL envelope: the Event plus the request
+// idempotency metadata used to answer retries. It is never exposed outside
+// the store; clients only ever see core.Event.
+type record struct {
+	Event       core.Event `json:"event"`
+	Idempotency string     `json:"idempotency,omitempty"`
+	Fingerprint []byte     `json:"fingerprint,omitempty"`
 }
 
+// OpenAt opens the file-backed room at an existing .tearoom root.
 func OpenAt(root string) (*File, error) {
 	f := &File{root: root, now: time.Now}
 	if _, err := f.Room(context.Background()); err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
-// initFile lays out a file-backed Room under an existing, empty root.
-// Callers (Init in open.go) own the root directory and the name default.
-func initFile(root, name string) (*File, error) {
-	f := &File{root: root, now: time.Now}
-	room := core.Room{ID: "room", Name: name, Created: f.now().UTC()}
-	if err := f.writeJSON("room.json", room); err != nil {
-		return nil, err
-	}
-	if err := f.writeJSON("actors.json", []*core.Actor{}); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(f.path("events.jsonl"), nil, 0o644); err != nil {
 		return nil, err
 	}
 	return f, nil
@@ -78,24 +49,9 @@ func (f *File) Root() string { return f.root }
 
 func (f *File) SetClock(now func() time.Time) { f.now = now }
 
-// Changed reports whether the event log changed since the previous call, by
-// stat rather than by taking the lock and scanning. Waiters use it to avoid
-// burning constant lock and scan work while a room is quiet.
-func (f *File) Changed(context.Context) (bool, error) {
-	info, err := os.Stat(f.path("events.jsonl"))
-	if err != nil {
-		return false, err
-	}
-	p := &f.probe
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	changed := p.size != info.Size() || !p.mtime.Equal(info.ModTime())
-	p.size, p.mtime = info.Size(), info.ModTime()
-	return changed, nil
-}
-
 func (f *File) path(name string) string { return filepath.Join(f.root, name) }
 
+// Room returns the room identity this directory holds.
 func (f *File) Room(context.Context) (*core.Room, error) {
 	var room core.Room
 	if err := f.readJSON("room.json", &room); err != nil {
@@ -107,9 +63,11 @@ func (f *File) Room(context.Context) (*core.Room, error) {
 	return &room, nil
 }
 
-func (f *File) UpsertActor(_ context.Context, id, role string) (*core.Actor, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
+// AdmitActor explicitly admits an actor; joining an already-admitted actor
+// returns the existing one unchanged.
+func (f *File) AdmitActor(_ context.Context, actorID string) (*core.Actor, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
 		return nil, errors.New("actor id is required")
 	}
 	unlock, err := f.lock()
@@ -122,31 +80,23 @@ func (f *File) UpsertActor(_ context.Context, id, role string) (*core.Actor, err
 	if err != nil {
 		return nil, err
 	}
-	now := f.now().UTC()
-	var actor *core.Actor
 	for _, current := range actors {
-		if current.ID == id {
-			actor = current
-			break
+		if current.ID == actorID {
+			copy := current
+			return &copy, nil
 		}
 	}
-	if actor == nil {
-		actor = &core.Actor{ID: id, Joined: now}
-		actors = append(actors, actor)
-	}
-	if role != "" {
-		actor.Role = role
-	}
-	actor.LastSeen = now
+	actor := &core.Actor{ID: actorID, Joined: f.now().UTC()}
+	actors = append(actors, *actor)
 	sort.Slice(actors, func(i, j int) bool { return actors[i].ID < actors[j].ID })
 	if err := f.writeJSON("actors.json", actors); err != nil {
 		return nil, err
 	}
-	copy := *actor
-	return &copy, nil
+	return actor, nil
 }
 
-func (f *File) Actors(context.Context) ([]*core.Actor, error) {
+// Actors lists every admitted actor.
+func (f *File) Actors(context.Context) ([]core.Actor, error) {
 	unlock, err := f.lock()
 	if err != nil {
 		return nil, err
@@ -155,72 +105,66 @@ func (f *File) Actors(context.Context) ([]*core.Actor, error) {
 	return f.loadActors()
 }
 
-func (f *File) Read(_ context.Context, actor string, after uint64, limit int) (*core.Feed, error) {
+// Read returns the events after the caller-owned exclusive boundary for an
+// admitted actor. Repeated reads are side-effect-free; no cursor is persisted.
+func (f *File) Read(_ context.Context, actorID string, after uint64, limit int) ([]core.Event, error) {
+	actorID = strings.TrimSpace(actorID)
 	unlock, err := f.lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if err := f.requireActor(actor); err != nil {
+	if err := f.requireActor(actorID); err != nil {
 		return nil, err
 	}
-	room, err := f.Room(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	feed := &core.Feed{Room: room, Cursor: after, Events: []core.Event{}}
-	return feed, f.scanEvents(func(event core.Event) (bool, error) {
-		if event.Seq <= after {
-			feed.Cursor = event.Seq
-			return true, nil
-		}
-		feed.Cursor = event.Seq
-		if event.VisibleTo(actor) {
-			feed.Events = append(feed.Events, event)
-			if limit > 0 && len(feed.Events) >= limit {
+	events := []core.Event{}
+	err = f.scanRecords(func(rec record) (bool, error) {
+		if rec.Event.Seq > after {
+			events = append(events, rec.Event)
+			if limit > 0 && len(events) >= limit {
 				return false, nil
 			}
 		}
 		return true, nil
 	})
+	return events, err
 }
 
-func (f *File) AppendEvent(_ context.Context, input core.AppendInput) (*core.Event, error) {
-	input.Actor = strings.TrimSpace(input.Actor)
-	input.Type = strings.TrimSpace(input.Type)
-	input.CausedBy = strings.TrimSpace(input.CausedBy)
-	input.To = core.NormalizeRecipients(input.To)
-	if input.Actor == "" || input.Type == "" || strings.TrimSpace(input.Key) == "" {
-		return nil, errors.New("actor, event type, and idempotency key are required")
+// Append accepts one contribution and assigns the next dense room sequence.
+// The idempotency key, when present, is matched per (room, actor, key): an
+// equal fingerprint returns the original event, a different one conflicts.
+func (f *File) Append(_ context.Context, actorID string, request core.AppendRequest) (*core.Event, error) {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
+		return nil, errors.New("actor id is required")
 	}
-	if len(input.Data) > 0 && !json.Valid(input.Data) {
-		return nil, errors.New("event data must be valid JSON")
+	content, err := core.CompactJSON(request.Content)
+	if err != nil {
+		return nil, fmt.Errorf("invalid content: %w", err)
 	}
+	to := core.NormalizeTo(request.To)
+	key := strings.TrimSpace(request.IdempotencyKey)
+	fingerprint := core.Fingerprint(actorID, to, content)
+
 	unlock, err := f.lock()
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	if err := f.requireActor(input.Actor); err != nil {
+	if err := f.requireActor(actorID); err != nil {
 		return nil, err
-	}
-	for _, recipient := range input.To {
-		if err := f.requireActor(recipient); err != nil {
-			return nil, fmt.Errorf("recipient %q: %w", recipient, err)
-		}
 	}
 
 	var head uint64
-	var duplicate *core.Event
-	err = f.scanEvents(func(event core.Event) (bool, error) {
-		head = event.Seq
-		if event.Key == input.Key {
-			if core.SameEvent(event, input) {
-				copy := event
-				duplicate = &copy
+	var duplicate *record
+	err = f.scanRecords(func(rec record) (bool, error) {
+		head = rec.Event.Seq
+		if key != "" && rec.Event.Actor == actorID && rec.Idempotency == key {
+			if bytes.Equal(rec.Fingerprint, fingerprint) {
+				duplicate = &rec
 				return false, nil
 			}
-			return false, fmt.Errorf("%w: idempotency key %q already describes another event", core.ErrConflict, input.Key)
+			return false, fmt.Errorf("%w: idempotency key %q already describes another event", core.ErrConflict, key)
 		}
 		return true, nil
 	})
@@ -228,29 +172,18 @@ func (f *File) AppendEvent(_ context.Context, input core.AppendInput) (*core.Eve
 		return nil, err
 	}
 	if duplicate != nil {
-		return duplicate, nil
+		event := duplicate.Event
+		return &event, nil
 	}
-	if input.Expected != head {
-		return nil, &core.StaleWriteError{Expected: input.Expected, Actual: head}
-	}
-	room, err := f.Room(context.Background())
-	if err != nil {
-		return nil, err
-	}
+
 	event := &core.Event{
-		ID:       fmt.Sprintf("e%d", head+1),
-		Room:     room.ID,
-		Seq:      head + 1,
-		Actor:    input.Actor,
-		At:       f.now().UTC(),
-		Type:     input.Type,
-		Body:     input.Body,
-		Data:     input.Data,
-		To:       input.To,
-		CausedBy: input.CausedBy,
-		Key:      input.Key,
+		Seq:     head + 1,
+		Actor:   actorID,
+		At:      f.now().UTC(),
+		To:      to,
+		Content: content,
 	}
-	line, err := json.Marshal(event)
+	line, err := json.Marshal(record{Event: *event, Idempotency: key, Fingerprint: fingerprint})
 	if err != nil {
 		return nil, err
 	}
@@ -284,15 +217,15 @@ func (f *File) requireActor(id string) error {
 	return fmt.Errorf("%w: %s", core.ErrUnknownActor, id)
 }
 
-func (f *File) loadActors() ([]*core.Actor, error) {
-	var actors []*core.Actor
+func (f *File) loadActors() ([]core.Actor, error) {
+	var actors []core.Actor
 	if err := f.readJSON("actors.json", &actors); err != nil {
 		return nil, err
 	}
 	return actors, nil
 }
 
-func (f *File) scanEvents(fn func(core.Event) (bool, error)) error {
+func (f *File) scanRecords(fn func(record) (bool, error)) error {
 	file, err := os.Open(f.path("events.jsonl"))
 	if err != nil {
 		return err
@@ -301,11 +234,11 @@ func (f *File) scanEvents(fn func(core.Event) (bool, error)) error {
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
-		var event core.Event
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		var rec record
+		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
 			return fmt.Errorf("decode event log: %w", err)
 		}
-		keep, err := fn(event)
+		keep, err := fn(rec)
 		if err != nil {
 			return err
 		}
