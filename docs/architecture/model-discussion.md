@@ -58,7 +58,9 @@ Event ::= {
   caller-provided content.
 - `at` is assigned when the Event is accepted.
 - `to` is optional addressing or attention metadata naming Room members.
-- `content` is the contribution. Its exact text/JSON shape is still open.
+- `content` is the contribution and may be any valid JSON. The Store validates
+  and compacts it for persistence; application-level protocol schemas remain
+  open.
 
 `room` need not be repeated inside the Event when the container already owns
 that fact. An `e<seq>` identifier may be a presentation of `seq` rather than a
@@ -151,8 +153,9 @@ not honest: `list` mutated saved state and `watch` performed one blocking read
 rather than continuous observation. Waiting is a mode of pure `read`, not a
 separate durable subscription.
 
-The normal output should be line-oriented Events without a feed envelope or
-cursor header. Exact JSONL/text details remain a CLI contract question.
+The normal output is line-oriented Events without a feed envelope or cursor
+header. The shipped JSONL/text behavior is defined by the [CLI contract](../reference/cli.md);
+future application-level content conventions remain open.
 
 ## 6. Recursion is a deferred hypothesis
 
@@ -289,7 +292,9 @@ demonstrated offline Agent activation runtime. An already running process using
 
 1. Whether reliable offline activation and recoverable collaboration prove
    value beyond an existing IM channel, queue, or workflow engine.
-2. The exact `content` schema and JSONL/text CLI contract.
+2. The exact application-level `content` schema and future protocol
+   conventions; the shipped JSONL/text CLI contract is fixed in
+   [reference/cli.md](../reference/cli.md).
 3. Whether any P0/P1 protocol needs conditional append or typed/causal envelope
    fields. Request-level append idempotency is required only if P2 activation
    proceeds and remains outside the Event schema.

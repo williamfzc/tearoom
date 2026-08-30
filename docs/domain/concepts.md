@@ -37,7 +37,10 @@ An Event is one immutable fact in the Room log. The minimum target shape is:
 - `actor`, the admitted stable author;
 - `at`, assigned when the Event is accepted;
 - optional `to`, naming Room members for attention or routing;
-- `content`, whose exact text/JSON shape remains open.
+- `content`, which is arbitrary valid JSON. The Store validates it and persists
+  compact JSON; the CLI encodes plain-text input as a JSON string. The
+  canonical wire and storage details are in [the HTTP contract](../reference/http-api.md)
+  and [the storage layout](../reference/storage-layout.md).
 
 Every Room member can read the complete history. `to` is visible addressing,
 not a visibility filter, secrecy mechanism, permission grant, or wake request.

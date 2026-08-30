@@ -246,8 +246,12 @@ proven; P1, Activation, and Hosted stay open/deferred.
 
 ## Deletion manifest
 
-Delete, rather than alias, every surface below; `rg` must find none of them in
-shipped CLI, code, or docs after cutover:
+Delete, rather than alias, every surface below. After cutover, scoped `rg`
+searches over shipped runtime code and normative CLI, product, and reference
+entry points must find none of them. Migration manifests (including this
+document), historical rationale, evaluation legacy ledgers, and negative
+rejection tests are evidence and are excluded from those searches; they may
+retain removed names to explain the cutover:
 
 | Area | Delete |
 |---|---|
@@ -257,7 +261,7 @@ shipped CLI, code, or docs after cutover:
 | CLI | `event` group, `list`, `watch`, session cursor files, `TEAROOM_HOME`, `--cursor`, `--type`, `--body`, `--data`, `--caused-by`, `--id` |
 | Scripts and Makefile | `smoke.sh`, `smoke-sqlite.sh`, `session-smoke.sh`, `harness-demo.sh`, `game-demo.sh`, `worktree-demo.sh`, `hosted-demo.sh`, `pg-smoke.sh`, and their Makefile targets |
 | Hosted | `internal/control`, `internal/hosted`, hosted CLI, `web/` SPA, `render.yaml`, `Dockerfile`, `.dockerignore`, `docs/operations/deploy.md` |
-| Docs | stale reference pages listed above; assert nothing in shipped docs uses cursors, directed visibility, the `event` group, or hosted admission |
+| Docs | stale normative reference pages listed above; the current completion boundary and search exclusions are canonical in [status.md](../architecture/status.md) |
 
 No item is kept as a deprecated alias, dual decoder, dual writer, shadow
 projection, or compatibility route. `internal/store` lock infrastructure and
