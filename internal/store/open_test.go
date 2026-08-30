@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/relational"
 )
 
 func TestOpenReturnsFileBackend(t *testing.T) {
@@ -29,6 +31,36 @@ func TestOpenReturnsFileBackend(t *testing.T) {
 	room, err := st.Room(context.Background())
 	if err != nil || room.ID == "" {
 		t.Fatalf("room = %+v, %v", room, err)
+	}
+}
+
+func TestOpenReturnsSQLiteBackend(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Init(dir, BackendSQLite); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := st.(*relational.Store); !ok {
+		t.Fatalf("sqlite marker opened %T, want *relational.Store", st)
+	}
+	// The dispatched store answers the full contract.
+	ctx := context.Background()
+	room, err := st.Room(ctx)
+	if err != nil || room.ID == "" {
+		t.Fatalf("room = %+v, %v", room, err)
+	}
+	if _, err := st.AdmitActor(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"via dispatch"`)}); err != nil {
+		t.Fatal(err)
+	}
+	events, err := st.Read(ctx, "a", 0, 0)
+	if err != nil || len(events) != 1 || events[0].Seq != 1 {
+		t.Fatalf("events = %+v, %v", events, err)
 	}
 }
 

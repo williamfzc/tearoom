@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/relational"
 )
 
 // Backend names a storage backend for one .tearoom directory.
@@ -19,6 +20,9 @@ type Backend string
 
 // BackendFile is the flock-protected JSON layout in this package.
 const BackendFile Backend = "file"
+
+// BackendSQLite is the relational layout on one SQLite file.
+const BackendSQLite Backend = "sqlite"
 
 // formatVersion is the only store.json layout version accepted. Any other
 // layout — markerless, version 1, or another backend — is rejected as
@@ -50,6 +54,11 @@ func Init(dir string, backend Backend) (core.Store, error) {
 			return nil, err
 		}
 		return initFile(root)
+	case BackendSQLite:
+		if err := writeMarker(root, marker{Format: formatVersion, Backend: string(BackendSQLite)}); err != nil {
+			return nil, err
+		}
+		return relational.Init(root)
 	default:
 		return nil, fmt.Errorf("unknown backend %q", backend)
 	}
@@ -73,6 +82,10 @@ func Open(start string) (core.Store, error) {
 	switch Backend(m.Backend) {
 	case BackendFile:
 		return OpenAt(root)
+	case BackendSQLite:
+		// relational.Open applies the database-level format gate: a database
+		// without the format-2 marker is refused, never read or upgraded.
+		return relational.Open(root)
 	default:
 		return nil, fmt.Errorf("unsupported store backend %q at %s", m.Backend, root)
 	}
