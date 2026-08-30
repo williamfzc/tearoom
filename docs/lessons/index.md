@@ -1,12 +1,19 @@
 ---
 type: index
 title: Lessons
-description: Durable rules learned while building the Room kernel.
+description: Durable engineering lessons supporting the target Room kernel.
 tags: [index, lessons]
 timestamp: 2026-08-30
 ---
 
 # Lessons
+
+Lessons preserve reasoning that supports the target design. They do not replace
+[product.md](../product.md), the implementation-gap record in
+[architecture/status.md](../architecture/status.md), the target contracts in
+[reference/](../reference/index.md), or the proof registry in
+[../evaluations.md](../evaluations.md). A lesson that describes a legacy
+implementation is evidence for migration, not a normative contract.
 
 | Document | Rule |
 |---|---|

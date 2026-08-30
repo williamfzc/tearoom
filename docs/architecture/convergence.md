@@ -1,78 +1,104 @@
 ---
 type: architecture
 title: Convergence
-description: The minimum Room and Event model, its intended CLI shape, and the boundary with the current implementation.
+description: The clean-break command and protocol boundary for the minimum Room/Event model.
 resource: internal/cli/cli.go
-tags: [architecture, cli, convergence, decision]
+tags: [architecture, cli, convergence, migration, clean-break]
 timestamp: 2026-08-30
 ---
 
 # Convergence
 
-`model-discussion.md` is the current design baseline. It describes the smallest
-honest product: a durable shared Room, membership, one ordered immutable Event
-history, stable Actor identities, and optional Agent activation above that
-kernel. This document records the corresponding command and layer shape.
+[model-discussion.md](model-discussion.md) is the adopted design baseline. The
+product is a durable shared Room with explicit membership, one ordered
+immutable Event history, stable Actor identities, and optional Agent activation
+above the kernel.
 
-The baseline is not yet the implementation. The executable still exposes the
-older `room`, `server`, and `event` command groups, auto-registers Actors,
-advances a saved local cursor on reads, filters directed Events, and requires a
-fresh cursor for append. Those differences are intentional migration debt, not
-facts to hide behind the target vocabulary.
+The cutover is intentionally clean. The new CLI will not retain aliases, the
+new Store will not double-write or dual-read Event schemas, and the new HTTP
+server will not accept the old request or response vocabulary. A prior release is recovered by
+Git/deployment rollback, not by a compatibility layer.
 
-## Target responsibilities
+## Target command surface
 
-| Concern | Target surface | Responsibility |
-|---|---|---|
-| `room` | `init`, `info` | Local or hosted Room lifecycle and membership admission |
-| `server` | `start` | Optional local service process |
-| common interaction | `send`, `read` | Append and repeatable history queries |
-| activation | application-owned service | Optional wake, claim, retry, and runtime binding |
-
-The target common path is deliberately small:
-
-```bash
-tearoom send "review worktree A"
-tearoom read
-tearoom read --after e42 --wait 5m
-```
-
-`to` is public addressing metadata. It identifies Room members who should pay
-attention; it does not change visibility and does not itself start a process.
-An activation policy may observe an addressed Event, but activation remains an
-optional application capability.
-
-## Current command boundary
-
-Until the migration is designed and implemented, the supported executable path
-remains:
+Low-frequency lifecycle commands remain separate from normal collaboration:
 
 ```text
 tearoom room init|info
 tearoom server start
+tearoom send <content>
+tearoom read [--after <event>] [--wait <duration>]
+```
+
+`send` appends one contribution. `read` is a repeatable, side-effect-free
+query. `--after` is supplied by the caller; no Actor session silently advances
+or supplies a checkpoint. `--wait`, if supported, lasts only for that
+invocation and does not create a subscription.
+
+`to` is public addressing or attention metadata. All admitted Room members can
+read the complete history; an addressed Event does not become private and does
+not itself launch a process.
+
+## Current boundary to delete
+
+The real executable still has these old surfaces in `internal/cli/cli.go`:
+
+```text
 tearoom event send|list|watch
 ```
 
-The current `event list` and `event watch` semantics are implementation facts,
-not the target contract: they use local session cursors and `watch` waits for a
-batch. Do not describe them as a durable subscription or as proof of offline
-Agent activation. The current broadcaster can wake only waiters connected to
-the same server process.
+It also has `session` files under `TEAROOM_HOME`, automatic Actor registration,
+`--cursor`, typed/body/data/causal Event flags, and freshness errors. These are
+not aliases to preserve during migration. Stage 4 in
+[status.md](status.md) removes them and rewrites all examples, skills, demos,
+and evaluations in the same release.
 
-## Migration boundary
+## Target responsibilities
 
-The migration must be explicit and cross-layer:
+| Concern | Owner | Responsibility |
+|---|---|---|
+| Room lifecycle and membership | Room boundary / hosted control plane | Admit and authorize Actors |
+| collaboration history | `core.Store` implementations | Append and read ordered immutable Events |
+| client interaction | CLI and transport | Translate `send`/`read`, never own shared invariants |
+| offline activation | application service | Observe addressed Events, claim/lease, launch and retry |
+| process execution | operator-owned launcher/runtime | Run an Actor and append its contribution |
 
-1. replace implicit Actor read checkpoints with caller-supplied `--after` or an
-   explicitly named consumer identity;
-2. make Room membership the visibility boundary, leaving `to` as routing or
-   attention metadata;
-3. make ordinary append independent of a saved read cursor;
-4. retain stable Actor identity while separating it from credentials, runtime
-   bindings, and process executions;
-5. add activation only as an application-layer experiment, with durable
-   delivery state separate from Room history.
+Activation is optional. Without it, an addressed Event ends at durable append.
+With it, the trigger references the Event; it does not copy context or mutate
+Room visibility. Delivery state is explicit application state, never implicit
+Actor read state or Event completion.
 
-The code, evaluation scripts, and reference documents still prove the older
-model. A future migration is complete only when those surfaces agree; this
-document does not claim that it has happened.
+## Clean-break ordering
+
+The layers must cut over in this order:
+
+1. `internal/core` publishes the new Event, read, append, and membership
+   contract.
+2. `internal/store` and `internal/relational` implement it with a new storage
+   shape; old records are not read and no old/new double write exists.
+3. `internal/transport`, `internal/hosted`, and `internal/control` publish only
+   the new HTTP and admission contract.
+4. `internal/cli`, `cmd/tearoom`, skills, examples, tests, and evaluations
+   publish only `send`/`read` and explicit boundaries.
+5. An application-owned activation service is added only after the first four
+   stages pass; it is not a kernel or transport prerequisite.
+
+Each stage is incomplete until its callers and tests use the new contract. A
+temporary compile adapter, deprecated alias, shadow schema, old route, or
+dual-write path would make the stage internally dishonest and is prohibited.
+Stages 1–4 run on one cutover branch and merge or deploy only as one coherent
+P0 release; they are dependency-ordered work checkpoints, not public partial
+versions.
+
+## Completion and rollback
+
+The migration is complete when repository searches find no old command, Event
+field, cursor session, directed-visibility filter, stale-write route, or old
+HTTP shape; both Stores and hosted/local journeys pass the new boundary tests;
+and `make check` plus `make docs` pass.
+
+Before the storage cutover, rollback means redeploying the previous Git
+revision. After storage cutover, rollback means redeploying that revision with
+the operator's preserved pre-cutover dataset. The new release never attempts to
+interpret old session files or old Event rows, and the old release is never
+asked to interpret the new format.

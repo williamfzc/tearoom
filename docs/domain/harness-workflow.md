@@ -44,10 +44,6 @@ The target evaluation should run at least two products through three rounds, sto
 
 Offline activation and restart recovery are a separate open evaluation. A waiting online process is not evidence that an offline Actor can be woken safely.
 
-## Current implementation note
-
-The shipped [harness-demo.sh](../../scripts/harness-demo.sh) proves an older protocol: typed and causally linked Events, directed notes, saved cursors, and stale-write recovery. It remains useful as a regression fixture for the current binary, but it is not proof of this target story. The superseded behavior is recorded in [../evaluations.md](../evaluations.md).
-
 ## Why no new entities
 
 A task, claim, artifact, verdict, round, or handoff is a projection or content convention over Room, Actor, and Event. A runner, activation ledger, or workflow engine belongs outside the Room if a later experiment proves that one is needed.

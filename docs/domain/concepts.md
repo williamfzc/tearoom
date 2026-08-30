@@ -10,9 +10,9 @@ timestamp: 2026-08-30
 # Room, Actor, Event
 
 The product has exactly three minimum domain entities. Their target scope is in
-[the product definition](../product.md) and [the model discussion](../architecture/model-discussion.md).
-`internal/core` still contains a richer compatibility implementation; it is not
-the minimum schema.
+[the product definition](../product.md) and
+[the model rationale](../architecture/model-discussion.md). Implementation
+gaps belong only in [status.md](../architecture/status.md).
 
 ## Room
 
@@ -25,8 +25,7 @@ A Room is deliberately more general than a task, thread, channel, repository, or
 An Actor is a stable participant identity. Identity
 comes from `TEAROOM_ACTOR` or `--as`, not from the process, so a later session
 can resume the same participant. Admission and membership must be explicit for
-a real privacy boundary; the current local auto-registration path is not that
-boundary.
+a real privacy boundary.
 
 An Actor may be a human, a coding agent, another agent product, or a game role controller. The core does not distinguish them.
 
@@ -44,10 +43,6 @@ Every Room member can read the complete history. `to` is visible addressing,
 not a visibility filter, secrecy mechanism, permission grant, or wake request.
 Privacy requires a separate Room. A protocol may wrap `content` with `type`,
 `caused_by`, or an idempotency key, but those are not minimum kernel fields.
-
-The current implementation still exposes those richer fields and filters
-directed Events; this is a documented migration gap rather than the target
-concept model.
 
 ## The write contract
 

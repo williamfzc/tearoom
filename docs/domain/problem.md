@@ -25,10 +25,7 @@ write must be based on the latest head. Unrelated contributions should not
 silently turn every ordinary append into a conflict.
 
 Tearoom supplies ordered history and explicit read boundaries. Protocols that
-need stronger freshness must opt into an explicit conditional capability. The
-current Store still rejects expected-cursor writes; that is a migration gap
-recorded in [the product definition](../product.md), not the target problem
-model.
+need stronger freshness must opt into an explicit conditional capability.
 
 ## Duplicate effects
 
@@ -54,9 +51,7 @@ private: all members of one Room share its complete history. Private roles or
 confidential collaboration require a separate Room with separate membership.
 
 Reads are repeatable queries bounded by the caller (`--after`, `--since`, or an
-invocation-scoped `--wait`). The current implementation still filters directed
-Events and persists session cursors; those are compatibility behaviors, not the
-target visibility or read model. Authentication and admission remain separate
+invocation-scoped `--wait`). Authentication and admission remain separate
 requirements for hostile environments.
 
 ## Offline continuation
@@ -64,8 +59,7 @@ requirements for hostile environments.
 An addressed Agent may be absent when an Event is appended. A durable Room
 alone records the opportunity but does not wake a process. Optional activation
 must therefore live above the kernel with an explicit policy, durable delivery
-state, launcher binding, lease/retry behavior, and duplicate-safe Runtime. No
-such activation service is currently shipped.
+state, launcher binding, lease/retry behavior, and duplicate-safe Runtime.
 
 ## Non-goals
 

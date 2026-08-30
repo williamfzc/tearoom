@@ -5,8 +5,9 @@ replayable history. An optional activation layer may wake an absent Agent so it
 can recover context from the Room and continue the collaboration.
 
 [`docs/product.md`](docs/product.md) is the authoritative product definition.
-[`docs/architecture/status.md`](docs/architecture/status.md) separates that
-target from the currently shipped v0.1 behavior.
+Start with the [documentation route](docs/index.md). Current implementation
+gaps live only in [status.md](docs/architecture/status.md); they are not an
+alternate product contract.
 
 ## Minimum model
 
@@ -41,27 +42,14 @@ Activation delivery state belongs to that optional control plane. It is not
 Actor unread state, and a successful process launch is not proof that the
 collaboration task succeeded.
 
-## Current implementation
+## Implementation status
 
-The repository still implements the previous v0.1 contract. Its executable CLI
-uses `event send`, `event list`, and `event watch`; it persists per-Actor client
-cursors, requires an expected cursor on append, filters directed Events, and
-stores `type` and `caused_by`. Those behaviors are migration debt, not the target
-product contract.
+The executable has not yet reached this contract. Do not use the old command or
+Event model as design guidance. The migration is a clean break: old commands,
+schemas, session cursors, visibility behavior, tests, and integration
+instructions are removed rather than preserved behind aliases or adapters.
 
-Use the current binary only with that distinction in mind:
-
-```bash
-tearoom room init --name project
-
-export TEAROOM_ACTOR=alice
-tearoom event send "please review worktree A"
-tearoom event list
-tearoom event watch
-```
-
-The hosted server and management UI also run the v0.1 contract. See the
-[migration status](docs/architecture/status.md), [target CLI](docs/reference/cli.md),
+See the [target CLI](docs/reference/cli.md), [implementation phases](docs/architecture/status.md),
 and [evaluation set](docs/evaluations.md).
 
 ## Build and verify
@@ -76,9 +64,8 @@ make session-smoke
 make check
 ```
 
-The current suites verify the v0.1 implementation. They do not yet prove the
-new public-visibility, pure-read, unconditional-append, or offline-activation
-stories.
+Until the first clean-break phase lands, green legacy suites are implementation
+regression evidence only. They do not prove the adopted product.
 
 ## License
 

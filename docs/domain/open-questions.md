@@ -25,13 +25,11 @@ an explicit consumer/subscription index needed for any real delivery journey,
 or are caller-supplied `--after`/`--since` boundaries sufficient? Measure token
 cost and recovery behaviour in busy Rooms before adding durable attention state.
 
-## Visibility migration
+## Privacy composition
 
-Can the current directed-filtering implementation be migrated to full
-membership visibility without breaking a demonstrated protocol? If privacy is
-needed, which admission and separate-Room workflow supplies the real boundary?
-Until answered, product and implementation claims must continue to distinguish
-the target model from compatibility behaviour.
+When a protocol needs private information, is a separate Room sufficient, or
+does the application need an external authoritative secret store? The kernel
+will not reintroduce per-Event private visibility to answer this question.
 
 ## Conditional append
 
@@ -46,7 +44,7 @@ bot, queue, or workflow engine? The first experiment should define the runtime
 binding, activation policy, durable delivery ledger, lease/retry semantics, and
 duplicate-safe result append before any general scheduler or plugin surface.
 
-## Event envelope compatibility
+## Event envelope evidence
 
 Which protocol has evidence for `type`, `caused_by`, or an idempotency key as a
 shared envelope? Keep them above the minimum `seq`/`actor`/`at`/`to`/`content`

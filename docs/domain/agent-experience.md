@@ -24,7 +24,10 @@ The minimum useful observation is therefore an Event reference and enough ordere
 
 Activation is above the Room. An activation service may observe an addressed Event, elect it according to policy, and deliver an Event reference to a launcher. The launcher may start or resume a Runtime. The Runtime reads the Room and appends its own contribution.
 
-Activation delivery state (pending, claimed, delivered, or failed) is operational consumer state. It must not be represented as an Actor read cursor or as task completion. Offline recovery, retry, leases, and duplicate-safe execution are not implemented by the current product and remain an open evaluation.
+Activation delivery state (pending, claimed, delivered, or failed) is
+operational consumer state. It must not be represented as an Actor read cursor
+or as task completion. Offline recovery, retry, leases, and duplicate-safe
+execution require their own optional evaluation.
 
 ## What the target does not promise
 
@@ -36,10 +39,6 @@ Activation delivery state (pending, claimed, delivered, or failed) is operationa
 - exactly-once Runtime execution.
 
 These may be application protocols or control-plane capabilities. None adds a fourth core entity to Room, Actor, and Event.
-
-## Current implementation note
-
-The shipped CLI still stores a per-Actor cursor, filters directed Events, and exposes `event list` and `event watch`. Those behaviors are implementation evidence for the old contract, not the target observation model. See [../reference/cli.md](../reference/cli.md) and [../architecture/model-discussion.md](../architecture/model-discussion.md).
 
 ## Design rule
 

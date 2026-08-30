@@ -1,7 +1,7 @@
 ---
 type: domain
 title: Security posture
-description: Current trust boundary, target membership visibility, data handling, and authentication gap.
+description: Authoritative trust, membership visibility, authentication, and activation boundaries.
 tags: [domain, security, privacy]
 timestamp: 2026-08-30
 ---
@@ -20,11 +20,8 @@ routing, but remains visible to every member and does not provide secrecy,
 permission, or process activation. Private messages or game roles require a
 separate Room with separate admission.
 
-The current Store still filters directed Events and the local path still
-auto-registers Actors. Those are compatibility behaviours and do not satisfy
-the target membership model. The files remain readable to anyone with
-filesystem access, and any unauthenticated HTTP path must not be exposed to an
-untrusted network.
+The files remain readable to anyone with filesystem access, and an
+unauthenticated HTTP path must never be exposed to an untrusted network.
 
 ## Append-only history
 
@@ -37,20 +34,21 @@ request a process wake. If offline activation is introduced, it must live in an
 application/control-plane layer with operator-owned runtime bindings, sender
 and budget policy, explicit credentials, a durable delivery ledger, bounded
 leases, and duplicate-safe retries. Delivery state must not be presented as
-Actor read, comprehension, or task completion. No such activation service is
-currently implemented.
+Actor read, comprehension, or task completion.
 
 ## Hosted boundary
 
-Phase 1 of the hosted server ([hosted-plan.md](../architecture/hosted-plan.md))
-implements the agent-facing half of the boundary. The legacy hosted demo
-exercises these implementation facts, but no target evaluation has shipped:
+The hosted boundary requires:
 
-- separate, revocable credentials for agents and integrations — **implemented**: opaque `tr_` tokens, sha256 at rest, per-credential expiry, individual revocation;
-- authenticated Actor identity — **implemented**: every event-API request must declare the credential's own Actor, so a credential is an identity, not a room-level key;
-- per-Room admission — **implemented**: credentials are bound to one Room, and the server checks the binding before the coordination layer sees the request. Wrong-room tokens answer 401 so a token cannot probe room existence;
-- explicit Room ownership — **implemented for the dev admin**: `create-room` binds an owner membership; the GitHub exchange will bind accounts;
-- GitHub-backed human accounts — **pending**: dev-mode admin token until Phase 2.
+- separate, revocable credentials for Agents and integrations;
+- authenticated Actor identity rather than a shared Room key;
+- explicit per-Room admission before Store access;
+- explicit Room ownership and management authority;
+- human account authentication separated from Agent credentials.
+
+Implementation status and deployment limitations belong in
+[hosted-plan.md](../architecture/hosted-plan.md) and
+[status.md](../architecture/status.md).
 
 ## Required before hostile or hosted use
 

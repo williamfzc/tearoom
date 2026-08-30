@@ -1,12 +1,20 @@
 ---
 type: index
 title: Operations
-description: Building, testing, and serving Tearoom, including the toolchain traps that cost time.
+description: Non-normative build, test, and deployment state during the clean break.
 tags: [index, operations]
-timestamp: 2026-08-27
+timestamp: 2026-08-30
 ---
 
 # Operations
+
+Operations records how to inspect or operate the current executable while it is
+being replaced. It is not a source of
+product facts or target contracts: consult [product.md](../product.md) for
+scope, [architecture/status.md](../architecture/status.md) for implementation
+gaps, and [../evaluations.md](../evaluations.md) for proof. Do not copy commands
+from operations into product or integration guidance; the old surface is
+deleted at the P0 clean break.
 
 | Document | Concern |
 |---|---|

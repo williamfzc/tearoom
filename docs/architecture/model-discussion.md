@@ -456,19 +456,8 @@ already connected process is insufficient proof of that optional capability.
 
 ## 11. Migration gap in the current implementation
 
-The product definition now adopts this model, but no code behavior has changed:
-
-- `internal/core.Event` still contains `Room`, `ID`, `Type`, `Data`, and
-  `CausedBy`, and `VisibleTo` still filters directed Events.
-- The CLI still auto-registers an Actor, persists local session cursors, advances
-  them on reads and sends, and exposes `room`, `server`, `event`, and `hosted`
-  command groups.
-- The harness and Werewolf demos depend on typed, causally linked, directed
-  Events. They prove the current model, not this draft.
-- The current broadcaster wakes only waiters connected to the same server
-  process. There is no durable activation delivery, runtime binding, offline
-  launcher, retry policy, or duplicate-safe handoff.
-
-The documentation migration defines the target and makes that gap explicit.
-Implementation work must still change the Store, CLI, transports, tests, demos,
-and integration skill before the target contract can be called shipped.
+The product definition adopts this model before the executable does. The sole
+implementation-gap inventory and clean-break sequence live in
+[status.md](status.md); the proof state lives in
+[evaluations.md](../evaluations.md). This rationale does not preserve or specify
+the rejected implementation as an alternate contract.

@@ -10,9 +10,9 @@ timestamp: 2026-08-30
 
 The target contract remains `core.Store`: a durable Room with membership and
 one ordered immutable Event history. Database records and ORM APIs stay behind
-that boundary. SQLite is shipped; PostgreSQL validation is gated. The current
-schema and transaction still implement the older cursor and directed-visibility
-model described below as migration debt.
+that boundary. SQLite is shipped; PostgreSQL validation is gated.
+Implementation status belongs in [status.md](status.md); this document defines
+only the persistence target and clean-break boundary.
 
 ## Deployment matrix
 
@@ -76,22 +76,14 @@ Idempotent append may remain an explicit retry contract. If adopted, an
 identical retry returns the original Event and reusing a key for different
 content is a conflict. This is independent of read progress.
 
-## Current transaction contract
+## Clean-break storage cutover
 
-The shipped file and relational Stores still perform the older transaction:
-
-1. lock the Room head;
-2. validate the Actor and recipients;
-3. resolve an existing idempotency key;
-4. compare the expected saved cursor with the current head;
-5. assign the next sequence;
-6. insert the immutable Event and advance the head;
-7. commit as one unit.
-
-The same implementations still filter directed Events and the CLI still
-persists per-Actor cursors. These guarantees are tested legacy behavior, not
-evidence that the target minimum model has shipped. A migration must change
-both Store implementations and their callers together.
+The file and relational Stores change together after the new `core.Store`
+contract exists. The new release stores only the minimum Event shape and does
+not read or write the pre-adoption representation. There is no importer, dual
+decoder, shadow table, or old/new double write. Data worth retaining is exported
+before cutover; rollback restores the previous binary with its matching data
+snapshot.
 
 ## Activation persistence
 

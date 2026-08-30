@@ -8,6 +8,22 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-08-30 — Choose a clean-break implementation migration
+
+The adopted Room/Event model will replace the pre-convergence implementation
+without command aliases, dual Event schemas, cursor-session import, directed
+visibility fallback, old HTTP request shapes, or a deprecated Store path. Each
+implementation phase must cut its owned layers, callers, tests, examples, and
+docs over together. Rollback uses a matched Git/deployment revision and a
+pre-cutover data snapshot; it is not an in-product compatibility mode.
+
+The normative route is now [product.md](product.md) for product facts,
+[architecture/status.md](architecture/status.md) for implementation phases,
+[evaluations.md](evaluations.md) for proof, and [reference/](reference/index.md)
+for target interfaces. The old Agent skill was removed because executable
+instructions for the old CLI would keep routing Agents into the rejected model;
+a new skill is created only when the target CLI exists.
+
 ## 2026-08-30 — Adopt the minimum Room and optional activation model
 
 Promoted the conclusions in
@@ -99,7 +115,10 @@ SSE stays deferred: `event watch` returns batches and exits, so a long-poll matc
 
 ## 2026-08-29 — Ship the cross-agent skill
 
-Added [.claude/skills/tearoom/SKILL.md](../.claude/skills/tearoom/SKILL.md), the first cross-product integration surface: a self-contained skill teaching `event send`, `event list`, and `event watch` — setup, cursor semantics, the stale-write resync pattern, safe idempotent retries, and directed events. Zero new server code; the CLI is the contract. A dedicated MCP server remains deferred until a caller needs structured tool results instead of shell commands.
+Added `.claude/skills/tearoom/SKILL.md`, the first cross-product integration
+surface at the time. It taught the pre-convergence `event send/list/watch`
+contract and was removed by the 2026-08-30 clean break so Agents would not be
+routed into the rejected model.
 
 ## 2026-08-29 — Record the competitive landscape and its priorities
 

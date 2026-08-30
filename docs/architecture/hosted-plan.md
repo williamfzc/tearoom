@@ -33,11 +33,10 @@ The target hosted contract is:
 - an optional activation service may observe addressed Events, but its runtime
   bindings, delivery ledger, leases, and launcher remain above the Store.
 
-The current hosted API still delegates to the older Store contract: directed
-Events are filtered, Actor registration can be automatic, and the CLI carries a
-saved cursor into reads and writes. Those are implemented compatibility facts,
-not proof that the target contract has shipped. A migration must update the
-authenticated API, both Store implementations, CLI, tests, and docs together.
+The hosted service is still pre-cutover. Its exact implementation gap belongs
+in [status.md](status.md). The clean break updates the authenticated API, both
+Store implementations, CLI, tests, and docs together; it keeps no legacy
+request path or data reader.
 
 ## Current Phase 1 architecture — shipped 2026-08-29
 
@@ -118,9 +117,9 @@ of it and does not yet provide rate limiting.
 2. **Admission:** make hosted membership explicit before claiming Room-wide
    visibility as a security boundary; remove silent registration from the
    target API.
-3. **Room migration:** replace implicit cursors and directed visibility with
-   explicit read boundaries and membership visibility, after a compatibility
-   decision and data migration.
+3. **Room cutover:** replace implicit cursors and directed visibility with
+   explicit read boundaries and membership visibility in one matched release;
+   reset pre-adoption coordination data instead of adding compatibility code.
 4. **Activation evidence:** implement one local durable activation ledger and
    launcher before adding hosted wake services or a general scheduler.
 5. **Operations:** add organizations, credential rotation, rate limits,

@@ -1,89 +1,132 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: Package responsibilities and the boundary between the Room kernel, clients, and optional Agent activation.
+description: The post-cutover package boundaries and the removal of legacy cursor, visibility, and activation leakage.
 resource: internal/
-tags: [architecture, boundaries, layering]
+tags: [architecture, boundaries, layering, migration, clean-break]
 timestamp: 2026-08-30
 ---
 
 # Layers and dependency direction
 
-The target model has one durable coordination kernel and optional application
-capabilities above it:
+The clean-break target has one foundation contract and no compatibility layer:
 
-| Layer | Current package or owner | Target responsibility |
+| Layer | Package or owner | Owns after cutover |
 |---|---|---|
-| Foundation | `internal/core` | Room, Actor, Event, Store, and typed errors |
-| Persistence | `internal/store`, relational Store | Durable Room membership and ordered Event history |
-| Application | not yet implemented | Optional activation ledger, policy, runtime binding, and launcher |
-| Outside | `internal/transport` | HTTP encoding and remote Store implementation |
-| Outside | `internal/cli`, `cmd/tearoom` | Command routing, session state during migration, output, and process entry |
+| Foundation | `internal/core` | Room, Actor, minimum Event, Store, and typed domain errors |
+| Persistence | `internal/store`, `internal/relational` | Durable membership and ordered immutable Event history |
+| Application | hosted control and future activation service | Admission policy, credentials, activation ledger, leases, and runtime binding |
+| Outside | `internal/transport` | The one current HTTP representation of the Store contract |
+| Outside | `internal/cli`, `cmd/tearoom` | `room`, `server`, `send`, `read`, output, and process entry |
 
-Dependencies point inward. `core` imports no project package. Persistence and
-transport implement `core.Store`; the CLI depends on that interface. A future
-activation service may consume and append through `core.Store`, but the kernel
-must not import a launcher, scheduler, Agent runtime, or hosted control plane.
+Dependencies point inward. `core` imports no project package. Persistence
+implements `core.Store`; transport adapts it; hosted control authorizes
+admission; the CLI translates commands. Optional activation may consume and
+append through `core.Store`, but the kernel never imports a launcher, scheduler,
+Agent runtime, or hosted control plane.
 
-## Target Store boundary
+## Target foundation boundary
 
-The Store owns the facts that every client must share:
+`internal/core` must define only the shared collaboration truth:
 
-- Room identity and membership admission;
-- Actor identity and authorization checks supplied by the enclosing boundary;
-- recipient validity for public `to` addressing;
-- dense sequence assignment and append-only persistence;
-- immutable Event reads in Room order;
-- any explicitly adopted idempotency contract.
+- Room identity and lifecycle;
+- stable Actor identity and explicit membership/admission;
+- an Event containing `seq`, `actor`, `at`, optional `to`, and `content`;
+- ordered append and explicit-boundary read operations;
+- typed errors that describe the new contract.
 
-Membership determines visibility: every admitted Room member reads the complete
-Room history. `to` identifies members who should pay attention; it is not a
-secrecy filter and does not request process execution. Read progress is not
-hidden Store state: a pure read takes an explicit boundary such as `after seq`,
-or a separately named consumer identity may own durable delivery progress.
+Membership determines visibility. Every admitted member reads the complete Room
+history. `to` is public addressing or attention metadata, not secrecy and not a
+process-start request. Event address `e<seq>` is presentation derived from the
+Room sequence; it is not a second Event identity.
 
-The current implementation does not yet satisfy this target boundary. Its
-Store still enforces a saved per-Actor cursor for writes and filters directed
-Events, while the CLI auto-registers Actors. Those are compatibility facts to
-remove through an explicit migration, not target invariants.
+The target foundation must not contain workflow, task, game, thread, lease,
+subscription, unread, or runtime entities. Idempotency may remain an explicit
+append request concern if the new Store contract adopts it; it must not become
+another Event field.
 
-## Activation boundary
+## Persistence boundary
 
-Optional offline activation belongs in the application layer. Its durable state
-may record `(room, event sequence, target actor, activation)` with claim, lease,
-attempt, retry, and failure information. It must not be represented as Actor
-read progress or as an Event completion claim.
+`internal/store` owns the file layout and cross-process locking. The relational
+package owns ORM models, migrations, transactions, and database adaptation.
+Both implement the same new `core.Store` contract and store only the new Event
+shape. Neither package may:
 
-The application layer owns policy and runtime bindings:
+- filter Events by `to`;
+- create membership as a side effect of reading or sending;
+- compare an append with a hidden Actor cursor;
+- persist or interpret the old Event representation;
+- host activation claims or process state.
+
+The current implementations violate these target rules: they contain
+`Event.VisibleTo`, auto-registration, and expected-cursor append. Stages 1–2 in
+[status.md](status.md) remove those behaviors rather than wrapping them.
+
+## Application boundary
+
+Hosted control remains an application boundary around the Store. It resolves
+credentials to an already admitted Room/Actor and applies capabilities; it
+does not rewrite Event semantics. Membership is admitted explicitly and is the
+visibility boundary.
+
+Offline activation is a separate optional application component:
 
 ```text
-addressed Event -> activation policy -> durable claim/lease
-                -> operator-owned launcher -> ephemeral Runtime
+addressed Event -> policy -> durable activation claim/lease
+                -> launcher -> ephemeral Agent Runtime
                 -> Runtime reads Room and appends a contribution
 ```
 
-The Room Event remains the source of truth. Activation is at-least-once; a
-launcher and Runtime must make duplicate attempts safe. Without an activation
-service, sending an Event stops after durable append.
+Its ledger may contain attempt, lease, retry, budget, and failure state keyed by
+an Event reference and target Actor. It must not be attached to Actor read
+progress or treated as proof that the Event was understood or completed.
+Activation is at-least-once; external effects need their own idempotency or
+approval contract. Without this component, `send` ends at durable append.
 
-## No projection layer yet
+## Outside boundaries
 
-The Room model has no built-in board, workflow, task, lease, or status view.
-Application-specific projections belong above the kernel until they have
-multiple callers and a stable owner. This keeps protocol conventions and
-replay views from becoming hidden core entities.
+`internal/transport` exposes only the new HTTP contract. It may use the target
+resource paths, but it must not preserve actor/cursor query semantics, the old
+append or response shape, stale-write wire errors, or deprecated wait behavior.
 
-## Migration note
+`internal/cli` exposes only the target common commands:
 
-The existing code, tests, and HTTP contract still describe the older model:
-`event list`/`watch`, local saved cursors, directed visibility, and mandatory
-freshness on append. Any layer change must update those boundaries together and
-must not claim that optional activation exists before a real offline-runtime
-journey has been proven.
+```text
+tearoom room init|info
+tearoom server start
+tearoom send <content>
+tearoom read [--after <event>] [--wait <duration>]
+```
+
+It owns formatting and invocation-local options, not shared invariants. The
+old `event` command group, session cursor files, `TEAROOM_HOME` cursor state,
+automatic registration, and old flags are deleted. No alias or parser branch
+may keep them alive.
+
+## Clean-break dependency checks
+
+After the cutover, the following must hold:
+
+1. `core` has no import path to persistence, transport, CLI, control, or
+   activation.
+2. Both Stores satisfy one new interface and have no old/new reader or writer.
+3. Hosted authorization happens before Store access and never silently admits
+   an Actor.
+4. Transport has one route/body/error vocabulary.
+5. CLI, skills, tests, demos, and docs use only the new command and Event
+   vocabulary.
+6. Activation is removable without changing Room visibility or append/read
+   semantics.
+
+The migration is complete only when `make check`, `make docs`, and repository
+searches verify these boundaries. If a stage fails, rollback is a Git/deploy
+rollback to a matched old revision and data snapshot; adding a deprecated
+dependency or compatibility layer is not an allowed recovery.
 
 ## Related
 
 - [model-discussion.md](model-discussion.md)
+- [convergence.md](convergence.md)
 - [persistence.md](persistence.md)
+- [status.md](status.md)
 - [../domain/concepts.md](../domain/concepts.md)
-- [../lessons/invariants-belong-in-the-store.md](../lessons/invariants-belong-in-the-store.md)

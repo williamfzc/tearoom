@@ -8,35 +8,48 @@ timestamp: 2026-08-30
 
 # Tearoom documentation
 
-Tearoom is a durable shared Room where stable Actors contribute to one ordered,
-replayable history. An optional activation layer may wake an absent Agent, but
-the Room remains useful without it.
+[**product.md**](product.md) is the sole source of product facts: scope, target
+model, invariants, refusals, and completion boundary. This index only routes
+readers; it does not add another product contract.
 
-[**product.md**](product.md) is authoritative over every other document, including this index and `README.md`.
+## Source hierarchy
+
+Use one source for each kind of claim:
+
+- [product.md](product.md) is the product fact source.
+- [architecture/status.md](architecture/status.md) is the implementation-gap
+  source: what the code ships and what remains to migrate.
+- [evaluations.md](evaluations.md) is the proof source: which executable checks
+  support a story and which still exercise legacy behavior.
+- [reference/](reference/index.md) is the target CLI, HTTP, and machine-facing
+  contract. It does not redefine product scope or current implementation status.
+- [log.md](log.md) is historical and migration evidence only. It is not a
+  normative entry point.
 
 ## Where to go
 
 | Path | What lives there |
 |---|---|
 | [product.md](product.md) | Authoritative target product, invariants, refusals, and proof standard |
-| [competitive-analysis.md](competitive-analysis.md) | Market landscape, Tearoom's differentiation, and the near-term priorities it justifies |
-| [evaluations.md](evaluations.md) | User stories, the evaluations that prove them, and the bidirectional map between the two |
+| [evaluations.md](evaluations.md) | Proof source: user stories and the evaluations that prove them |
+| [competitive-analysis.md](competitive-analysis.md) | Supporting market evidence; it does not set product scope |
 | [domain/](domain/index.md) | Room, Actor, Event, and boundary behaviour |
 | [architecture/](architecture/index.md) | Design rationale, layer ownership, and the target-to-implementation gap |
-| [reference/](reference/index.md) | Target CLI and wire contracts, with legacy implementation differences named |
-| [operations/](operations/index.md) | Building, testing, and serving a Room |
+| [reference/](reference/index.md) | The only target CLI, HTTP, exit, and storage contracts |
+| [operations/](operations/index.md) | Non-normative build and deployment state; read only after status |
 | [lessons/](lessons/index.md) | Durable lessons behind the current design |
-| [log.md](log.md) | Decisions and structural changes |
+| [log.md](log.md) | Historical decisions and migration evidence; not a specification |
 
 ## Reading order
 
-1. [product.md](product.md)
-2. [domain/concepts.md](domain/concepts.md)
-3. [architecture/layers.md](architecture/layers.md)
-4. [reference/cli.md](reference/cli.md)
-5. [operations/building.md](operations/building.md)
+1. [product.md](product.md) — target product facts
+2. [domain/concepts.md](domain/concepts.md) — target Room, Actor, and Event vocabulary
+3. [architecture/status.md](architecture/status.md) — implementation gap
+4. [evaluations.md](evaluations.md) — proof and legacy-evidence boundary
+5. [reference/index.md](reference/index.md) — target machine-facing contracts
+6. [operations/index.md](operations/index.md) — non-normative operational state, only when needed
 
-Readers evaluating current behavior must also read
-[architecture/status.md](architecture/status.md). Product adoption in the docs
-does not imply that the Store, CLI, hosted service, demos, or Agent skill have
-already migrated.
+Only after this path should a reader open rationale, lessons, or the historical
+log. Product adoption in the docs does not imply that the Store, CLI, hosted
+service, or demos have already migrated. The old Agent skill has been removed;
+no executable integration guide exists until the target CLI lands.

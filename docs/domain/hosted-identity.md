@@ -40,17 +40,17 @@ The server authenticates and authorizes the credential before accepting Room ope
 - The owner revokes one compromised credential without closing the Room or changing other Actors.
 - An organization member can enter according to membership while an unrelated account cannot discover or read the Room.
 
-Offline activation, Runtime binding, and process restart recovery are not implied by hosted identity. They are optional application-layer capabilities and remain unimplemented evaluations.
+Offline activation, Runtime binding, and process restart recovery are not
+implied by hosted identity. They are optional application-layer capabilities
+with independent evaluations.
 
 ## Security boundary
 
-The current unauthenticated HTTP server is suitable only for trusted environments. Hosted operation requires TLS, authenticated requests, per-Room authorization, credential rotation and revocation, audit records for control-plane changes, abuse controls, and a recovery policy.
+Hosted operation requires TLS, authenticated requests, per-Room authorization,
+credential rotation and revocation, audit records for control-plane changes,
+abuse controls, and a recovery policy.
 
-The target Room contract has no private Event body inside one Room. Any current recipient filtering is an implementation behavior, not a security promise of the target model.
-
-## Current implementation note
-
-The shipped hosted API still binds credentials to the current Actor and cursor-based Store contract. The development admin bearer and current endpoint behavior are documented in [../reference/http-api.md](../reference/http-api.md); those details are implementation evidence, not proof of the target stories above.
+The Room contract has no private Event body inside one Room.
 
 ## Related
 

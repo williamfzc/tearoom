@@ -8,9 +8,12 @@ timestamp: 2026-08-30
 
 # Product definition
 
-This document decides product scope. The current target model is recorded in
-[the model rationale](architecture/model-discussion.md); code that still
-implements an older contract is called out as an implementation gap below.
+This document is the only authority for product scope. The design reasoning is
+recorded in [the model rationale](architecture/model-discussion.md), the code
+gap in [status.md](architecture/status.md), executable proof in
+[evaluations.md](evaluations.md), and target interfaces under
+[reference/](reference/index.md). Historical behavior does not redefine this
+document.
 
 ## One sentence
 
@@ -47,23 +50,33 @@ The first two are the completion boundary. A dedicated human interface is option
 - **One contract locally and remotely.** Local and hosted implementations should expose the same Room, Actor, Event, send, and read contract.
 - **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
 
-## Design baseline and implementation status
+## Adopted contract
 
-The target collaboration kernel is intentionally smaller than the current
-implementation:
+The collaboration kernel is intentionally small:
 
-| Area | Target model | Current implementation status |
-|---|---|---|
-| Read progress | Caller-supplied `read` boundaries; no implicit Actor cursor | The CLI still persists session cursors and `event list`/`event watch` advance them. Migration is pending. |
-| Visibility | Room membership exposes complete history; `to` addresses | The current Store still filters directed Events. This is compatibility behavior, not the target privacy model. |
-| Event minimum | `seq`, `actor`, `at`, optional `to`, and `content` | `internal/core.Event` still carries the older typed/causal envelope. Those fields remain a migration concern, not minimum-kernel requirements. |
-| Append freshness | Ordinary append is independent of read progress; conditional append is explicit | The current Store still enforces expected-cursor writes. Migration is pending. |
-| Activation | Optional application capability above Room; durable offline activation is not required for a valid Room | No durable activation ledger, runtime binding, offline launcher, or retry policy is shipped. |
+| Area | Product contract |
+|---|---|
+| Read progress | Caller-supplied `read` boundaries; no implicit Actor cursor |
+| Visibility | Room membership exposes complete history; `to` is public addressing |
+| Event minimum | `seq`, `actor`, `at`, optional `to`, and `content` |
+| Append freshness | Ordinary append is independent of read progress; conditional append is explicit if later proven |
+| Activation | Optional application capability above Room; never required for a valid Room |
 
-The complete rationale and migration inventory are in
-[the model rationale](architecture/model-discussion.md). Until the migration
-lands, tests and demos prove the current compatibility contract rather than the
-target model.
+The implementation may lag this contract, but no public or internal interface
+may treat the older model as a second supported product.
+
+## Clean-break migration policy
+
+The pre-adoption model has no compatibility guarantee. The migration must not
+retain command aliases, dual Event schemas, cursor session import, directed
+visibility fallback, dual HTTP shapes, or a deprecated Store path. Code, data
+schemas, tests, demos, skills, and documentation switch together when a phase
+lands.
+
+Old experimental Rooms and hosted coordination data may be reset. If any data
+is worth keeping, export it before the cutover; do not add runtime compatibility
+machinery to preserve it. Rollback means reverting the release and its data
+snapshot, not carrying the old model forward inside the product.
 
 ## Product forms
 
@@ -99,10 +112,14 @@ The file Store remains a valid local implementation, and the relational Store no
   choice selected with `--store sqlite` and recorded in `.tearoom/store.json`.
 - PostgreSQL is the intended hosted database; the schema and migration discipline are shared, and PostgreSQL validation is pending.
 - The ORM and database models remain inside the persistence layer and must not become domain types.
-- Database transactions must enforce the target Store invariants: dense ordering, append-only Events, stable Actor admission, membership visibility, and any explicitly adopted append capability. The current backends still carry older cursor and recipient-filtering behavior; see the migration table above.
+- Database transactions must enforce the Store invariants: dense ordering,
+  append-only Events, stable Actor admission, membership visibility, and any
+  explicitly adopted append capability.
 - A backend change must not alter the CLI, HTTP contract, or Event semantics.
 
-The relational Store was added beside the file Store rather than replacing it. Replacing or removing the file format requires an explicit compatibility and migration decision; it is not implied by the hosted direction.
+The relational Store was added beside the file Store. Either backend may be
+rewritten or removed during the clean break when that yields the smaller honest
+product; no pre-adoption storage format is promised compatibility.
 
 The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md), and hosted identity is in [domain/hosted-identity.md](domain/hosted-identity.md).
 
@@ -141,21 +158,8 @@ tearoom read [--after <event>] [--since <time>] [--wait <duration>]
 ```
 
 Lifecycle and operator commands may remain grouped below `room`, `server`, or
-`admin`. The current CLI compatibility surface is:
-
-```text
-room:   init, info
-server: start
-event:  send, list, watch
-```
-
-- `room` owns the local workspace lifecycle.
-- `server` owns the independent serving process.
-- `event` owns the current compatibility interaction loop.
-- Actor admission, membership management, and credential policy are not yet a
-  complete local security boundary. The current CLI still auto-registers an
-  Actor and accepts the older directed-recipient contract; this is an explicit
-  migration gap.
+`admin`. Actor admission, membership management, and credential policy must be
+explicit enough for Room membership to be a real visibility boundary.
 
 The common path is intentionally short:
 
@@ -169,17 +173,8 @@ tearoom read --after e42 --wait 5m
 and `--wait` is scoped to that invocation; neither creates durable delivery
 state.
 
-The current CLI keeps a local session cursor for each Room and Actor and uses it
-for reads and writes. That behavior is retained only as a compatibility note;
-it is not the target contract and must not be used to justify mandatory stale
-writes or hidden read progress.
-
-The current CLI also exposes `--body`, `--data`, `--type`, `--to`,
-`--caused-by`, `--cursor`, and `--id`. These are compatibility/protocol
-controls. `type` and `caused_by` are not minimum Event fields; a protocol may
-retain an envelope if its evidence requires one.
-
-Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous fallback: an identity must be explicit so session state and Event authorship remain stable.
+Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous
+fallback: an identity must be explicit so Event authorship remains stable.
 
 ## Completion standard
 
@@ -198,6 +193,6 @@ Tearoom is working only when all of the following are executable tests:
 - The shipped `tearoom` binary performs the target send/read journey without a
   browser component. Offline activation is a separate optional proof.
 
-`make check` is currently the repository-level proof of the compatibility
-implementation, not of the target migration. The user stories and evaluations
-must be updated when the target contract is implemented.
+The current executable gap is tracked only in
+[status.md](architecture/status.md). Completion claims come only from the
+target-aligned registry in [evaluations.md](evaluations.md).
