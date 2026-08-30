@@ -27,6 +27,6 @@ notes below are rationale or evidence, not proof that the target is shipped.
 The target short version is: `core` defines Room, Actor, Event, and Store;
 persistence enforces durable membership and ordered history; transport carries
 the Store over HTTP; the CLI presents the interaction surface; and an optional
-application service may activate an offline Agent. The current executable still
-uses the older cursor, directed-visibility, and command-group model; see
-[status.md](status.md) before treating the target as shipped.
+application service may activate an offline Agent. The executable used the
+older cursor, directed-visibility, and command-group model until the P0 clean
+break deleted it; see [status.md](status.md) for the shipped boundary.

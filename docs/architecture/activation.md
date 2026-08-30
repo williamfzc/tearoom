@@ -98,6 +98,11 @@ Lease generation     fencing value for the current claimant
 Runtime session      optional provider- or process-specific execution identity
 ```
 
+Credentials are issued by an operator or, in the future hosted phase, by a
+user login identity — never derived from Actor identity as a secret. A
+credential authorizes an already admitted `(room, actor)`; it does not create
+membership.
+
 The logical identity is deterministic:
 
 ```text

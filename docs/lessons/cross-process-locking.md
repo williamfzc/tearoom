@@ -26,11 +26,11 @@ The file Store must hold `flock` across the complete sequence-assignment and
 append operation. Idempotency resolution, when enabled, belongs inside the same
 boundary.
 
-The current v0.1 test launches ten processes on cursor zero and requires one
-success plus nine stale conflicts. That proves the lock crosses process
-boundaries, but it encodes the superseded mandatory-freshness contract. The
-target test must accept all ten ordinary appends and prove a dense sequence with
-no loss or duplication.
+The pre-cutover v0.1 test launched ten processes on cursor zero and required
+one success plus nine stale conflicts. That proved the lock crosses process
+boundaries, but it encoded the superseded mandatory-freshness contract. The
+shipped test battery instead launches concurrent writers whose appends all
+succeed and proves one dense sequence with no loss or duplication.
 
 ## Windows gap
 

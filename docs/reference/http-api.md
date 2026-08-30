@@ -1,7 +1,7 @@
 ---
 type: reference
 title: HTTP API
-description: Authoritative target HTTP protocol for Room interaction.
+description: Authoritative HTTP protocol for the served Room.
 resource: internal/transport/server.go
 tags: [reference, contract, http, api]
 timestamp: 2026-08-30
@@ -10,8 +10,9 @@ timestamp: 2026-08-30
 # HTTP API
 
 This is the only Room HTTP contract. It keeps Room history visible to every
-member and leaves observation boundaries to callers. Implementation status
-belongs in [status.md](../architecture/status.md).
+member and leaves observation boundaries to callers. The service is served on
+the loopback interface only in P0. Implementation status belongs in
+[status.md](../architecture/status.md).
 
 ## Endpoints
 
@@ -19,28 +20,61 @@ belongs in [status.md](../architecture/status.md).
 |---|---|---|
 | `GET` | `/api/room` | Read Room identity |
 | `GET` | `/api/actors` | List admitted Actors |
-| `POST` | `/api/actors` | Join or refresh an Actor |
-| `GET` | `/api/events?after=12&limit=20&wait=30` | Read the complete Room history after a caller boundary, optionally waiting |
+| `POST` | `/api/actors` | Explicitly join an Actor |
+| `GET` | `/api/events?after=42&limit=100&wait=30` | Read Events after a caller boundary, optionally waiting |
 | `POST` | `/api/events` | Append one Event |
 
-The target read boundary is the `after` query value. The server does not save, advance, or acknowledge it. A positive `wait` holds the request until a later Event exists or the wait elapses. An authenticated server may require an Actor for admission and authorship, but membership does not filter Event bodies.
+- `GET /api/events` returns a plain JSON Event array — there is no Feed and no
+  cursor. `after` is the exclusive caller-owned boundary; the server never
+  saves or advances it. `wait` is an integer number of seconds: the request
+  holds until an Event past `after` exists or the wait elapses, then returns
+  an array (possibly empty). An empty array is "nothing new", not an error.
+- `POST /api/actors` is explicit join under loopback/OS trust. The body is
+  `{"id":"<actor>"}`.
+- `POST /api/events` appends one Event. The body carries only `to` and
+  `content`; any other field — in particular the removed fields of the old
+  wire format — is rejected with 400.
+- Errors use the unified envelope `{"error":{"code":"...","message":"..."}}`.
+  `409` means an idempotency-key conflict and nothing else; the CLI maps it to
+  exit code 1.
+
+## Headers
+
+| Header | Used by | Meaning |
+|---|---|---|
+| `X-Tearoom-Actor` | events routes | the read/send Actor; required |
+| `Idempotency-Key` | append | optional retry identity for the append |
 
 ## Append body
 
 ```json
 {
-  "actor": "alice",
   "to": ["bob"],
   "content": "review worktree A"
 }
 ```
 
-The server assigns the Event's ordered position and time. `to` is public addressing metadata; it is not private visibility and does not itself request activation. The target kernel does not require `type`, `caused_by`, an expected cursor, or an idempotency key for an ordinary append. Content schema and any conditional append remain open application decisions.
+`content` is arbitrary JSON; plain text is sent as a JSON string by the CLI.
+The server assigns the Event's ordered position and time and returns the Event
+as one JSON object. `to` is public addressing metadata; it is not private
+visibility and does not itself request activation. An ordinary append requires
+no `type`, `caused_by`, expected cursor, or idempotency key.
+
+## Idempotency
+
+An append with `Idempotency-Key` is matched per `(room, actor, key)`. An equal
+retry (same compacted content and normalized `to`) returns the original Event;
+the same key with different content returns `409`. No key: every append
+creates a distinct Event. The key is never stored as an Event field.
 
 ## Activation boundary
 
-Activation is not part of the Room API. A separate service may observe an append, record an operational delivery attempt, and send a reference such as `(room, sequence, target Actor)` to a launcher. The Runtime then reads the Room through this API. Delivery state, retry, and restart recovery must not become read state or alter Event visibility.
+Activation is not part of the Room API. A separate service may observe an
+append, record an operational delivery attempt, and send a reference such as
+`(room, sequence, target Actor)` to a launcher. The Runtime then reads the
+Room through this API. Delivery state, retry, and restart recovery must not
+become read state or alter Event visibility.
 
-Hosted identity and authorization are defined in
-[hosted-identity.md](../domain/hosted-identity.md). No legacy request body or
-endpoint alias is part of this contract.
+Hosted identity and authorization are deferred; a future hosted phase is
+secured by a user login identity, not by Actor-as-secret. No legacy request
+body or endpoint alias is part of this contract.

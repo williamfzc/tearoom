@@ -82,12 +82,16 @@ snapshot, not carrying the old model forward inside the product.
 
 Tearoom has one coordination contract and two product forms:
 
-- **Local Tearoom** is the current single-binary product. A user creates a Room beside a repository and agents exchange Events through the CLI or a self-hosted server.
+- **Local Tearoom** is the shipped single-binary product. A user creates a Room beside a repository and agents exchange Events through the CLI or a self-hosted loopback server.
 - **Hosted Tearoom** is the intended SaaS product. A user signs in with GitHub, creates and manages Rooms, and issues credentials that let agents from any product report to those Rooms.
 
-Hosted Tearoom does not replace the local product or create a second Event model. Both forms should use the same Room, Actor, Event, addressing, ordering, and read semantics.
-
-The live instance (as of 2026-08-29): the hosted API runs free at `[redacted deployment address]` (Render + Neon, Singapore) and the management UI at `[redacted deployment address]` (Cloudflare Pages). The runbook is [operations/deploy.md](operations/deploy.md).
+Hosted Tearoom is a deferred future phase: the hosted implementation was
+deleted at the P0 clean break, and the design now stands on a user login
+identity rather than Actor-as-secret (see
+[architecture/hosted-plan.md](architecture/hosted-plan.md)). Hosted Tearoom
+does not replace the local product or create a second Event model. Both forms
+should use the same Room, Actor, Event, addressing, ordering, and read
+semantics.
 
 ## Hosted user journey
 
@@ -150,28 +154,26 @@ The market evidence behind this product, and the near-term priorities it justifi
 
 ## Command surface
 
-The target agent-facing path exposes actions rather than the transport model:
-
-```text
-tearoom send <content>
-tearoom read [--after <event>] [--since <time>] [--wait <duration>]
-```
-
-Lifecycle and operator commands may remain grouped below `room`, `server`, or
-`admin`. Actor admission, membership management, and credential policy must be
-explicit enough for Room membership to be a real visibility boundary.
-
-The common path is intentionally short:
+The agent-facing path exposes actions rather than the transport model:
 
 ```bash
 tearoom send "review worktree A"
+tearoom send --json '{"plan":"..."}'
 tearoom read
+tearoom read --after e42 --limit 20
 tearoom read --after e42 --wait 5m
 ```
 
-`read` is a repeatable query. `--after` is a caller-supplied exact boundary,
-and `--wait` is scoped to that invocation; neither creates durable delivery
-state.
+Lifecycle and operator commands stay grouped below `room` and `server`:
+`room init` atomically creates the Room and admits the creator, `room join` is
+explicit admission, `room members` lists membership, and `server start` serves
+one Room on the loopback interface. Actor admission must be explicit enough
+for Room membership to be a real visibility boundary.
+
+`read` is a repeatable query. `--after` is a caller-supplied exact boundary
+(the `e<seq>` presentation address), and `--wait` is scoped to that
+invocation; neither creates durable delivery state. Plain-text sends are
+encoded as JSON strings; `--json` passes raw JSON.
 
 Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous
 fallback: an identity must be explicit so Event authorship remains stable.
@@ -193,6 +195,6 @@ Tearoom is working only when all of the following are executable tests:
 - The shipped `tearoom` binary performs the target send/read journey without a
   browser component. Offline activation is a separate optional proof.
 
-The current executable gap is tracked only in
+The cutover deletion manifest is tracked only in
 [status.md](architecture/status.md). Completion claims come only from the
 target-aligned registry in [evaluations.md](evaluations.md).

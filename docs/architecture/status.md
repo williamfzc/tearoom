@@ -1,142 +1,127 @@
 ---
 type: architecture
 title: Status and clean-break migration
-description: The current implementation, the adopted Room/Event target, and the staged cutover with no product compatibility layer.
+description: The current implementation, the adopted Room/Event target, and the completed staged cutover with no product compatibility layer.
 tags: [architecture, status, migration, clean-break]
 timestamp: 2026-08-30
 ---
 
 # Status and clean-break migration
 
-The repository currently implements the pre-convergence model. The adopted
-target is the minimum Room/Event model in
+The repository now implements the minimum Room/Event model adopted in
 [model-discussion.md](model-discussion.md): membership determines visibility;
 `to` is public addressing; reads have explicit caller boundaries; ordinary
 append does not depend on a saved cursor; and offline Agent activation is an
 optional application capability.
 
-This is a clean break. The new release will not read the old Event schema,
+This was a clean break. The new release does not read the old Event schema,
 accept old CLI spellings, accept the old HTTP request/response vocabulary, or
-maintain a compatibility projection. Rollback is an operator action on the Git revision/deployment and,
-where storage has already been cut over, its pre-cutover data snapshot. It is
-never an in-product compatibility mode.
+maintain a compatibility projection. Rollback is an operator action on the Git
+revision/deployment and, where storage has already been cut over, its
+pre-cutover data snapshot. It is never an in-product compatibility mode.
 
 ## Current implementation boundary
 
-The code presently proves the old contract:
+The code proves the adopted contract:
 
-- `internal/core/core.go` defines `Event.ID`, `Room`, `Type`, `Body`, `Data`,
-  `To`, `CausedBy`, and `Key`; `Event.VisibleTo` filters directed Events;
-  `AppendInput.Expected` and `StaleWriteError` enforce room-head freshness.
-- `internal/store/file.go` and `internal/relational/store.go` persist the old
-  Event fields, auto-admitted Actors, directed visibility, idempotency keys,
-  and expected-cursor append.
-- `internal/cli/cli.go` owns `session`, `TEAROOM_HOME` state, automatic Actor
-  registration, `event send|list|watch`, and `--cursor`; its read and write
-  paths advance or consume the saved cursor.
-- `internal/transport/client.go` and `server.go` implement the old
-  `/api/room`, `/api/actors`, and `/api/events?actor=&after=&limit=&wait=`
-  contract, including stale-write wire errors and long-poll support.
-- `internal/control` and `internal/hosted` gate the current Store contract
-  with bound credentials; they do not provide offline Agent activation.
+- `internal/core/core.go` defines `Room`, `Actor`, `Event` (`seq`, `actor`,
+  `at`, optional `to`, `content`), and the `Store` seam; the conformance
+  battery in `contract.go` runs against every Store implementation.
+- `internal/store/file.go` persists the new layout: explicit admission, dense
+  append under flock, pure caller-owned reads, and per-request idempotency
+  records.
+- `internal/relational/store.go` implements the same contract on SQLite with a
+  format-2 gate, and PostgreSQL remains a gated validation battery
+  (`TEAROOM_TEST_PG`).
+- `internal/transport` serves the new HTTP contract: Actor on
+  `X-Tearoom-Actor`, Event arrays, unified error envelope, and
+  invocation-scoped wait.
+- `internal/cli` exposes `room init|join|members`, `send`, `read` (JSONL,
+  `--after e<seq>`, `--wait`), and `server start` (loopback-only). It owns no
+  session state.
+- `scripts/target-room.sh` and `scripts/target-replay.sh` prove the P0 claims
+  against the shipped binary and are wired into `make check`.
 
-The current tests and demos are evidence for this implementation only. They
-must be replaced or rewritten as each clean-break stage lands; keeping them
-green by preserving old semantics is not a migration criterion.
+The hosted implementation (`internal/control`, `internal/hosted`, the hosted
+CLI, the web SPA, and the deployment assets) was deleted at cutover; the
+hosted product design remains as a deferred phase below.
 
 ## Clean-break stages
 
-Stages 1–4 are work checkpoints on one cutover branch, not separately supported
-releases. They may temporarily break downstream compilation while dependency
-owners are replaced in order. Nothing merges to or deploys from the release
-branch until Stage 4 and the P0 evaluations pass as one coherent system. Stage
-5 is a later optional product increment after that atomic cutover.
+Stages 1–4 were work checkpoints on one cutover branch, not separately
+supported releases. They landed as one coherent P0 release; nothing merges to
+or deploys from the release branch until the P0 evaluations pass as one
+system. Stage 5 is a later optional product increment after that atomic
+cutover.
 
 ### Stage 0 — cutover contract and release boundary
 
-Freeze the adopted target in `model-discussion.md`, this status, and the
-reference docs. Record the last old revision and take an operator-owned backup
-of any data that must remain available to the old release. Create a cutover
+Froze the adopted target in `model-discussion.md`, this status, and the
+reference docs; recorded the last old revision; took an operator-owned backup
+of any data that must remain available to the old release; created the cutover
 branch and deployment artifact.
-
-**Done when:** the target Event shape and read/append semantics are explicit;
-the old revision is named; the cutover branch exists; no compatibility
-requirement is accepted.
 
 **Rollback:** restore the old Git revision/deployment and its pre-cutover data.
 No code change occurs in this stage.
 
 ### Stage 1 — replace the foundation contract
 
-Change `internal/core` first. Define the minimum Event as `seq`, `actor`, `at`,
-optional `to`, and `content`; derive presentation address `e<seq>` rather than
-storing the old Event ID. Replace `Feed` with a repeatable read result that has
-no implicit cursor. Make membership/admission explicit and make ordinary
-append independent of read progress. Retain an explicit idempotency request
-identity only if the new Store contract adopts it; it is not an Event field.
+Changed `internal/core` first: the minimum Event is `seq`, `actor`, `at`,
+optional `to`, and `content`; the presentation address `e<seq>` is derived
+rather than stored; `Feed` is replaced by a repeatable read result with no
+implicit cursor; membership/admission is explicit; ordinary append is
+independent of read progress; request-level idempotency is retained and never
+becomes an Event field.
 
-Delete `StaleWriteError`, `ErrStaleWrite`, `AppendInput.Expected`,
-`Event.VisibleTo`, and the old Event fields and helpers. Do not add a second
-schema or dual decoder.
-
-**Done when:** `core` compiles only against the new contract and its unit tests
-prove Room-wide member visibility, public `to`, ordered append, repeatable
-explicit-boundary reads, and any explicitly retained idempotency behavior.
+Deleted `StaleWriteError`, `ErrStaleWrite`, `AppendInput.Expected`,
+`Event.VisibleTo`, and the old Event fields and helpers. No second schema or
+dual decoder was added.
 
 **Rollback:** revert the branch/deployment before publishing a new data format.
 
 ### Stage 2 — cut over persistence
 
-Update `internal/store` and `internal/relational` to implement the new
-`core.Store`. Store only the new Event representation; remove directed read
+Updated `internal/store` and `internal/relational` to implement the new
+`core.Store`: only the new Event representation is stored; directed read
 filtering, auto-registration, saved-cursor freshness checks, and old schema
-fields. Make membership admission an explicit operation. Version the new file
-layout and relational schema as a new cutover, not as a reader that understands
-both formats. There is no old/new double write and no in-product importer.
-
-**Done when:** file and relational backends pass the same new Store contract,
-the old records are not accepted by the new release, and SQLite/PostgreSQL
-validation covers ordering, membership visibility, restart, and explicit read
-boundaries.
+fields are gone. Membership admission is an explicit operation. The file
+layout and relational schema are versioned as a new cutover (`.tearoom`
+`format: 2`), not as a reader that understands both formats. There is no
+old/new double write and no in-product importer.
 
 **Rollback:** deploy the prior revision against the pre-cutover snapshot. A
 new-format dataset is not made readable by the old binary through a shim.
 
-### Stage 3 — replace transport and hosted admission
+### Stage 3 — replace transport; delete the hosted implementation
 
-Rewrite `internal/transport/client.go` and `server.go` around the new Store
-contract. Replace the old query/body/response vocabulary, stale-write wire
-error, actor cursor parameters, and server-held wait protocol. Resource paths
-may keep their target names from [http-api.md](../reference/http-api.md), but no
-handler accepts the old shape. A wait, if retained, is invocation-scoped and
-never creates a durable cursor or subscription.
+Rewrote `internal/transport/client.go` and `server.go` around the new Store
+contract: strict JSON, Actor header, Event arrays, the unified error envelope,
+and invocation-scoped wait. No handler accepts the old shape; no old HTTP
+route or response is served.
 
-Update `internal/control` and `internal/hosted` so credentials authorize an
-already admitted `(room, actor)` without silently creating membership. Hosted
-visibility follows membership; `to` never becomes a secrecy or process-start
-mechanism. No old HTTP route or response is served after this stage.
-
-**Done when:** local and hosted clients use only the new request contract, negative tests
-prove unjoined access is rejected, all admitted members see the full history,
-and a raw old request fails normal target validation.
+The hosted implementation was **deleted, not adapted**: `internal/control`,
+`internal/hosted`, the hosted CLI group, the `web/` SPA, `render.yaml`, the
+`Dockerfile`, `.dockerignore`, and the deploy runbook were removed from the
+repository. The hosted product design stays in
+[hosted-plan.md](hosted-plan.md) as a deferred, login-identity-based future
+phase. A future hosted phase is secured by a user login identity, not by
+Actor-as-secret.
 
 **Rollback:** redeploy the old server and client together. Do not route old and
 new HTTP shapes to different Store readers in one process.
 
 ### Stage 4 — replace the CLI and client state
 
-Change `internal/cli` and `cmd/tearoom` to expose the target common path:
-`tearoom send` and `tearoom read`, with `--after` and optional invocation
-`--wait`. Keep `room`, `server`, and hosted lifecycle commands only where they
-remain part of the target product. Remove the `event` command group rather
-than retaining aliases.
+Changed `internal/cli` and `cmd/tearoom` to expose the target common path:
+`tearoom send`, `tearoom read` with `--after` and optional invocation
+`--wait`, `room init|join|members`, and `server start`. The `event` command
+group is removed rather than retained as aliases.
 
-Delete `session`, `sessionPath`, `readSession`, `writeSession`, `TEAROOM_HOME`
+Deleted `session`, `sessionPath`, `readSession`, `writeSession`, `TEAROOM_HOME`
 cursor files, automatic `prepare` registration, `event list`, `event watch`,
-`--cursor`, `--caused-by`, and old typed/body/data Event flags. Do not migrate
-old session files or silently reinterpret them. Update the skill, README,
-reference CLI, demos, and evaluations to the new command names in the same
-cutover.
+`--cursor`, `--caused-by`, and the old typed/body/data Event flags. Old
+session files are never migrated or silently reinterpreted. The skill, README,
+reference CLI, demos, and evaluations were updated in the same cutover.
 
 **Done when:** `rg` finds no old command alias, cursor session path, or old
 Event flag in shipped CLI/docs; multi-process and cross-worktree journeys use
@@ -170,16 +155,17 @@ Room kernel remains usable without activation state or a runtime binding.
 
 ## Deletion manifest
 
-The clean break deletes, rather than aliases, these old surfaces:
+The clean break deleted, rather than aliased, these old surfaces:
 
-| Boundary | Delete |
+| Boundary | Deleted |
 |---|---|
-| Core | `StaleWriteError`, `ErrStaleWrite`, `Event.VisibleTo`, `Event.ID`/`Room`/`Type`/`Body`/`Data`/`CausedBy`/`Key`, `AppendInput.Expected`, cursor-bearing `Feed` |
+| Core | `StaleWriteError`, `ErrStaleWrite`, `Event.VisibleTo`, `Event.ID`/`Room`/`Type`/`Body`/`Data`/`CausedBy`/`Key`, `AppendInput.Expected`, cursor-bearing `Feed`, `core.Probe` |
 | File/relational Store | old JSONL/relational Event shape, auto-registration, directed filtering, expected-cursor append path |
 | CLI | `event` group, `list`, `watch`, all legacy aliases, session cursor files, `TEAROOM_HOME` cursor state, `--cursor`, `--caused-by`, and old Event-shape flags |
-| HTTP | old actor/cursor query parameters, old append body and response envelope, `ReadWait`, stale-write wire errors, and old long-poll semantics |
-| Hosted/application | silent membership creation and any activation behavior in the coordination Store |
-| Verification/docs | old demos, fixtures, schemas, examples, skill instructions, and references that assert cursor or directed visibility |
+| HTTP | old actor/cursor query parameters, old append body and response envelope, `ReadWait` server subscriptions, stale-write wire errors, old long-poll semantics, `Broadcaster` |
+| Scripts and Makefile | `smoke.sh`, `smoke-sqlite.sh`, `session-smoke.sh`, `harness-demo.sh`, `game-demo.sh`, `worktree-demo.sh`, `hosted-demo.sh`, `pg-smoke.sh`, and their Makefile targets |
+| Hosted | `internal/control`, `internal/hosted`, the hosted CLI, the `web/` SPA, `render.yaml`, `Dockerfile`, `.dockerignore`, `docs/operations/deploy.md` |
+| Docs | the stale reference pages above; nothing in shipped docs uses cursors, directed visibility, the `event` group, or hosted admission |
 
 No item in this table is kept as a deprecated alias, dual decoder, dual writer,
 shadow projection, or compatibility route.
@@ -191,21 +177,22 @@ foundation: core (Room, Actor, Event, Store)
        ^
 persistence: file and relational Stores
        ^
-application: hosted admission and optional activation ledger/launcher
-       ^
 outside: transport, CLI, process entry, operator integrations
 ```
 
-The arrows mean “depends on.” `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it; hosted control gates admission;
-the CLI translates commands. Activation may consume and append through the
-Store, but the kernel never imports a launcher, scheduler, Agent runtime, or
-hosted control plane. A rollback must preserve this direction rather than
-reintroduce a deprecated layer.
+The arrows mean "depends on." `core` imports no project package. Persistence
+implements `core.Store`; transport adapts it; the CLI translates commands.
+The hosted application layer no longer exists in the repository. Activation
+may consume and append through the Store, but the kernel never imports a
+launcher, scheduler, Agent runtime, or hosted control plane. A rollback must
+preserve this direction rather than reintroduce a deprecated layer.
 
 ## Overall completion boundary
 
 The migration is complete only when the new core, both Stores, transport,
-hosted admission, CLI, skill, tests, demos, and OKF docs agree; `make check`
-and `make docs` pass; and repository searches find none of the deletion-manifest
-surfaces. A green test run against old semantics is not completion.
+CLI, tests, evaluations, and OKF docs agree; `make check` and `make docs`
+pass; and repository searches find none of the deletion-manifest surfaces. A
+green test run against old semantics is not completion. The P0 evaluations
+(`make target-room`, `make target-replay`) are the executable completion
+proof; P1, Activation, and Hosted remain open or deferred in
+[evaluations.md](../evaluations.md).

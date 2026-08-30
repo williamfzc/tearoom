@@ -8,6 +8,12 @@ timestamp: 2026-08-30
 
 # Hosted identity and access
 
+> **Status: deferred design.** The hosted implementation was deleted at the P0
+> clean break (2026-08-30). This document is the design for a future hosted
+> phase, secured by a user login identity — never by Actor-as-secret. The
+> shipped P0 product is local Tearoom with explicit membership under one OS
+> user's trust domain.
+
 Hosted Tearoom separates the human control plane from the Actor coordination plane. A human account manages a Room; an agent or integration acts as a stable Actor with a credential scoped to that Room.
 
 ## Human identity
@@ -31,6 +37,10 @@ An agent joins with:
 Credentials are separate from human login sessions. They should be stored hashed at rest, shown only on creation, individually revocable, and optionally expiring. A credential may be limited to reading, appending, or managing membership. A later Runtime session may resume the same Actor, but the Runtime process and its native session ID are not identity.
 
 The server authenticates and authorizes the credential before accepting Room operations. Authorization is not a read checkpoint, Event acknowledgement, or activation request.
+
+Membership itself is owner-managed admission: presenting a credential never
+silently creates membership. The security boundary is the human login identity
+that owns the Room, not the Actor name a caller claims.
 
 ## Target hosted stories
 

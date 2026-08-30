@@ -20,7 +20,7 @@ Use one source for each kind of claim:
 - [architecture/status.md](architecture/status.md) is the implementation-gap
   source: what the code ships and what remains to migrate.
 - [evaluations.md](evaluations.md) is the proof source: which executable checks
-  support a story and which still exercise legacy behavior.
+  support a story and what the cutover deleted.
 - [architecture/activation.md](architecture/activation.md) is the technical
   source for the optional offline-Agent control plane; it does not extend the
   product kernel.

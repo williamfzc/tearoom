@@ -13,33 +13,45 @@ Requires Go 1.22+ and a Unix-like OS.
 
 ```bash
 make build          # bin/tearoom
+make cli            # the shipped binary, built fresh
 make test           # unit, HTTP, and independent-process concurrency tests
 make test-race      # race detector
-make smoke          # file-backend smoke: real binary and exit-code contract
-make smoke-sqlite   # the same contract over the SQLite backend
-make session-smoke  # same-product and cross-product session exchange
-make harness-demo   # the harness workflow story end to end
-make game-demo      # one Werewolf round over directed role Events
-make worktree-demo  # two real git worktrees sharing one Room
-make hosted-demo    # the hosted credential matrix: auth, binding, revocation
-make pg-smoke       # the same invariants over PostgreSQL (skips without TEAROOM_TEST_PG)
+make target-room    # E1: the P0 Room contract over file, SQLite, and HTTP
+make target-replay  # E2: P0 replay across real processes, no read progress
 make check-evals    # the evaluation set stays bidirectionally consistent
-make check          # all checks plus documentation validation
+make docs           # the docs bundle stays consistent (frontmatter, links)
+make check          # fmt vet test test-race target-room target-replay check-evals docs
 ```
 
-These commands exercise the currently shipped v0.1 implementation. In
-particular, the smoke, session, harness, game, and worktree suites still encode
-saved cursors, mandatory stale-write rejection, typed or causal Events, and
-directed visibility. They are regression evidence for the code being migrated,
-not proof of the adopted target contract.
-
-Release builds use `CGO_ENABLED=0` to produce one static binary. On macOS, tests use the system linker because the Go 1.22 internal linker can produce test executables without the `LC_UUID` required by current macOS.
-
-## What the suites prove
-
 The [evaluation set](../evaluations.md) is the authority for what each suite
-actually proves. `check-evals` verifies that its story-to-evaluation map remains
-structurally consistent; it cannot by itself prove that a legacy suite covers a
-new product story.
+proves; `check-evals` enforces that every shipped evaluation has its script
+marker and its place in `make check`.
 
-PostgreSQL validation is gated: `make pg-smoke` and the `TEAROOM_TEST_PG` unit battery skip with a notice when the environment variable (a `postgres://` DSN) is absent, and run the full suite wherever a database exists.
+## Toolchain traps
+
+**macOS test linking.** On macOS, tests use the system linker because the Go
+1.22 internal linker can emit test executables without the `LC_UUID` required
+by current macOS; test binaries whose closure includes the pure-Go SQLite
+stack abort at launch without it. The Makefile encodes this in its Darwin
+branch (`CGO_ENABLED=1`, `-ldflags=-linkmode=external`), so run tests with
+`make test`/`make test-race` rather than bare `go test`. Release builds use
+`CGO_ENABLED=0` to produce one static binary.
+
+**Module proxy.** This machine cannot reach `proxy.golang.org` (dial
+timeouts). The Makefile exports `GOPROXY ?= https://goproxy.cn,direct` so every
+`make` target works out of the box; override it with
+`make GOPROXY=https://proxy.golang.org` where the default mirror is not
+desired. Standalone `go` commands need the same setting, e.g.
+`GOPROXY=https://goproxy.cn,direct go build ./...`.
+
+## PostgreSQL validation
+
+The relational Store battery runs against PostgreSQL only when
+`TEAROOM_TEST_PG` (a `postgres://` DSN) is set:
+
+```bash
+TEAROOM_TEST_PG=postgres://... go test -ldflags=-linkmode=external -count=1 ./internal/relational
+```
+
+Without the DSN the battery records an explicit skip; SQLite always runs the
+same conformance battery.

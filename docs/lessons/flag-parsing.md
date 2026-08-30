@@ -21,8 +21,8 @@ Tearoom reorders known flags before parsing while preserving `--` as the literal
 
 The primary caller is often a program. Silently treating `--to` or another
 recognized option as content would change the Event rather than merely its
-presentation. This parser lesson survives the command migration even though
-the current implementation still exposes `event send` and additional legacy
-flags.
+presentation. The parser lesson survived the command migration: the shipped
+CLI exposes only `room`, `server`, `send`, and `read`, with no legacy `event`
+group or flags.
 
 Guarded by `internal/cli/cli_test.go`.

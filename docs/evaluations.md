@@ -8,7 +8,7 @@ timestamp: 2026-08-30
 
 # Evaluation set
 
-This registry is the target contract in [model-discussion.md](architecture/model-discussion.md), not a claim about the current binary. `open` means the target story has not passed its evaluation; `proven` is reserved for an executable target-aligned evaluation; `deferred` is outside the current product. Evaluation statuses are `planned` and `shipped`.
+This registry is the target contract in [model-discussion.md](architecture/model-discussion.md). `open` means the target story has not passed its evaluation; `proven` is reserved for an executable target-aligned evaluation; `deferred` is outside the current product. Evaluation statuses are `planned` and `shipped`.
 
 The product advances through four gates. A later gate cannot repair a failed earlier contract. Activation is optional: failure at its gate leaves the Room and handoff product valid, but removes the claim that Tearoom can wake offline Agents.
 
@@ -16,7 +16,7 @@ The product advances through four gates. A later gate cannot repair a failed ear
 
 ### P0 — Minimum Room contract
 
-Stories: S1, S3. Evaluations: E1, E2.
+Stories: S1, S3. Evaluations: E1, E2. **Status: passed at the P0 clean break (2026-08-30)** — [target-room.sh](../scripts/target-room.sh) and [target-replay.sh](../scripts/target-replay.sh) ship with the release and run in `make check`.
 
 Entry conditions:
 
@@ -32,7 +32,7 @@ Executable acceptance:
 3. A process ends and a later process replays the same history from a chosen boundary.
 4. `to`, when present, is visible addressing metadata and does not hide content from Room members.
 
-Go/no-go: go only when local and remote implementations pass the same assertions. No-go if either implementation still needs a Room-owned read cursor, private Event filtering, or mandatory stale-write preconditions to function.
+Go/no-go: go only when local and remote implementations pass the same assertions. No-go if either implementation still needs a Room-owned read cursor, private Event filtering, or mandatory stale-write preconditions to function. Both shipped Stores (file and relational/SQLite) pass the core contract battery; the PostgreSQL battery is gated behind `TEAROOM_TEST_PG` and skips when no database is configured.
 
 ### P1 — Cross-product handoff and human intervention
 
@@ -92,9 +92,9 @@ Go/no-go: go when the second domain works without adding game entities or hidden
 
 | ID | Story | Status | Stage | Defined in |
 |---|---|---|---|---|
-| S1 | Members of one Room append and read one complete, ordered, durable history across processes and sessions | open | P0 | [product.md](product.md) |
+| S1 | Members of one Room append and read one complete, ordered, durable history across processes and sessions | proven | P0 | [product.md](product.md) |
 | S2 | Agents from different products complete a multi-round handoff without a human relaying context | open | P1 | [domain/harness-workflow.md](domain/harness-workflow.md) |
-| S3 | A later process can replay the Room from an explicitly chosen boundary without server-owned read progress | open | P0 | [domain/agent-experience.md](domain/agent-experience.md) |
+| S3 | A later process can replay the Room from an explicitly chosen boundary without server-owned read progress | proven | P0 | [domain/agent-experience.md](domain/agent-experience.md) |
 | S4 | An optional activation service wakes an offline Actor from a durable Event reference and survives restart | open | P2 | [activation.md](architecture/activation.md) |
 | S5 | A human creates a hosted Room and grants or revokes an agent credential without changing Actor identity | open | P3 | [domain/hosted-identity.md](domain/hosted-identity.md) |
 | S6 | A public Werewolf protocol can be replayed in one Room; private role information is not promised by that Room | open | P3 | [product.md](product.md) |
@@ -119,8 +119,8 @@ The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary pri
 
 | ID | Evaluation | Target | Script | Status |
 |---|---|---|---|---|
-| E1 | P0 Room contract: dense append order, complete member history, and pure reads from explicit boundaries | `make target-room` | — | planned |
-| E2 | P0 process/session replay without server-owned read progress | `make target-replay` | — | planned |
+| E1 | P0 Room contract: dense append order, complete member history, and pure reads from explicit boundaries | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
+| E2 | P0 process/session replay without server-owned read progress | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
 | E3 | P1 three-round cross-product handoff without kernel event types or implicit read state | `make target-handoff` | — | planned |
 | E4 | P1 human intervention followed by ordered replay and continuation | `make target-intervention` | — | planned |
 | E5 | P2 optional offline activation, durable claim, restart recovery, and duplicate-safe response | `make target-activation` | — | planned |
@@ -129,34 +129,38 @@ The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary pri
 
 ## Story → evaluation
 
-No target story is proven yet. A story enters this map only after its target evaluation is executable and shipped.
-
 | Story | Evaluations |
 |---|---|
+| S1 | E1 |
+| S3 | E2 |
 
 ## Evaluation → story
 
-No target evaluation is shipped yet.
-
 | Evaluation | Stories |
 |---|---|
+| E1 | S1 |
+| E2 | S3 |
 
-## Legacy migration at P0 entry
+## Legacy surfaces at the P0 cutover
 
-The current shell suites are not a second contract. When migration starts, remove them from `make check` and either delete them or rewrite them against the target model. Do not retain them indefinitely as “legacy” proofs.
+The pre-cutover suites were a second contract, not a target proof. At the
+clean break they were deleted from `make check` and from the tree; the shipped
+target evaluations [target-room.sh](../scripts/target-room.sh) and
+[target-replay.sh](../scripts/target-replay.sh) are the only CLI-level proofs.
 
-| Current suite | Required migration action |
+| Removed surface | Migration outcome |
 |---|---|
-| `make test` | Rewrite Store assertions for complete member history, pure reads, and ordinary append; delete tests whose only purpose is stale cursor rejection or private filtering |
-| `make smoke` | Rewrite as the P0 CLI evaluation; remove `event` nesting, saved cursors, directed privacy, `type`/`caused_by`, and mandatory stale writes |
-| `make smoke-sqlite` | Rewrite against the same P0 contract, then keep only if SQLite remains a supported target |
-| `make session-smoke` | Rewrite as P0 replay from caller-selected boundaries; otherwise delete |
-| `make harness-demo` | Rewrite as E3/E4 with content conventions only; delete the typed/causal version |
-| `make game-demo` | Rewrite as E6 public-only Werewolf, or delete if the second-domain gate is not pursued |
-| `make worktree-demo` | Rewrite as explicit-boundary replay, or delete |
-| `make hosted-demo` | Rewrite as E7 after the target HTTP contract exists, or delete |
+| `make smoke` / `smoke.sh` | Deleted; `event` nesting, saved cursors, directed privacy, `type`/`caused_by`, and mandatory stale writes are gone |
+| `make smoke-sqlite` / `smoke-sqlite.sh` | Deleted; SQLite coverage lives in the relational store contract battery |
+| `make session-smoke` / `session-smoke.sh` | Deleted; replay is E2 |
+| `make harness-demo` / `harness-demo.sh` | Deleted; E3/E4 remain planned |
+| `make game-demo` / `game-demo.sh` | Deleted; E6 remains planned |
+| `make worktree-demo` / `worktree-demo.sh` | Deleted; explicit-boundary replay is E2 |
+| `make hosted-demo` / `hosted-demo.sh` | Deleted with the hosted implementation; E7 remains planned after the future hosted phase |
+| `make pg-smoke` / `pg-smoke.sh` | Deleted; PostgreSQL validation is the gated `TEAROOM_TEST_PG` store battery |
 
-Until that migration is done, a green `make check` proves only the old implementation. It must not be reported as proof of any target story.
+A green `make check` therefore proves the target P0 contract, not the old
+implementation.
 
 ## Pending evidence, not stories
 

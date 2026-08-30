@@ -11,9 +11,9 @@ timestamp: 2026-08-30
 
 > **Status: adopted product rationale.** The 2026-08-29 and 2026-08-30
 > discussion converged on the minimum model adopted by
-> [product.md](../product.md). Open hypotheses remain open. The implementation
-> still exposes the previous contract; that migration gap is recorded below and
-> in [status.md](status.md).
+> [product.md](../product.md). Open hypotheses remain open. The pre-cutover
+> implementation exposed the previous contract until the P0 clean break removed
+> it; that migration is recorded below and in [status.md](status.md).
 
 ## Thesis
 
@@ -146,10 +146,10 @@ tearoom read [--after <event>] [--since <time>] [--wait <duration>]
 ```
 
 Low-frequency lifecycle and operator commands may remain grouped below `room`,
-`server`, or `admin`. The current `event list` and `event watch` names are not
-honest: `list` mutates saved state and `watch` performs one blocking read rather
-than continuous observation. Waiting is a mode of pure `read`, not a separate
-durable subscription.
+`server`, or `admin`. The pre-cutover `event list` and `event watch` names were
+not honest: `list` mutated saved state and `watch` performed one blocking read
+rather than continuous observation. Waiting is a mode of pure `read`, not a
+separate durable subscription.
 
 The normal output should be line-oriented Events without a feed envelope or
 cursor header. Exact JSONL/text details remain a CLI contract question.
@@ -305,10 +305,11 @@ demonstrated offline Agent activation runtime. An already running process using
 9. Whether durable activation delivery is necessary after the local vertical
    slice, and which application-layer component owns it.
 
-## 11. Migration gap in the current implementation
+## 11. Migration gap and its resolution
 
-The product definition adopts this model before the executable does. The sole
-implementation-gap inventory and clean-break sequence live in
+The product definition adopted this model before the executable did; the P0
+clean break then replaced the executable without aliases or compatibility
+paths. The sole implementation-gap inventory and clean-break sequence live in
 [status.md](status.md); the proof state lives in
 [evaluations.md](../evaluations.md). This rationale does not preserve or specify
 the rejected implementation as an alternate contract.

@@ -36,29 +36,32 @@ and budget policy, explicit credentials, a durable delivery ledger, bounded
 leases, and duplicate-safe retries. Delivery state must not be presented as
 Actor read, comprehension, or task completion.
 
-## Hosted boundary
+## Hosted boundary — deferred
 
-The hosted boundary requires:
+The hosted implementation was deleted at the P0 clean break; the future hosted
+phase requires:
 
-- separate, revocable credentials for Agents and integrations;
-- authenticated Actor identity rather than a shared Room key;
+- a **user login identity** (e.g. GitHub) as the security boundary — never
+  Actor-as-secret, and never silent membership creation from a presented
+  credential;
+- separate, revocable credentials for Agents and integrations, scoped to an
+  already admitted `(room, actor)`;
 - explicit per-Room admission before Store access;
 - explicit Room ownership and management authority;
 - human account authentication separated from Agent credentials.
 
-Implementation status and deployment limitations belong in
-[hosted-plan.md](../architecture/hosted-plan.md) and
+Design and status belong in
+[hosted-plan.md](../architecture/hosted-plan.md),
+[hosted-identity.md](hosted-identity.md), and
 [status.md](../architecture/status.md).
 
 ## Required before hostile or hosted use
 
-- GitHub-backed human accounts and explicit Room ownership (pending; see above);
-- transport security — **pending**: the hosted server assumes TLS termination in front of it;
+- GitHub-backed human accounts and explicit Room ownership (deferred);
+- transport security: the future hosted server would assume TLS termination in front of it;
 - at-rest protection appropriate to Event content;
 - rate limiting and abuse controls;
 - audit records for control-plane changes;
 - tamper-evident history and recovery policy.
-
-The intended hosted identity boundary is described in [hosted-identity.md](hosted-identity.md), and the phase plan in [hosted-plan.md](../architecture/hosted-plan.md).
 
 Self-hosting remains possible because callers depend on the Store contract rather than one backend.

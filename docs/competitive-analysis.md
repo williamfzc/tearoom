@@ -9,8 +9,8 @@ timestamp: 2026-08-30
 # Competitive analysis
 
 This document tests three Tearoom hypotheses against current substitutes. It is
-not evidence that the current executable has the target behavior: the code
-still uses saved Actor cursors and directed Event filtering, as recorded in
+not evidence of shipped behavior: the executable is verified by the contract
+battery and the target evaluations recorded in
 [architecture/status.md](architecture/status.md).
 
 ## The three hypotheses

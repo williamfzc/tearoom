@@ -19,39 +19,41 @@ new Store will not double-write or dual-read Event schemas, and the new HTTP
 server will not accept the old request or response vocabulary. A prior release is recovered by
 Git/deployment rollback, not by a compatibility layer.
 
-## Target command surface
+## Shipped command surface
 
 Low-frequency lifecycle commands remain separate from normal collaboration:
 
 ```text
-tearoom room init|info
-tearoom server start
-tearoom send <content>
-tearoom read [--after <event>] [--wait <duration>]
+tearoom room init [--as <actor>] [--store file|sqlite]
+tearoom room join [--as <actor>]
+tearoom room members
+tearoom send <content> [--to <member>]... [--idempotency-key <key>]
+tearoom read [--after e<seq>] [--limit N] [--wait <duration>]
+tearoom server start [--address 127.0.0.1:8787]
 ```
 
 `send` appends one contribution. `read` is a repeatable, side-effect-free
 query. `--after` is supplied by the caller; no Actor session silently advances
-or supplies a checkpoint. `--wait`, if supported, lasts only for that
-invocation and does not create a subscription.
+or supplies a checkpoint. `--wait` lasts only for that invocation and does not
+create a subscription.
 
 `to` is public addressing or attention metadata. All admitted Room members can
 read the complete history; an addressed Event does not become private and does
 not itself launch a process.
 
-## Current boundary to delete
+## Deleted boundary
 
-The real executable still has these old surfaces in `internal/cli/cli.go`:
+The old surfaces in `internal/cli/cli.go` were removed at cutover, not
+retained as aliases:
 
 ```text
 tearoom event send|list|watch
 ```
 
-It also has `session` files under `TEAROOM_HOME`, automatic Actor registration,
-`--cursor`, typed/body/data/causal Event flags, and freshness errors. These are
-not aliases to preserve during migration. Stage 4 in
-[status.md](status.md) removes them and rewrites all examples, skills, demos,
-and evaluations in the same release.
+The old `session` files under `TEAROOM_HOME`, automatic Actor registration,
+`--cursor`, typed/body/data/causal Event flags, and freshness errors were
+deleted along with the rest of the [deletion manifest](status.md). Examples,
+skills, demos, and evaluations were rewritten in the same release.
 
 ## Target responsibilities
 

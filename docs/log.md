@@ -8,6 +8,34 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-08-30 — Execute the P0 clean-break cutover
+
+The clean break planned above shipped as one cutover branch, in three
+implementation waves plus the CLI, deletion, and documentation passes:
+
+1. **Core and file store** (`internal/core`, `internal/store`): the minimum
+   Room/Actor/Event contract, `format: 2` marker gate, and the file backend on
+   the new `Store` interface.
+2. **Relational and transport** (`internal/relational`, `internal/transport`):
+   the SQLite/PostgreSQL Store on the same contract and the HTTP server/client
+   with the unified error envelope, `X-Tearoom-Actor`, `Idempotency-Key`, and
+   server-side `wait`.
+3. **CLI** (`internal/cli`, `cmd/tearoom`): `room init|join|members`, `send`,
+   `read`, and `server start` only; exit codes 0/1/3/4; plain text encodes as a
+   JSON string; `--after e<seq>`, `--limit`, `--wait`, `--idempotency-key`;
+   loopback-only serving in P0. The `event` group, session files, cursor, typed
+   Event flags, `TEAROOM_HOME`, and `--caused-by`/`--body`/`--data` are gone.
+4. **Deletion per the manifest**: the eight shell suites, `internal/control`,
+   `internal/hosted`, `internal/cli/hosted.go`, the `web/` SPA, the deployment
+   files, and `operations/deploy.md` were removed, not aliased.
+5. **Evaluations**: `target-room` (E1) and `target-replay` (E2) ship as
+   executable scripts inside `make check`; S1 and S3 became proven; the legacy
+   suites are recorded as removed in the registry.
+6. **Docs**: status, reference, operations, product, and design documents were
+   rewritten to the shipped surface. The hosted implementation is deleted and
+   its design deferred, secured by a user login identity rather than
+   Actor-as-secret. The cutover is recorded here, newest first.
+
 ## 2026-08-30 — Record the P0 cutover execution contract
 
 The clean break is now executable from one document:
@@ -85,7 +113,8 @@ Operational notes recorded: Render's API types (`web_service`), the env-vars end
 Shipped all three steps of [hosted-plan.md](architecture/hosted-plan.md)'s implementation queue, each green in `make check` before its commit:
 
 1. **Client-side watch polling** (`refactor: poll event watch from the client instead of the server-held wait`, 4fe77c9). `eventWatch` now reads on an interval for every store, exactly like the local branch; the CLI's waiter interface is gone. Watch's command surface, skill text, and demo semantics are unchanged — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays as the optional LAN optimization.
-2. **Deployment files** (`feat: add the deployment files`, e4c10be). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at [deploy.md](operations/deploy.md): Neon project + pooled DSN → `tearoom hosted init-db` → admin token → Render free-tier web service → end-to-end verification → TLS/domain notes → the 2026 free-tier constraints. The server gained `GET /healthz` (no credentials) for the platform health check.
+2. **Deployment files** (`feat: add the deployment files`, e4c10be). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at `operations/deploy.md` (deleted at the cutover; its deployment
+was never re-adopted): Neon project + pooled DSN → `tearoom hosted init-db` → admin token → Render free-tier web service → end-to-end verification → TLS/domain notes → the 2026 free-tier constraints. The server gained `GET /healthz` (no credentials) for the platform health check.
 3. **Management UI** (`feat: allow a configured CORS origin`, b79e1f0; `feat: list room credentials for the management UI`, c5f2961; `web: build the hosted management UI`, fe0de64). A deliberately thin React + Vite static SPA in `web/` — rooms, credentials, room history — in the recorded Vercel/Claude-style minimal tech, built to `dist/` for Cloudflare Pages (`VITE_API_BASE` + `--cors-origin`). Supporting server work: CORS for one exact configured origin (preflight 204, foreign origins get no headers), and `GET /api/hosted/rooms/<id>/credentials` returning a hash-free `CredentialView` — the at-rest token digest never leaves the server.
 
 ## 2026-08-29 — Decide watch's wait moves to the client; settle the free deployment
@@ -100,13 +129,14 @@ Implemented the first executable slice of the hosted product ([hosted-plan.md](a
 
 `relational` became multi-tenant: the `RoomID` sentinel is now a per-store `roomID`, `New(db, roomID)` makes the Store a cheap value object over a shared `*gorm.DB`, and `OpenURL(dsn)` opens PostgreSQL by URL while local use keeps `Init`/`OpenAt`. New `internal/control` owns the control plane (`ctl_accounts`, `ctl_memberships`, `ctl_credentials`, own migration chain): credentials are opaque `tr_` tokens — 192 random bits, sha256 at rest, bound to (room, actor, capabilities, expiry), plaintext shown once, individually revocable. New `internal/hosted` serves management routes (`/api/hosted/*`, dev admin bearer) and the authenticated event API (`/r/<room-id>/api/*`): a middleware resolves the Bearer to a credential, checks room binding, actor binding, and capability, then delegates to that room's own transport server with its own long-poll broadcaster. Wrong-room tokens answer 401 so they cannot probe room existence. The CLI gained the `hosted` group (`init-db`, `create-room`, `issue-credential`, `revoke`, `serve`); clients needed no new surface — `TEAROOM_SERVER` points at `/r/<id>` and `TEAROOM_TOKEN` carries the credential.
 
-[scripts/hosted-demo.sh](../scripts/hosted-demo.sh) (E8, 15 checks) proves the hosted stories S6–S8: a handoff through credentials with session resume, and the negative matrix — no token 401, wrong-room 401, actor mismatch 403, read-only append refused (CLI exit and HTTP 403), revoked bob dead while alice works. PostgreSQL validation stays gated behind `TEAROOM_TEST_PG` (`make pg-smoke` + a `pg_test.go` battery that mirrors the SQLite suite); both skip with a notice without a DSN. The GitHub OAuth exchange is the stub `login` route; S5 stays open as pending evidence.
+`scripts/hosted-demo.sh` (E8, 15 checks, deleted at the cutover with the hosted
+implementation) proves the hosted stories S6–S8: a handoff through credentials with session resume, and the negative matrix — no token 401, wrong-room 401, actor mismatch 403, read-only append refused (CLI exit and HTTP 403), revoked bob dead while alice works. PostgreSQL validation stays gated behind `TEAROOM_TEST_PG` (`make pg-smoke` + a `pg_test.go` battery that mirrors the SQLite suite); both skip with a notice without a DSN. The GitHub OAuth exchange is the stub `login` route; S5 stays open as pending evidence.
 
 ## 2026-08-29 — Run the harness with real agents and close the remaining stories
 
 Ran the harness workflow with three real agents (one planner, one generator, one evaluator, each an independent agent session) on a shared Room server. Each learned the CLI from the skill, then the loop ran end to end: plan → generate → revise → generate v2 → approve → close, threaded by `caused_by`. Measured send latency 13–31 ms and event-to-delivery latency 18–20 ms over local HTTP; no stale writes, no retries needed. The agents' skill feedback (flags not in the reference, watch batch semantics, feed shape) went back into SKILL.md.
 
-Then shipped the two remaining story scenarios. [scripts/game-demo.sh](../scripts/game-demo.sh) plays one Werewolf round as a protocol over directed role Events (E6, story S3): a moderator deals three private roles, night actions reach only the moderator and their sender, the day is public — 13 checks. [scripts/worktree-demo.sh](../scripts/worktree-demo.sh) proves one Room across two real git worktrees (E7, story S4): worktrees keep no local Room, handoffs cross them by `watch`, later processes resume cursors — 9 checks. Both run inside `make check`; the evaluation set now marks every story except the hosted ones proven.
+Then shipped the two remaining story scenarios. `scripts/game-demo.sh` plays one Werewolf round as a protocol over directed role Events (E6, story S3): a moderator deals three private roles, night actions reach only the moderator and their sender, the day is public — 13 checks. `scripts/worktree-demo.sh` proves one Room across two real git worktrees (E7, story S4): worktrees keep no local Room, handoffs cross them by `watch`, later processes resume cursors — 9 checks. Both ran inside `make check` until the clean break deleted them with the old contract they proved; the evaluation set then marked every story except the hosted ones proven.
 
 ## 2026-08-29 — Establish the bidirectional evaluation set
 
@@ -114,7 +144,7 @@ Added [evaluations.md](evaluations.md), the single registry mapping every user s
 
 ## 2026-08-29 — Add the harness workflow user story
 
-Added [domain/harness-workflow.md](domain/harness-workflow.md): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. [scripts/harness-demo.sh](../scripts/harness-demo.sh) runs the story against the shipped binary inside `make check`; it closes the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.
+Added [domain/harness-workflow.md](domain/harness-workflow.md): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. `scripts/harness-demo.sh` ran the story against the shipped binary inside `make check` (deleted at the clean break with the old contract); it closed the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.
 
 ## 2026-08-29 — Ship the relational Store on SQLite
 

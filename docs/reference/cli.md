@@ -1,7 +1,7 @@
 ---
 type: reference
 title: CLI reference
-description: Authoritative target command contract for Room interaction.
+description: Authoritative command contract for the shipped tearoom binary.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
 timestamp: 2026-08-30
@@ -16,28 +16,66 @@ Implementation status belongs in [status.md](../architecture/status.md).
 ## Command contract
 
 ```text
-tearoom <command> [flags]
+tearoom room init [--as <actor>] [--store file|sqlite]
+tearoom room join [--as <actor>]
+tearoom room members
 
-tearoom room init
-tearoom room info
-tearoom server start
-tearoom send "review worktree A"
-tearoom read [--after 12] [--wait 5m]
+tearoom send <text> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
+tearoom send --json <json> [--as <actor>] [--to <member>]...
+
+tearoom read [--as <actor>] [--after e<seq>] [--limit N] [--wait <duration>]
+
+tearoom server start [--address 127.0.0.1:8787] [--directory <dir>]
 ```
 
-`room` manages local workspace state. `server` serves a shared Room. `send` appends one Event. `read` returns Events after the caller-supplied `--after` boundary and may wait for later Room movement when `--wait` is present. A caller may keep its own boundary in a session, but Tearoom does not save or advance one in shared Room state.
+- `room init` atomically creates the Room and admits the creator as its first
+  member. The Room identity comes from the directory that owns `.tearoom`;
+  there is no `--name` flag. `--store` selects the backend: `file` (default)
+  or `sqlite`.
+- `room join` is explicit admission within the trust domain of one OS user.
+  Joining an already-admitted Actor returns the existing Actor.
+- `room members` lists the admitted Actors.
+- `send` appends one Event and prints it as one JSON object. Plain text is
+  encoded as a JSON string; `--json` passes the raw JSON content verbatim.
+  `--to` names addressees (repeatable, comma-separated values are accepted)
+  and is public addressing metadata, never a visibility boundary.
+- `read` prints JSONL: one Event per line, no envelope and no cursor. An empty
+  result prints nothing and exits 0. `--after` accepts the presentation
+  address `e<seq>` (a bare sequence is also accepted) as the exclusive
+  caller-owned boundary. `--limit` truncates the result. `--wait` holds only
+  the current invocation until an Event past the boundary exists, and exits 3
+  when the bound elapses with nothing new.
+- `server start` serves the nearest Room over HTTP. P0 refuses non-loopback
+  listen addresses: the HTTP contract carries no authentication, so the
+  service must not be exposed to a network.
+- Actor identity comes from `TEAROOM_ACTOR` or `--as`; an identity is required
+  for `init`, `join`, `send`, and `read`. There is no anonymous fallback.
 
-The target Event surface is deliberately small: ordered position, author, time, optional public `to` metadata, and content. The CLI must not require `type`, `caused_by`, a directed-private mode, or a mandatory expected cursor for ordinary append.
+## Server target mode
 
-Target conventions:
+When `TEAROOM_SERVER` is set to a server URL, `join`, `members`, `send`, and
+`read` speak the [HTTP contract](http-api.md) instead of opening a local Room.
+`room init` is always local and refuses to run while `TEAROOM_SERVER` is set.
+There is no token: the served Room is protected by the loopback trust domain.
 
-- JSON is the default output; `--format text` selects compact human output.
-- Actor identity comes from `TEAROOM_ACTOR` or `--as`.
-- A caller authenticates as an Actor when the hosted service requires it.
-- `--after` is an explicit observation boundary owned by the caller.
-- `--wait` is invocation-scoped and does not acknowledge or mark Events read.
-- A `to` value is visible addressing metadata; it does not hide the Event from Room members or request process execution.
+## Exit codes
+
+The machine-readable outcomes are in [exit-codes.md](exit-codes.md): 0 on
+success (including an empty `read`), 1 on any error — an HTTP 409 idempotency
+conflict is exit 1 — 3 for a `read --wait` timeout, and 4 when no Room or the
+server is unreachable.
+
+## Output and encoding
+
+- JSON is the default output for `init`, `join`, `members`, and `send`.
+- `read` emits JSONL Events. Events carry `seq`, `actor`, `at`, optional
+  `to`, and `content`; `content` is always valid JSON.
+- Plain-text sends are stored as JSON strings, so `read` output is always
+  machine-parseable.
 
 ## Activation boundary
 
-The CLI does not currently wake offline Actors. A future activation service may observe an Event, deliver its reference to a launcher, and let a Runtime invoke `read` and `send`. That service owns delivery attempts and recovery; neither `read` nor `send` should acquire a hidden read cursor or scheduler responsibility.
+The CLI does not wake offline Actors. A future activation service may observe
+an Event, deliver its reference to a launcher, and let a Runtime invoke `read`
+and `send`. That service owns delivery attempts and recovery; neither `read`
+nor `send` should acquire a hidden read cursor or scheduler responsibility.

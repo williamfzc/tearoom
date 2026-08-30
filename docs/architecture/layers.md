@@ -15,15 +15,15 @@ The clean-break target has one foundation contract and no compatibility layer:
 |---|---|---|
 | Foundation | `internal/core` | Room, Actor, minimum Event, Store, and typed domain errors |
 | Persistence | `internal/store`, `internal/relational` | Durable membership and ordered immutable Event history |
-| Application | hosted control and future activation service | Admission policy, credentials, activation ledger, leases, and runtime binding |
+| Application | future activation service (hosted control plane deferred) | Admission policy, credentials, activation ledger, leases, and runtime binding |
 | Outside | `internal/transport` | The one current HTTP representation of the Store contract |
 | Outside | `internal/cli`, `cmd/tearoom` | `room`, `server`, `send`, `read`, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it; hosted control authorizes
-admission; the CLI translates commands. Optional activation may consume and
-append through `core.Store`, but the kernel never imports a launcher, scheduler,
-Agent runtime, or hosted control plane.
+implements `core.Store`; transport adapts it; the CLI translates commands. A
+future hosted control plane would authorize admission outside the Store. Optional
+activation may consume and append through `core.Store`, but the kernel never
+imports a launcher, scheduler, Agent runtime, or hosted control plane.
 
 ## Target foundation boundary
 
@@ -58,16 +58,19 @@ shape. Neither package may:
 - persist or interpret the old Event representation;
 - host activation claims or process state.
 
-The current implementations violate these target rules: they contain
-`Event.VisibleTo`, auto-registration, and expected-cursor append. Stages 1–2 in
-[status.md](status.md) remove those behaviors rather than wrapping them.
+The pre-cutover implementations violated these target rules: they contained
+`Event.VisibleTo`, auto-registration, and expected-cursor append. Stages 1–2 of
+the cutover in [status.md](status.md) removed those behaviors rather than
+wrapping them.
 
 ## Application boundary
 
-Hosted control remains an application boundary around the Store. It resolves
-credentials to an already admitted Room/Actor and applies capabilities; it
-does not rewrite Event semantics. Membership is admitted explicitly and is the
-visibility boundary.
+Hosted control is a deferred application boundary around the Store (the
+implementation was deleted at the cutover; the design is recorded in
+[hosted-plan.md](hosted-plan.md)). When it returns, it resolves credentials to
+an already admitted Room/Actor and applies capabilities; it does not rewrite
+Event semantics. Membership is admitted explicitly and is the visibility
+boundary.
 
 Offline activation is a separate optional application component:
 
@@ -92,10 +95,10 @@ append or response shape, stale-write wire errors, or deprecated wait behavior.
 `internal/cli` exposes only the target common commands:
 
 ```text
-tearoom room init|info
+tearoom room init|join|members
 tearoom server start
-tearoom send <content>
-tearoom read [--after <event>] [--wait <duration>]
+tearoom send <content> [--to <member>]...
+tearoom read [--after e<seq>] [--limit <count>] [--wait <duration>]
 ```
 
 It owns formatting and invocation-local options, not shared invariants. The
@@ -110,8 +113,9 @@ After the cutover, the following must hold:
 1. `core` has no import path to persistence, transport, CLI, control, or
    activation.
 2. Both Stores satisfy one new interface and have no old/new reader or writer.
-3. Hosted authorization happens before Store access and never silently admits
-   an Actor.
+3. No Store operation silently admits an Actor: membership is explicit, and
+   authorization (today absent on loopback, in the future hosted login
+   identity) happens before Store access.
 4. Transport has one route/body/error vocabulary.
 5. CLI, skills, tests, demos, and docs use only the new command and Event
    vocabulary.
