@@ -1,9 +1,0 @@
-.git
-.gitignore
-bin
-*.db
-.tearoom
-docs
-scripts
-web
-node_modules
