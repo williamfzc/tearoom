@@ -1,10 +1,18 @@
-// Transport contract tests prove remote Store behavior matches local behavior.
+// Transport contract tests prove the HTTP surface against the new Room
+// contract: join, unjoined rejection, dense order, public To addressing, pure
+// reads, idempotent retry and conflict, invocation-scoped wait, the unified
+// error body, and rejection of the old append fields.
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,14 +22,14 @@ import (
 
 func newPair(t *testing.T) (*Client, *store.File) {
 	t.Helper()
-	st, err := store.Init(t.TempDir(), "test", store.BackendFile)
+	st, err := store.Init(t.TempDir(), store.BackendFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	file := st.(*store.File)
 	server := httptest.NewServer(NewServer(file).Handler())
 	t.Cleanup(server.Close)
-	return NewClient(server.URL, ""), file
+	return NewClient(server.URL), file
 }
 
 func TestClientSatisfiesStore(t *testing.T) {
@@ -29,168 +37,370 @@ func TestClientSatisfiesStore(t *testing.T) {
 	var _ core.Store = (*store.File)(nil)
 }
 
-func TestRoundTripAndVisibilityThroughHTTP(t *testing.T) {
+func TestRoomAndJoinThroughHTTP(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	for _, actor := range []string{"a", "b", "c"} {
-		if _, err := client.UpsertActor(ctx, actor, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	event, err := client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "private", To: []string{"b"}, Key: "one"})
+
+	room, err := client.Room(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if event.Seq != 1 {
-		t.Fatalf("seq = %d", event.Seq)
+	if room.ID == "" || room.Created.IsZero() {
+		t.Fatalf("room = %+v", room)
 	}
-	for _, actor := range []string{"a", "b"} {
-		feed, err := client.Read(ctx, actor, 0, 0)
-		if err != nil || len(feed.Events) != 1 {
-			t.Fatalf("%s feed = %+v, %v", actor, feed, err)
-		}
+
+	actor, err := client.AdmitActor(ctx, "planner")
+	if err != nil {
+		t.Fatal(err)
 	}
-	feed, err := client.Read(ctx, "c", 0, 0)
-	if err != nil || len(feed.Events) != 0 || feed.Cursor != 1 {
-		t.Fatalf("c feed = %+v, %v", feed, err)
+	if actor.ID != "planner" || actor.Joined.IsZero() {
+		t.Fatalf("actor = %+v", actor)
+	}
+	again, err := client.AdmitActor(ctx, "planner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ID != actor.ID || !again.Joined.Equal(actor.Joined) {
+		t.Fatalf("re-join changed the actor: %+v then %+v", actor, again)
+	}
+
+	actors, err := client.Actors(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actors) != 1 || actors[0].ID != "planner" {
+		t.Fatalf("actors = %+v", actors)
 	}
 }
 
-func TestStaleWriteSurvivesTheWire(t *testing.T) {
+func TestUnjoinedActorRejected(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	client.UpsertActor(ctx, "a", "")
-	client.UpsertActor(ctx, "b", "")
-	client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "first", Key: "one"})
-	_, err := client.AppendEvent(ctx, core.AppendInput{Actor: "b", Expected: 0, Type: "message", Body: "stale", Key: "two"})
-	if !errors.Is(err, core.ErrStaleWrite) || !errors.Is(err, core.ErrConflict) {
-		t.Fatalf("wire error = %v", err)
+	if _, err := client.Read(ctx, "stranger", 0, 0); !errors.Is(err, core.ErrUnknownActor) {
+		t.Fatalf("read error = %v, want %v", err, core.ErrUnknownActor)
 	}
-	var stale *core.StaleWriteError
-	if !errors.As(err, &stale) || stale.Actual != 1 {
-		t.Fatalf("typed stale error = %#v", err)
+	if _, err := client.Append(ctx, "stranger", core.AppendRequest{Content: json.RawMessage(`"hi"`)}); !errors.Is(err, core.ErrUnknownActor) {
+		t.Fatalf("append error = %v, want %v", err, core.ErrUnknownActor)
 	}
 }
 
-func TestLongPollReturnsWhenEventAppends(t *testing.T) {
+func TestDenseOrderAndPublicToOverHTTP(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	for _, actor := range []string{"a", "b"} {
-		if _, err := client.UpsertActor(ctx, actor, ""); err != nil {
+	for _, actor := range []string{"a", "b", "c"} {
+		if _, err := client.AdmitActor(ctx, actor); err != nil {
 			t.Fatal(err)
 		}
 	}
-	got := make(chan *core.Feed, 1)
+	if _, err := client.Append(ctx, "a", core.AppendRequest{To: []string{"b"}, Content: json.RawMessage(`{"plan":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Append(ctx, "b", core.AppendRequest{Content: json.RawMessage(`"ok"`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every member reads the same dense history.
+	for _, actor := range []string{"a", "b", "c"} {
+		events, err := client.Read(ctx, actor, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != 2 {
+			t.Fatalf("%s sees %d events, want 2", actor, len(events))
+		}
+		for i, event := range events {
+			if event.Seq != uint64(i+1) {
+				t.Fatalf("%s history not dense: event %d has seq %d", actor, i, event.Seq)
+			}
+		}
+	}
+
+	// To is public addressing: the event addressed to b is visible to c.
+	events, err := client.Read(ctx, "c", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(events[0].Content, json.RawMessage(`{"plan":1}`)) || len(events[0].To) != 1 || events[0].To[0] != "b" {
+		t.Fatalf("c missed the event addressed to b: %+v", events[0])
+	}
+}
+
+func TestPureReadsAndBoundariesOverHTTP(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 5; i++ {
+		if _, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(fmt.Sprintf(`"m%d"`, i))}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	after2, err := client.Read(ctx, "a", 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after2) != 3 || after2[0].Seq != 3 || after2[2].Seq != 5 {
+		t.Fatalf("read after 2 = %+v, want seqs 3..5", after2)
+	}
+	// Repeated reads are side-effect-free and return identical history.
+	again, err := client.Read(ctx, "a", 2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again) != 3 || again[0].Seq != 3 {
+		t.Fatalf("repeated read changed results: %+v", again)
+	}
+	limited, err := client.Read(ctx, "a", 1, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != 2 || limited[0].Seq != 2 || limited[1].Seq != 3 {
+		t.Fatalf("limited read = %+v, want seqs 2..3", limited)
+	}
+	tail, err := client.Read(ctx, "a", 5, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tail) != 0 {
+		t.Fatalf("read past the end = %+v", tail)
+	}
+}
+
+func TestIdempotentRetryAndConflictOverHTTP(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	first, err := client.Append(ctx, "a", core.AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := client.Append(ctx, "a", core.AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":1}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.Seq != first.Seq || !retry.At.Equal(first.At) || !bytes.Equal(retry.Content, first.Content) {
+		t.Fatalf("retry did not return the original event: first=%+v retry=%+v", first, retry)
+	}
+	// The retry created no new event.
+	events, err := client.Read(ctx, "a", 0, 0)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("events after retry = %+v, %v", events, err)
+	}
+
+	// Same key, different content: the conflict sentinel survives the wire.
+	if _, err := client.Append(ctx, "a", core.AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); !errors.Is(err, core.ErrConflict) {
+		t.Fatalf("conflict error = %v, want %v", err, core.ErrConflict)
+	}
+	// The key is scoped per actor: another actor may reuse it.
+	if _, err := client.AdmitActor(ctx, "b"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Append(ctx, "b", core.AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); err != nil {
+		t.Fatalf("key reuse by another actor: %v", err)
+	}
+	// No key: repeated appends produce distinct events.
+	e1, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"x"`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e2, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"x"`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e1.Seq == e2.Seq {
+		t.Fatalf("no-key appends collapsed into %d", e1.Seq)
+	}
+}
+
+func TestWaitReturnsWhenEventAppends(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	for _, actor := range []string{"a", "b"} {
+		if _, err := client.AdmitActor(ctx, actor); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := make(chan []core.Event, 1)
 	go func() {
-		feed, err := client.ReadWait(ctx, "b", 0, 0, 5*time.Second)
+		events, err := client.ReadWait(ctx, "b", 0, 0, 5*time.Second)
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		got <- feed
+		got <- events
 	}()
 	time.Sleep(150 * time.Millisecond)
-	if _, err := client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "wake", Key: "wake-key"}); err != nil {
+	if _, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"wake"`)}); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case feed := <-got:
-		if feed.Cursor != 1 || len(feed.Events) != 1 || feed.Events[0].Body != "wake" {
-			t.Fatalf("feed = %+v", feed)
+	case events := <-got:
+		if len(events) != 1 || events[0].Seq != 1 || !bytes.Equal(events[0].Content, json.RawMessage(`"wake"`)) {
+			t.Fatalf("events = %+v", events)
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("long-poll did not return after an append")
+	case <-time.After(5 * time.Second):
+		t.Fatal("wait did not return after an append")
 	}
 }
 
-func TestLongPollReturnsEmptyFeedAfterWait(t *testing.T) {
+func TestWaitTimesOutEmpty(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	if _, err := client.UpsertActor(ctx, "a", ""); err != nil {
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
 		t.Fatal(err)
 	}
 	before := time.Now()
-	feed, err := client.ReadWait(ctx, "a", 0, 0, 250*time.Millisecond)
+	events, err := client.ReadWait(ctx, "a", 0, 0, 2*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feed.Cursor != 0 || len(feed.Events) != 0 {
-		t.Fatalf("feed = %+v", feed)
+	if len(events) != 0 {
+		t.Fatalf("events = %+v, want none", events)
 	}
-	if elapsed := time.Since(before); elapsed < 200*time.Millisecond {
-		t.Fatalf("empty long-poll returned too early: %s", elapsed)
+	if elapsed := time.Since(before); elapsed < 1500*time.Millisecond {
+		t.Fatalf("empty wait returned too early: %s", elapsed)
 	}
 }
 
-func TestLongPollShortCircuitsOnAvailableEvents(t *testing.T) {
+func TestWaitShortCircuitsOnAvailableEvents(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	if _, err := client.UpsertActor(ctx, "a", ""); err != nil {
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "already", Key: "one"}); err != nil {
+	if _, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"already"`)}); err != nil {
 		t.Fatal(err)
 	}
 	before := time.Now()
-	feed, err := client.ReadWait(ctx, "a", 0, 0, 5*time.Second)
-	if err != nil || len(feed.Events) != 1 {
-		t.Fatalf("feed = %+v, err = %v", feed, err)
+	events, err := client.ReadWait(ctx, "a", 0, 0, 5*time.Second)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("events = %+v, err = %v", events, err)
 	}
 	if elapsed := time.Since(before); elapsed > time.Second {
 		t.Fatalf("short circuit took %s", elapsed)
 	}
 }
 
-func TestLongPollPicksUpOutOfBandAppend(t *testing.T) {
-	client, file := newPair(t)
+func TestAppendRejectsOldFields(t *testing.T) {
+	client, _ := newPair(t)
 	ctx := context.Background()
-	for _, actor := range []string{"a", "b"} {
-		if _, err := client.UpsertActor(ctx, actor, ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got := make(chan *core.Feed, 1)
-	go func() {
-		feed, err := client.ReadWait(ctx, "b", 0, 0, 4*time.Second)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		got <- feed
-	}()
-	time.Sleep(150 * time.Millisecond)
-	// A direct file append bypasses the server's broadcaster and is only
-	// observable through the idle fallback probe.
-	if _, err := file.AppendEvent(ctx, core.AppendInput{Actor: "a", Expected: 0, Type: "message", Body: "direct", Key: "direct-key"}); err != nil {
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case feed := <-got:
-		if len(feed.Events) != 1 || feed.Events[0].Body != "direct" {
-			t.Fatalf("feed = %+v", feed)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("long-poll missed an out-of-band append")
+	// The removed fields of the old wire format, plus idempotency_key, which
+	// belongs in the header only.
+	oldFields := []string{"actor", "expected", "type", "body", "data", "caused_by", "key", "id", "idempotency_key"}
+	for _, field := range oldFields {
+		t.Run(field, func(t *testing.T) {
+			body := fmt.Sprintf(`{"content":"\"x\"","%s":1}`, field)
+			request, err := http.NewRequest("POST", client.Base+"/api/events", strings.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			request.Header.Set(actorHeader, "a")
+			response, err := client.HTTP.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusBadRequest {
+				t.Fatalf("old field %q: status %d, want 400", field, response.StatusCode)
+			}
+			var envelope errorEnvelope
+			if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Error.Code != "invalid" {
+				t.Fatalf("old field %q: code %q, want invalid", field, envelope.Error.Code)
+			}
+		})
 	}
+}
+
+func TestStrictErrorBody(t *testing.T) {
+	client, _ := newPair(t)
+	ctx := context.Background()
+	if _, err := client.AdmitActor(ctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+
+	get := func(path, actor string) *http.Response {
+		t.Helper()
+		request, err := http.NewRequest(http.MethodGet, client.Base+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actor != "" {
+			request.Header.Set(actorHeader, actor)
+		}
+		response, err := client.HTTP.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response
+	}
+	check := func(response *http.Response, wantStatus int, wantCode string) {
+		t.Helper()
+		defer response.Body.Close()
+		if response.StatusCode != wantStatus {
+			t.Fatalf("status = %d, want %d", response.StatusCode, wantStatus)
+		}
+		var envelope errorEnvelope
+		if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Error.Code != wantCode || envelope.Error.Message == "" {
+			t.Fatalf("envelope = %+v, want code %q with a message", envelope, wantCode)
+		}
+	}
+
+	// Unknown actor: 401.
+	check(get("/api/events?after=0&limit=0", "stranger"), http.StatusUnauthorized, "unknown_actor")
+	// Missing actor header: 400.
+	check(get("/api/events?after=0&limit=0", ""), http.StatusBadRequest, "invalid")
+	// Malformed parameter: 400.
+	check(get("/api/events?after=nope", "a"), http.StatusBadRequest, "invalid")
+
+	// Malformed append body: 400.
+	request, _ := http.NewRequest(http.MethodPost, client.Base+"/api/events", strings.NewReader(`{"content":`))
+	request.Header.Set(actorHeader, "a")
+	response, err := client.HTTP.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(response, http.StatusBadRequest, "invalid")
+
+	// Wrong method: 405.
+	request, _ = http.NewRequest(http.MethodPost, client.Base+"/api/room", nil)
+	response, err = client.HTTP.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(response, http.StatusMethodNotAllowed, "method_not_allowed")
+
+	// Idempotency-key conflict: 409, reserved for conflict only.
+	if _, err := client.Append(ctx, "a", core.AppendRequest{IdempotencyKey: "k", Content: json.RawMessage(`"once"`)}); err != nil {
+		t.Fatal(err)
+	}
+	request, _ = http.NewRequest(http.MethodPost, client.Base+"/api/events", strings.NewReader(`{"content":"\"twice\""}`))
+	request.Header.Set(actorHeader, "a")
+	request.Header.Set(idempotencyHeader, "k")
+	response, err = client.HTTP.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(response, http.StatusConflict, "conflict")
 }
 
 func TestUnreachableServerFailsLoudly(t *testing.T) {
-	client := NewClient("http://127.0.0.1:1", "")
+	client := NewClient("http://127.0.0.1:1")
 	client.HTTP.Timeout = 100 * time.Millisecond
 	_, err := client.Room(context.Background())
-	if err == nil || !contains(err.Error(), "unreachable") {
+	if err == nil || !strings.Contains(err.Error(), "unreachable") {
 		t.Fatalf("error = %v", err)
 	}
-}
-
-func contains(value, part string) bool {
-	return len(value) >= len(part) && (value == part || containsAt(value, part))
-}
-func containsAt(value, part string) bool {
-	for i := 0; i+len(part) <= len(value); i++ {
-		if value[i:i+len(part)] == part {
-			return true
-		}
-	}
-	return false
 }
