@@ -53,7 +53,7 @@ func Init(root string) (*Store, error) {
 	if err := Migrate(db); err != nil {
 		return nil, err
 	}
-	s := &Store{root: root, db: db, roomID: filepath.Base(filepath.Dir(root)), now: time.Now}
+	s := &Store{root: root, db: db, roomID: roomIDFor(root), now: time.Now}
 	room := core.Room{ID: s.roomID, Created: s.now().UTC()}
 	if err := db.Create(&RoomRow{ID: room.ID, CreatedAt: room.Created, Head: 0}).Error; err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func Open(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{root: root, db: db, now: time.Now}
+	s := &Store{root: root, db: db, roomID: roomIDFor(root), now: time.Now}
 	if err := s.gate(context.Background()); err != nil {
 		return nil, err
 	}
@@ -88,6 +88,13 @@ func Open(root string) (*Store, error) {
 
 func openSQLite(path string) (*gorm.DB, error) {
 	return gorm.Open(sqlite.Open("file:"+path+dsnPragmas), &gorm.Config{})
+}
+
+// roomIDFor derives the Room identity of a .tearoom root from the directory
+// that owns it, exactly like the file backend, so both backends answer the
+// same identity for one workspace.
+func roomIDFor(root string) string {
+	return filepath.Base(filepath.Dir(root))
 }
 
 // OpenPostgres opens a PostgreSQL connection by DSN for the gated battery.
