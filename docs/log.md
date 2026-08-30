@@ -8,6 +8,19 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-08-30 — Record the P0 cutover execution contract
+
+The clean break is now executable from one document:
+[operations/p0-room-cutover.md](operations/p0-room-cutover.md). It fixes the
+target Store/CLI/HTTP contract, the Luna A/B/C wave ownership, the integration
+order, the test loop, and the deletion manifest. Two decisions were locked
+during review: the shell smokes (`pg-smoke.sh`, `smoke-sqlite.sh` included)
+are deleted rather than rewritten — PostgreSQL validation lives in the gated Go
+battery and SQLite is covered by the `target-room` evaluation — and
+`architecture/status.md` itself is rewritten at cutover, because the hosted
+implementation is deleted (not adapted) while the hosted product design stays
+as a deferred, login-identity-based future.
+
 ## 2026-08-30 — Choose a clean-break implementation migration
 
 The adopted Room/Event model will replace the pre-convergence implementation

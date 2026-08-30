@@ -21,6 +21,7 @@ deleted at the P0 clean break.
 | [building.md](building.md) | Build targets, the test suites, and two toolchain traps |
 | [serving.md](serving.md) | Running the server and pointing Actors at one Room |
 | [deploy.md](deploy.md) | Deploying the hosted server free: Render + Neon |
+| [p0-room-cutover.md](p0-room-cutover.md) | The executable P0 clean-break cutover contract |
 
 ## The one thing to remember
 
