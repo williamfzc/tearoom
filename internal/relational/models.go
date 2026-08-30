@@ -1,80 +1,80 @@
-// GORM models for the relational Store. These are persistence records, not
-// product entities: nothing outside this package may treat them as domain
-// types, and the canonical vocabulary remains core.Store.
+// Persistence records for the relational Store: the durable shape of a Room,
+// its Actors, its Events, the per-request idempotency ledger, and the format
+// marker. These are storage rows, not domain types; the canonical vocabulary
+// remains core.Store.
 package relational
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
-// DefaultRoomID is the Room id a local .tearoom owns, matching the file
-// backend's room id so both backends answer the same identity for one
-// workspace. Hosted Rooms use ids chosen by the control plane.
-const DefaultRoomID = "room"
+// Table names are the relational shape of record, not GORM's pluralized model
+// names.
+func (RoomRow) TableName() string        { return "rooms" }
+func (ActorRow) TableName() string       { return "actors" }
+func (EventRow) TableName() string       { return "events" }
+func (IdempotencyRow) TableName() string { return "append_idempotency" }
+func (MetaRow) TableName() string        { return "meta" }
 
-// Table names are the relational shape of record, not GORM's pluralized
-// model names.
-func (RoomRow) TableName() string  { return "rooms" }
-func (ActorRow) TableName() string { return "actors" }
-func (EventRow) TableName() string { return "events" }
-
-// RoomRow is the durable Room identity and its sequence head.
+// RoomRow is the durable Room identity and its dense sequence head. The head
+// is only ever advanced by an append transaction that holds the row lock.
 type RoomRow struct {
 	ID        string    `gorm:"primaryKey;size:64"`
-	Name      string    `gorm:"not null"`
 	CreatedAt time.Time `gorm:"not null"`
 	Head      uint64    `gorm:"not null"`
 }
 
-// ActorRow is one stable participant of a Room.
+// ActorRow is one explicitly admitted participant of a Room.
 type ActorRow struct {
-	RoomID     string    `gorm:"primaryKey;size:64"`
-	ID         string    `gorm:"primaryKey;size:255"`
-	Role       string    `gorm:"not null"`
-	JoinedAt   time.Time `gorm:"not null"`
-	LastSeenAt time.Time `gorm:"not null"`
+	RoomID   string    `gorm:"primaryKey;size:64"`
+	ID       string    `gorm:"primaryKey;size:255"`
+	JoinedAt time.Time `gorm:"not null"`
 }
 
-// EventRow is one immutable fact. Recipients holds the canonical sorted
-// comma-joined form (core.NormalizeRecipients); Data holds JSON text or "".
+// EventRow is one immutable contribution. To holds the canonical JSON array
+// form of core.NormalizeTo; Content holds compacted JSON text.
 type EventRow struct {
-	RoomID     string    `gorm:"primaryKey;size:64;uniqueIndex:idx_room_key"`
-	Seq        uint64    `gorm:"primaryKey"`
-	ID         string    `gorm:"not null;size:64"`
-	Actor      string    `gorm:"not null"`
-	At         time.Time `gorm:"not null"`
-	Type       string    `gorm:"not null"`
-	Body       string    `gorm:"not null"`
-	Data       string    `gorm:"not null"`
-	Recipients string    `gorm:"not null"`
-	CausedBy   string    `gorm:"not null"`
-	Key        string    `gorm:"not null;size:255;uniqueIndex:idx_room_key"`
+	RoomID  string    `gorm:"primaryKey;size:64"`
+	Seq     uint64    `gorm:"primaryKey"`
+	Actor   string    `gorm:"not null"`
+	At      time.Time `gorm:"not null"`
+	To      string    `gorm:"not null"`
+	Content string    `gorm:"not null"`
 }
 
+// IdempotencyRow records one (room, actor, key) idempotency ledger entry: the
+// fingerprint of the original request and the sequence of the Event it
+// created, which answers retries with the original Event. It is never exposed
+// as an Event field.
+type IdempotencyRow struct {
+	RoomID      string `gorm:"primaryKey;size:64"`
+	Actor       string `gorm:"primaryKey;size:255"`
+	Key         string `gorm:"primaryKey;size:255"`
+	Fingerprint []byte `gorm:"not null"`
+	EventSeq    uint64 `gorm:"not null"`
+}
+
+// MetaRow is the format marker: one key/value row records the database layout
+// format. Databases without the marker are refused on open.
+type MetaRow struct {
+	Key   string `gorm:"primaryKey;size:64"`
+	Value string `gorm:"not null"`
+}
+
+// coreEvent converts a stored row back into the domain Event. The To column
+// is JSON we wrote ourselves, so an unmarshal failure can only mean file
+// corruption; the empty list is the safe reading.
 func (r EventRow) coreEvent() core.Event {
-	var data json.RawMessage
-	if r.Data != "" {
-		data = json.RawMessage(r.Data)
-	}
 	var to []string
-	if r.Recipients != "" {
-		to = strings.Split(r.Recipients, ",")
-	}
+	_ = json.Unmarshal([]byte(r.To), &to)
 	return core.Event{
-		ID:       r.ID,
-		Room:     r.RoomID,
-		Seq:      r.Seq,
-		Actor:    r.Actor,
-		At:       r.At,
-		Type:     r.Type,
-		Body:     r.Body,
-		Data:     data,
-		To:       to,
-		CausedBy: r.CausedBy,
-		Key:      r.Key,
+		Seq:     r.Seq,
+		Actor:   r.Actor,
+		At:      r.At,
+		To:      to,
+		Content: json.RawMessage(r.Content),
 	}
 }

@@ -1,64 +1,63 @@
-// Versioned schema migrations. Every new schema change is appended here with
-// its own version, never edited in place, so a Room created by an older
-// binary upgrades forward when a newer binary opens it.
+// The format gate and schema creation. A database created before the cutover
+// carries no format marker; opening it is refused with a clear incompatible
+// error, because there is no import or automatic upgrade. Schema creation is
+// idempotent, so shared databases may run it on every open.
 package relational
 
 import (
 	"context"
 	"fmt"
-	"time"
+	"strconv"
 
 	"gorm.io/gorm"
 )
 
-// schemaVersion records which migrations a database has already applied.
-type schemaVersion struct {
-	Version   int       `gorm:"primaryKey"`
-	AppliedAt time.Time `gorm:"not null"`
-}
+// formatVersion is the only database layout accepted: the cutover Room model
+// with the append_idempotency ledger and the meta format marker. Any other
+// layout is refused on open.
+const formatVersion = 2
 
-func (schemaVersion) TableName() string { return "schema_versions" }
+// formatKey names the meta row that records the layout format.
+const formatKey = "format"
 
-var migrations = []struct {
-	version int
-	run     func(*gorm.DB) error
-}{
-	{1, func(db *gorm.DB) error {
-		return db.AutoMigrate(&RoomRow{}, &ActorRow{}, &EventRow{})
-	}},
-}
-
-// Migrate upgrades a database to the current coordination schema. Shared
-// databases (the hosted control plane) call this directly on open; local
-// Stores run it through migrate.
+// Migrate creates the format-2 schema on an existing connection: the five
+// tables and the format marker. It is idempotent and safe to run on every
+// open; the format gate in Store.Open runs first, so old databases are
+// refused before any schema statement touches them.
 func Migrate(db *gorm.DB) error {
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&schemaVersion{}); err != nil {
-			return err
-		}
-		var applied []int
-		if err := tx.Model(&schemaVersion{}).Pluck("version", &applied).Error; err != nil {
-			return err
-		}
-		done := make(map[int]bool, len(applied))
-		for _, version := range applied {
-			done[version] = true
-		}
-		for _, m := range migrations {
-			if done[m.version] {
-				continue
-			}
-			if err := m.run(tx); err != nil {
-				return fmt.Errorf("migration %d: %w", m.version, err)
-			}
-			if err := tx.Create(&schemaVersion{Version: m.version, AppliedAt: time.Now().UTC()}).Error; err != nil {
-				return err
-			}
-		}
+	if err := db.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}); err != nil {
+		return err
+	}
+	var marker MetaRow
+	if err := db.Where("key = ?", formatKey).Limit(1).Find(&marker).Error; err != nil {
+		return err
+	}
+	if marker.Key != "" {
 		return nil
-	})
+	}
+	return db.Create(&MetaRow{Key: formatKey, Value: strconv.Itoa(formatVersion)}).Error
 }
 
-func (s *Store) migrate(ctx context.Context) error {
-	return Migrate(s.db.WithContext(ctx))
+// gate refuses a database that predates the cutover. The marker table is the
+// only accepted signature: databases without it — old schema_versions layouts
+// or unrecognized shapes — are never read, migrated, or reused.
+func (s *Store) gate(ctx context.Context) error {
+	if !s.db.Migrator().HasTable(&MetaRow{}) {
+		return fmt.Errorf(
+			"incompatible database at %s: missing the format-%d marker (pre-cutover layout); no automatic upgrade",
+			s.root, formatVersion,
+		)
+	}
+	var marker MetaRow
+	if err := s.db.WithContext(ctx).Where("key = ?", formatKey).Limit(1).Find(&marker).Error; err != nil {
+		return err
+	}
+	want := strconv.Itoa(formatVersion)
+	if marker.Key == "" || marker.Value != want {
+		return fmt.Errorf(
+			"incompatible database at %s: format %q, want %q; no automatic upgrade",
+			s.root, marker.Value, want,
+		)
+	}
+	return nil
 }
