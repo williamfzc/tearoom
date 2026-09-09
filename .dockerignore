@@ -1,0 +1,7 @@
+# Build context: the module sources only. Keep artifacts, state, and history
+# out of the image.
+.git
+bin
+dist
+.tearoom
+*.md

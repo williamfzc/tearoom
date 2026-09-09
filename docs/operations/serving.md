@@ -75,3 +75,23 @@ Rollback uses the previous release with its data snapshot; the deployment
 database carries the format marker, and incompatible layouts are refused, not
 upgraded. See [the HTTP API](../reference/http-api.md) for the wire contract
 and [status.md](../architecture/status.md) for implementation state.
+
+## Deploy to Render (blueprint)
+
+The repository carries the deployment files: a multi-stage `Dockerfile`
+(static binary into alpine with CA certificates for Neon TLS, non-root user,
+binds `0.0.0.0:$PORT`) and a `render.yaml` blueprint that generates the owner
+token. Deploying re-adopts them against the current contract:
+
+1. Create a Neon database and copy its pooled DSN.
+2. In Render, create a **Blueprint** from this repository; when prompted,
+   paste the DSN as `TEAROOM_DSN` (`TEAROOM_OWNER_TOKEN` is generated).
+3. Render builds the image and serves `https://<service>.onrender.com` —
+   platform TLS terminates in front of the service.
+4. Verify with the owner token:
+   `TEAROOM_SERVER=https://<service>.onrender.com TEAROOM_TOKEN=<owner-token> tearoom room init --server https://<service>.onrender.com --as planner`
+
+Operational notes from the previous hosted deployment (2026-08-29,
+[../log.md](../log.md)): the platform requires a payment method on file even
+for free services, and Neon's pooled DSN plus auto-suspend behavior is the
+known-good pairing.
