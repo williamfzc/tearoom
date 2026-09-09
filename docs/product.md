@@ -8,16 +8,15 @@ timestamp: 2026-08-30
 
 # Product definition
 
-This document is the only authority for product scope. The design reasoning is
-recorded in [the model rationale](architecture/model-discussion.md), the code
-gap in [status.md](architecture/status.md), executable proof in
-[evaluations.md](evaluations.md), and target interfaces under
-[reference/](reference/index.md). Historical behavior does not redefine this
-document.
+This document is the only authority for product scope. The code gap is in
+[status.md](architecture/status.md), executable proof in
+[evaluations.md](evaluations.md), target interfaces under
+[reference/](reference/index.md), and dated decisions in
+[log.md](log.md). Historical behavior does not redefine this document.
 
 ## One sentence
 
-**Tearoom is a durable shared Room where people, Agents, and tools contribute to one ordered, replayable history; an optional activation layer lets absent Agents return and continue the collaboration.**
+**Tearoom is a durable shared Room where people, Agents, and tools contribute to one ordered, replayable history; a context link carries that history anywhere — a human opens the replay, and an absent Agent reads it and continues.**
 
 ## The three entities
 
@@ -60,7 +59,7 @@ The collaboration kernel is intentionally small:
 | Visibility | Room membership exposes complete history; `to` is public addressing |
 | Event minimum | `seq`, `actor`, `at`, optional `to`, and `content` |
 | Append freshness | Ordinary append is independent of read progress; conditional append is explicit if later proven |
-| Activation | Optional application capability above Room; never required for a valid Room |
+| Delivery | A paste, a context link, or an operator-owned external script; no in-product wake control plane (adjudicated 2026-09-09) |
 
 The implementation may lag this contract, but no public or internal interface
 may treat the older model as a second supported product.
@@ -87,11 +86,45 @@ Tearoom has one coordination contract and two product forms:
 
 Hosted Tearoom is a deferred future phase: the hosted implementation was
 deleted at the P0 clean break, and the design now stands on a user login
-identity rather than Actor-as-secret (see
-[architecture/hosted-plan.md](architecture/hosted-plan.md)). Hosted Tearoom
-does not replace the local product or create a second Event model. Both forms
+identity rather than Actor-as-secret. Hosted Tearoom does not replace the
+local product or create a second Event model. Both forms
 should use the same Room, Actor, Event, addressing, ordering, and read
 semantics.
+
+The first hosted slice is the **context link** (below). It needs no account
+system, and it is the door through which the full hosted phase grows.
+
+## The context link
+
+A context link turns a caller-chosen Room range into one pasteable URL with
+two faces: a human opens it and sees the replay — actors, order, events — and
+an agent fetches it and reads the same history as text or JSONL with no
+Tearoom install. The link is a caller-owned read boundary plus transport, the
+same boundary `read --after` already takes. It is a projection, not a fourth
+kernel entity, and it carries a reference to Events, never a second copy of
+collaboration truth.
+
+The slice grows in three tiers:
+
+1. **Snapshot link.** A content-addressed, immutable export of one Room
+   range, resolved from object storage. Publishing is explicit: creating a
+   link releases that range from the Room's membership boundary to whoever
+   holds the URL — the same act as pasting into a chat.
+2. **Continuation room.** The link gains a write face: a scoped, revocable
+   append credential to a hosted Room created from the snapshot, under the
+   same Room/Actor/Event contract. Guest admission is explicit, and a shared
+   capability names but does not prove its Actor — identity is weaker than a
+   locally admitted Actor, and the link view must say so.
+3. **Full hosted phase.** The login-identity journey below, with
+   organizations, credentials, and revocation.
+
+Collaboration continues across a link by a fork chain: import the snapshot
+into a Room, work, and share a new link. A chat thread carrying that sequence
+of links is a transport, not a Room: chat messages never become Events, and no
+chat application becomes a coordination surface of this product. The context
+budget stays with the receiver — the link encodes its boundary, and full-range
+reads cost what [lessons/rival-falsification.md](lessons/rival-falsification.md)
+measured (about 93,000 tokens per 2,000 Events).
 
 ## Hosted user journey
 
@@ -125,7 +158,7 @@ The relational Store was added beside the file Store. Either backend may be
 rewritten or removed during the clean break when that yields the smaller honest
 product; no pre-adoption storage format is promised compatibility.
 
-The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md), and hosted identity is in [domain/hosted-identity.md](domain/hosted-identity.md).
+The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md).
 
 ## What it enables
 
@@ -135,6 +168,8 @@ The core does not know these applications, but it can carry them:
 - task claims and progress reports;
 - review and approval protocols;
 - harness workflows in which a planner, a generator, and an evaluator run a plan/generate/evaluate loop over one Room ([domain/harness-workflow.md](domain/harness-workflow.md));
+- context links that carry a handoff into a chat thread — a colleague opens
+  the replay, and their agent reads and continues the work;
 - group chat and addressed messages;
 - games such as Werewolf, with private roles represented by separate Rooms when privacy is required;
 - any other protocol expressible as ordered facts among stable actors.
@@ -146,7 +181,15 @@ The core does not know these applications, but it can carry them:
 - No browser or WebAssembly console in the current product; a hosted management interface may be added when the SaaS control plane exists.
 - No hidden compatibility model beside Room, Actor, and Event.
 - No hidden read checkpoint, unread state, or mandatory stale-write precondition in the kernel.
-- No claim that `to` is security or process activation; authentication and activation are separate layers.
+- No claim that `to` is security or process activation; authentication and delivery are separate layers.
+- No in-product wake control plane: delivery to an absent Agent is a paste, a
+  context link, or an operator-owned external script
+  ([lessons/rival-falsification.md](lessons/rival-falsification.md)); this
+  repository ships no daemon, ledger, or launcher. Reopen only if
+  paste-forwarded handoffs demonstrably fail a real workflow that unattended
+  wake would serve — and then as an external operator tool first.
+- No chat application as a Room: messages forwarded through IM transport
+  links; they never become Events and never gain coordination authority.
 
 ## Competitive context
 
@@ -193,7 +236,8 @@ Tearoom is working only when all of the following are executable tests:
 - Every Room member can inspect the same complete Event history; `to` remains
   visible addressing rather than filtering.
 - The shipped `tearoom` binary performs the target send/read journey without a
-  browser component. Offline activation is a separate optional proof.
+  browser component. Delivery to an absent agent is a paste or an external
+  operator script; no in-product wake runtime is claimed.
 
 The cutover deletion manifest is tracked only in
 [status.md](architecture/status.md). Completion claims come only from the

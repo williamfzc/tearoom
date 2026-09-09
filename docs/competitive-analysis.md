@@ -1,7 +1,7 @@
 ---
 type: product
 title: Competitive analysis
-description: Evidence-based 2026 comparison of the minimum Room/Event model, optional offline activation, and replayable human-Agent collaboration.
+description: Evidence-based 2026 comparison of the minimum Room/Event model, context-link delivery, and replayable human-Agent collaboration.
 tags: [product, market, competition, priorities]
 timestamp: 2026-08-30
 ---
@@ -18,7 +18,7 @@ battery and the target evaluations recorded in
 | Hypothesis | Product promise | Competitive reading |
 |---|---|---|
 | A | Durable shared Room with `send` and `read` | Table stakes; many systems already persist messages or Events |
-| B | Optional activation of an offline Agent | Promising only when activation is cross-product, durable, and restart-safe |
+| B | Delivery to an offline Agent, now as a context link | A neutral link below the protocol layer is the open gap; wake services are commodity |
 | C | Replayable human-Agent collaboration | Valuable audit layer, but a crowded and expensive workspace category |
 
 ## A: durable shared Room
@@ -78,7 +78,8 @@ a copied transcript. Delivery is at-least-once, and read/completion state must
 not be inferred from a wake attempt. This is the precise place where Tearoom
 could migrate users from chat, queues, or workflow engines: it joins their
 strengths without pretending that a queue acknowledgement is collaboration
-success.
+success. The measured outcome — an external rival matched an in-product wake
+service — moved this delivery role to the [context link](#context-links-as-the-share-surface).
 
 ## C: replayable human-Agent collaboration
 
@@ -108,30 +109,72 @@ Building the full workspace, file editor, CRDT, permissions, and artifact
 system before proving that replay changes a real workflow would make Tearoom
 compete on the most expensive surface.
 
+## Context links as the share surface
+
+The delivery answer to B is no longer a wake service — the 2026-09-02
+falsification retired that — but a **context link**: a content-addressed,
+immutable snapshot of a Room range, at one URL that resolves on two faces. A
+human opens the replay view; an agent fetches plain text or JSONL with no
+Tearoom install. Continuation is a fork chain, later a hosted continuation
+room with a scoped append credential. A chat thread carrying the links
+(Feishu, Slack, WeCom) is a transport, never a Room.
+
+Existing share surfaces are all product-bound:
+
+- ChatGPT and Claude conversation-share links, and Devin or Codex cloud
+  session URLs, render one vendor's session for a human viewer; an agent from
+  another product cannot resolve them;
+- LangSmith- and Braintrust-style trace links lock the receiver to one
+  observability vendor and one runtime;
+- A2A Agent Cards are discovery URLs for registered agents, not context
+  transport, and A2A Tasks standardize delegation, not a shared history;
+- gists and pastebins carry content without actors, order, or addressing.
+
+Protocol-layer consolidation raises the cost of competing above this layer.
+A2A surpassed 150 organizations and entered enterprise production in its first
+year ([Linux Foundation](https://www.linuxfoundation.org/press/a2a-protocol-surpasses-150-organizations-lands-in-major-cloud-platforms-and-sees-enterprise-production-use-in-first-year)),
+and on 2026-08-17 A2A joined the Agentic AI Foundation alongside MCP — the
+"agent protocol wars" consolidation. A private coordination protocol is now a
+liability, exactly as feared. But a **neutral context link is below that
+layer**: it works for unregistered humans and agents with zero setup, which
+registered task protocols do not serve. The gap — cross-product,
+agent-native, structured (actors, order, addressing) context transport — is
+unclaimed as of 2026-09-09.
+
+The distribution mechanism is the point: chat groups are where collaborators
+already are, and every paste is an adoption event. This is the wedge by which
+the Room's coordination record travels, and the route by which hosted
+Tearoom grows its first slice before any account machinery exists.
+
 ## Position and migration reasons
 
-The most credible position is **B plus a thin C**:
+The most credible position, updated 2026-09-09 after the activation
+falsification, is **the pasteable context link over a thin replay**:
 
-> An offline-safe addressed Agent Inbox: a durable Room/Event history, stable
-> Actor identity, optional activation adapters, and human replay of the exact
-> handoff.
+> A neutral context link: a durable Room/Event history, stable Actor identity,
+> and one URL that a human opens as a replay and an agent reads to continue —
+> shared through the chat tools people already use.
 
 This gives each substitute a specific migration reason:
 
 - from Slack, Discord, Matrix, or Mattermost: agent-native addressing,
-  explicit delivery/recovery, and no dependency on a chat bot's session;
-- from MCP Agent Mail or aweb: a smaller, portable Event kernel whose optional
-  launcher is separated from storage and whose replay record can be exported;
+  context that travels as a link rather than through a chat bot's session;
+- from MCP Agent Mail or aweb: a smaller, portable Event kernel whose delivery
+  is a paste rather than a wake service, and whose replay record can be
+  exported;
 - from Temporal, Restate, or NATS: human-readable shared history and stable
   Agent identity rather than only workflow or consumer state;
+- from vendor share links (ChatGPT, Claude, Devin, Codex, LangSmith):
+  cross-product resolution and an agent-native read face;
 - from GitHub, Tutti, Claude Teams, or Codex: product-neutral ownership of the
   collaboration record, without requiring one hosted coding workspace.
 
 These are hypotheses, not demonstrated advantages. The first bake-off should
-run the same offline → wake → crash → restart → response → human replay journey
-through Tearoom, aweb, Agent Room, A2A push, and one durable execution system.
-Measure lost Events, duplicate attempts, recovery latency, operator setup, and
-whether a human can reconstruct the handoff without vendor-specific logs.
+run the same handoff journey — including the offline case now served by
+paste — through Tearoom, aweb, Agent Room, A2A push, and one durable
+execution system. Measure lost Events, duplicate attempts, recovery latency,
+operator setup, and whether a human can reconstruct the handoff without
+vendor-specific logs.
 
 ## Moat and falsification
 
@@ -146,14 +189,24 @@ The thesis is falsified if any of these hold:
 
 1. users accept a single vendor's hosted Agent workspace and do not need a
    neutral coordination layer;
-2. local process wake-up is too risky or unreliable to enable in practice;
+2. local process wake-up is too risky or unreliable to enable in practice —
+   **answered 2026-09-02: wake-up is trivial outside the product; the
+   in-product version was retired**;
 3. aweb or Agent Room already passes the same heterogeneous offline journey;
 4. people want task assignment or PR review but do not value replay;
-5. A2A/MCP quickly provide the needed delivery and recovery contract;
-6. C expands into a workspace project whose cost exceeds the value of B.
+5. A2A/MCP quickly provide the needed delivery and recovery contract —
+   **partially materialized: A2A entered the Agentic AI Foundation alongside
+   MCP on 2026-08-17, which is why the context link is deliberately placed
+   below the protocol layer rather than beside it**;
+6. C expands into a workspace project whose cost exceeds the value of B;
+7. real agent handoffs stay inside a single agent product, so vendor share
+   links suffice and no neutral link is needed;
+8. receivers of shared context only view it and never continue, so the link
+   degenerates into a screenshot rather than a coordination surface.
 
-Until the first bake-off passes, Tearoom should claim durable collaboration
-records, not a demonstrated offline activation runtime.
+Until the S9 link journey and the bake-off pass, Tearoom should claim a
+durable collaboration record and a link format, not a demonstrated adoption
+surface.
 
 ## Primary sources
 
@@ -163,6 +216,7 @@ records, not a demonstrated offline activation runtime.
 - [Agent Room](https://github.com/agent-room-alkl/agent-room)
 - [Tutti](https://github.com/tutti-os/tutti)
 - [A2A specification](https://github.com/a2aproject/A2A/blob/main/docs/specification.md)
+- [A2A joins the Agentic AI Foundation — Linux Foundation](https://www.linuxfoundation.org/press/a2a-protocol-surpasses-150-organizations-lands-in-major-cloud-platforms-and-sees-enterprise-production-use-in-first-year)
 - [MCP Tasks](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks)
 - [Temporal Workflows](https://docs.temporal.io/workflows)
 - [Restate Workflows](https://docs.restate.dev/tour/workflows)

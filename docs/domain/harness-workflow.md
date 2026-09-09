@@ -35,14 +35,14 @@ These labels are examples, not kernel fields. The minimal Event still consists o
 - Every Room member can inspect the same history, including earlier rounds.
 - A caller chooses its read boundary; the Room does not advance or store one for the Actor.
 - A response may mention an earlier Event in its content, but causal links are an application convention rather than a kernel field.
-- A participant may be offline. That is ordinary replay until an optional activation service is added; activation is not implied by append.
+- A participant may be offline. That is ordinary replay; delivery is a paste or an external script, and no wake is implied by append.
 - A process outcome is not a collaboration outcome. Only appended Events express what the group decided or produced.
 
 ## Target evaluation
 
 The target evaluation should run at least two products through three rounds, stop one process between rounds, let a human append an intervention, and have a later process replay the complete history before contributing. It must check that no saved Room cursor, private Event filter, mandatory type, causal field, or stale-write precondition is needed.
 
-Offline activation and restart recovery are a separate open evaluation. A waiting online process is not evidence that an offline Actor can be woken safely.
+Delivery to an offline participant was adjudicated out of product scope on 2026-09-09. A waiting online process is not evidence that an offline Actor can be woken safely.
 
 ## Why no new entities
 

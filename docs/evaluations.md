@@ -8,9 +8,9 @@ timestamp: 2026-08-30
 
 # Evaluation set
 
-This registry is the target contract in [model-discussion.md](architecture/model-discussion.md). `open` means the target story has not passed its evaluation; `proven` is reserved for an executable target-aligned evaluation; `deferred` is outside the current product. Evaluation statuses are `planned` and `shipped`.
+This registry is the target contract in [product.md](product.md). `open` means the target story has not passed its evaluation; `proven` is reserved for an executable target-aligned evaluation; `deferred` is outside the current product. Evaluation statuses are `planned` and `shipped`.
 
-The product advances through four gates. A later gate cannot repair a failed earlier contract. Activation is optional: failure at its gate leaves the Room and handoff product valid, but removes the claim that Tearoom can wake offline Agents.
+The product advances through four gates, of which P2 has been retired out of scope (2026-09-09, below); no later gate may depend on it. Delivery to an absent Agent is a paste, a context link, or an operator-owned external script, so an unimplemented wake service invalidates nothing.
 
 ## Staged gates
 
@@ -49,42 +49,29 @@ Executable acceptance:
 
 Go/no-go: go when the journey works without an orchestrator-specific transcript or manual relay. No-go if an ordinary shared workspace, PR thread, or IM channel gives the same recovery and intervention behavior with less setup.
 
-### P2 — Optional offline activation
+### P2 — Optional offline activation (out of scope since 2026-09-09)
 
-Story: S4. Evaluation: E5.
+Retired, not failed. The shared-file rival reached usable at-least-once
+activation in about sixty lines of external shell
+([lessons/rival-falsification.md](lessons/rival-falsification.md)), so the
+wake control plane was adjudicated out of product scope: story S4 is
+`deferred`, evaluation E5 is removed, and the refusal with its reopening
+condition lives in [product.md](product.md).
+Delivery is a paste, a context link (S9), or an operator-owned external
+script. Nothing in P1 or P3 depends on this gate.
 
-Entry conditions: P1 passes; a concrete offline-Actor journey justifies process
-wake; and the launcher, policy, retry, fencing, and duplicate-handling contracts
-in [activation.md](architecture/activation.md) are accepted.
+### P3 — Second-domain stress test, the context link, and hosted hardening
 
-Executable acceptance:
+Stories: S5, S6, S8, S9. Evaluations: E6, E7, E8.
 
-1. Bob is a Room member with no running process.
-2. An allowed Event addressed to Bob creates durable activation work without copying the Event body into a command.
-3. A daemon claims the work, starts or resumes Bob, and passes an Event reference; Bob reads the Room and appends a response.
-4. Killing and restarting the daemon preserves the opportunity, and retries do not create duplicate collaboration Events.
-5. An Event ignored by policy does not start a process.
-6. A retryable failure succeeds within its bound, while an exhausted retry
-   budget produces visible `dead` operational state instead of an infinite loop
-   or a false collaboration result.
-
-Go/no-go: go only if activation has bounded at-least-once attempts, is
-restart-safe, and is materially better than manual launch or ordinary polling
-at measured cost. No-go means keep activation out of the product claim; it must
-not invalidate P0 or P1, and it must not turn the Room into a general scheduler
-or queue.
-
-### P3 — Second-domain stress test and hosted hardening
-
-Stories: S5, S6, S8. Evaluations: E6, E7.
-
-Entry conditions: P1 passes. P2 is required only if the chosen second-domain journey depends on offline wake; otherwise it remains optional. Hosted hardening must have a real owner and membership requirement.
+Entry conditions: P1 passes. P2 is out of scope: no second-domain journey may depend on an in-product wake service. Hosted hardening must have a real owner and membership requirement.
 
 Executable acceptance:
 
 1. A public-only Werewolf round uses one Room for referee, player actions, and spectator replay. The evaluation must state that secret roles are impossible in one Room; private state requires another Room or an external authority. This is a stress test, not the market thesis.
 2. Hosted identity creates a Room, issues separate scoped credentials to stable Actors, and revokes one without changing the Room or other Actors.
 3. Organization membership rejects an unrelated account from discovery and read, if and only if organization ownership is in scope.
+4. A context link created from a Room range resolves read-only for a human (replay view) and as text for an agent with no Tearoom install; a continuation room created from a snapshot preserves the Room/Actor/Event contract; the chat thread carries links and never becomes Event state.
 
 Go/no-go: go when the second domain works without adding game entities or hidden privacy semantics to the kernel, and hosted controls preserve stable Actor identity. No-go if game fairness, secret state, money, or organization policy requires a separate authoritative server; keep that capability outside Tearoom.
 
@@ -94,26 +81,28 @@ Go/no-go: go when the second domain works without adding game entities or hidden
 |---|---|---|---|---|
 | S1 | Members of one Room append and read one complete, ordered, durable history across processes and sessions | proven | P0 | [product.md](product.md) |
 | S2 | Agents from different products complete a multi-round handoff without a human relaying context | open | P1 | [domain/harness-workflow.md](domain/harness-workflow.md) |
-| S3 | A later process can replay the Room from an explicitly chosen boundary without server-owned read progress | proven | P0 | [domain/agent-experience.md](domain/agent-experience.md) |
-| S4 | An optional activation service wakes an offline Actor from a durable Event reference and survives restart | open | P2 | [activation.md](architecture/activation.md) |
-| S5 | A human creates a hosted Room and grants or revokes an agent credential without changing Actor identity | open | P3 | [domain/hosted-identity.md](domain/hosted-identity.md) |
+| S3 | A later process can replay the Room from an explicitly chosen boundary without server-owned read progress | proven | P0 | [domain/concepts.md](domain/concepts.md) |
+| S4 | ~~An optional activation service wakes an offline Actor from a durable Event reference and survives restart~~ Deferred with the P2 gate on 2026-09-09; delivery is a paste or an external script | deferred | P2 | [product.md](product.md) |
+| S5 | A human creates a hosted Room and grants or revokes an agent credential without changing Actor identity | open | P3 | [product.md](product.md) |
 | S6 | A public Werewolf protocol can be replayed in one Room; private role information is not promised by that Room | open | P3 | [product.md](product.md) |
-| S7 | A human can intervene in a running collaboration and the intervention remains part of the replayable history | open | P1 | [model-discussion.md](architecture/model-discussion.md) |
-| S8 | Organization membership and hosted policy prevent unrelated accounts from entering a Room | deferred | P3 | [domain/hosted-identity.md](domain/hosted-identity.md) |
+| S7 | A human can intervene in a running collaboration and the intervention remains part of the replayable history | open | P1 | [product.md](product.md) |
+| S8 | Organization membership and hosted policy prevent unrelated accounts from entering a Room | deferred | P3 | [product.md](product.md) |
+| S9 | A context link shared in a chat thread resolves as a human replay and as agent-readable text, and a continuation appends under the same Room contract | open | P3 | [product.md](product.md) |
 
 ## Story viability
 
-The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary primitives. S4 is the strongest differentiation hypothesis but remains optional and unproven. S5 is hosted enablement. S6 tests generality without making games the market line. S8 remains deferred until organization ownership is real.
+The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary primitives. S4 was adjudicated out of product scope on 2026-09-09 after the shared-file rival matched its claimed advantages; delivery is now a paste or a context link, and S9 carries the differentiation hypothesis as the distribution primitive. S5 is hosted enablement. S6 tests generality without making games the market line. S8 remains deferred until organization ownership is real.
 
 | Story | Multi-turn journey | Falsifier |
 |---|---|---|
 | S1 | Alice appends; Bob joins later; Carol reads the same order; Bob contributes | Ordinary IM or a shared file gives equal replay and integration cost — **executed 2026-09-02; the shared-file rival matched. See [lessons/rival-falsification.md](lessons/rival-falsification.md)** |
 | S2 | Planner proposes; another product acts; verifier rejects; the loop revises | One orchestrator, PR thread, or Agent workspace preserves context more simply |
 | S3 | One process reads from an explicit boundary; a later process replays from that boundary | Repeated reads differ or silently change another caller's result |
-| S4 | Offline Bob is activated, reads the Room, responds, and survives daemon restart | Lost activation, unsafe duplicate effects, manual launch, or excessive idle cost |
+| S4 | Offline Bob is activated, reads the Room, responds, and survives daemon restart | ~~Lost activation, unsafe duplicate effects, manual launch, or excessive idle cost~~ — **executed 2026-09-02; the sixty-line rival matched. Deferred** |
 | S5 | Separate hosted credentials act as stable Actors; one is revoked | Runtime/session changes identity or revoked credentials retain access |
 | S6 | Referee publishes phases; players append public actions; spectator replays | Secret roles or authoritative settlement must be hidden in the single Room |
 | S7 | Human correction is appended; a later Agent reads it before continuing | Correction exists only in a prompt, vendor transcript, or private control channel |
+| S9 | A link pasted into a chat resolves for the receiving human and their agent; the agent's result returns as Events and a new link | Handoffs stay inside one agent product, so vendor share links suffice; or receivers only view and never continue, so the link degenerates into a screenshot |
 
 ## Evaluations
 
@@ -123,9 +112,9 @@ The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary pri
 | E2 | P0 process/session replay without server-owned read progress | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
 | E3 | P1 three-round cross-product handoff without kernel event types or implicit read state | `make target-handoff` | — | planned |
 | E4 | P1 human intervention followed by ordered replay and continuation | `make target-intervention` | — | planned |
-| E5 | P2 optional offline activation, durable claim, restart recovery, and duplicate-safe response | `make target-activation` | — | planned |
 | E6 | P3 public-only Werewolf round with referee, players, and spectator replay | `make target-werewolf` | — | planned |
 | E7 | P3 hosted credentials, stable Actors, revocation, and membership hardening | `make target-hosted` | — | planned |
+| E8 | P3 context-link journey: snapshot resolves on both faces, continuation append preserves the contract, chat stays transport | `make target-link` | — | planned |
 
 ## Story → evaluation
 
@@ -140,6 +129,17 @@ The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary pri
 |---|---|
 | E1 | S1 |
 | E2 | S3 |
+
+## Hand-run evidence
+
+Evidence that cannot run in `make check` — hand-run journeys, market
+comparisons, counterfactuals against other products — is recorded here or it
+never ran. One row per run: date, what ran, outcome, and where the detail
+lives. Pending-evidence items above land in this table when they are executed.
+
+| Date | Evaluation | Cases | Outcome | Record |
+|---|---|---|---|---|
+| 2026-09-02 | S1 shared-file rival and the offline-activation rival | Four claimed advantages, each tested against the cheapest rival, measured on both sides | S1 falsifier executed: the rival matched replay and integration cost; incremental reads, per-participant boundaries, concurrent-append safety, and in-product activation were each matched or beaten | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
 
 ## Legacy surfaces at the P0 cutover
 
@@ -167,5 +167,5 @@ implementation.
 | Item | Evidence needed |
 |---|---|
 | PostgreSQL validation | Run the target Store battery when a database is available; backend parity does not prove product differentiation |
-| Activation economics | Measure wake latency, idle cost, duplicate attempts, and restart recovery before adding a general runner |
 | Ordinary IM counterfactual | Compare the same P1 journey with a normal chat channel, shared workspace, and queue |
+| Context-link distribution | Run the S9 journey end to end and count handoffs that stay inside one product versus cross-product, and receivers who continue versus only view |

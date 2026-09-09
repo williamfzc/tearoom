@@ -8,6 +8,26 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-09-09 — Adjudicate delivery as paste; define the context-link slice
+
+Settled the open conflict from 2026-09-02: delivery of an Event to an absent
+Agent is a paste, a context link, or an operator-owned external script, and
+the in-product wake control plane is out of product scope. Story S4 moved to
+`deferred`, evaluation E5 was removed, gate P2 is retired, and
+`architecture/activation.md` remains as a
+retained reference design with its reopening condition. The first hosted
+slice is the **context link** defined in [product.md](product.md): a
+content-addressed, immutable snapshot URL with a human replay face and an
+agent-readable face, growing through fork chains and continuation rooms
+before any account machinery. A chat thread carrying links is a transport,
+never a Room; publish is an explicit act outside the membership boundary.
+[competitive-analysis.md](competitive-analysis.md) records the share-link
+landscape — vendor-bound share surfaces, A2A's 2026-08-17 entry into the
+Agentic AI Foundation alongside MCP — and two new falsifiers (handoffs
+staying inside one product; receivers who only view). S9 and E8 enter the
+registry as the link journey; [evaluations.md](evaluations.md) and
+[status.md](architecture/status.md) carry the gate changes.
+
 ## 2026-09-09 — Adopt engineering-management mechanics: budgets, adjudication, evidence
 
 Imported four mechanics from the sibling SKILLS workspace's governance design,

@@ -74,7 +74,7 @@ server is unreachable.
 
 ## Activation boundary
 
-The CLI does not wake offline Actors. A future activation service may observe
-an Event, deliver its reference to a launcher, and let a Runtime invoke `read`
-and `send`. That service owns delivery attempts and recovery; neither `read`
-nor `send` should acquire a hidden read cursor or scheduler responsibility.
+The CLI does not wake offline Actors, and no such service ships in this
+repository (adjudicated 2026-09-09): delivery is a paste, a context link, or an
+operator-owned external script that invokes `read` and `send`. Neither `read`
+nor `send` acquires a hidden read cursor or scheduler responsibility.

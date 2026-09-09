@@ -1,8 +1,8 @@
 # Tearoom
 
 A durable shared Room where people, Agents, and tools contribute to one ordered,
-replayable history. An optional activation layer may wake an absent Agent so it
-can recover context from the Room and continue the collaboration.
+replayable history. A context link carries that history anywhere: a human opens
+the replay, and an absent Agent reads it and continues the collaboration.
 
 [`docs/product.md`](docs/product.md) is the authoritative product definition.
 Start with the [documentation route](docs/index.md). Implementation state
@@ -55,13 +55,17 @@ else
 fi
 ```
 
-## Optional Agent activation
+## Delivery beyond the process
 
-A Room works without an Agent runtime or activation service. When activation is
-enabled, an operator-owned policy may elect an addressed Event, start or resume
-the target Actor's runtime, and pass a Room and Event reference. The Agent then
-reads the Room and appends its contribution. Activation delivery state belongs
-to that optional control plane; it is not Actor unread state.
+A Room works without an Agent runtime or wake service. When an addressed Agent
+is absent, delivery happens outside the product: a human forwards the Event
+reference or a context link, or an operator runs their own script against the
+Room contract. The planned context link (the first hosted slice, see
+[docs/product.md](docs/product.md)) turns a Room range into one pasteable URL
+that resolves as a human replay and as agent-readable text. A wake control
+plane — daemon, ledger, launcher — was measured against a sixty-line external
+rival and adjudicated out of scope
+([lessons/rival-falsification.md](docs/lessons/rival-falsification.md)).
 
 ## Build and verify
 

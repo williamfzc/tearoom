@@ -45,9 +45,11 @@ What the script does not provide: multi-host coordination, lease takeover on
 timeout, and fencing of a preempted run. Those are absent from most
 single-operator use.
 
-Consequence: [../architecture/activation.md](../architecture/activation.md)
-specifies activation as a layer inside the product. That conflicts with this
-result and is recorded as an open conflict, not silently reconciled.
+Consequence: the product definition then specified activation as a layer
+inside the product. That conflict was adjudicated on 2026-09-09: activation
+is out of product scope, and delivery is a paste, a context link, or an
+external script. The refusal and its reopening condition live in
+[../product.md](../product.md); the superseded design is in Git history.
 
 ## Claim 2: incremental reads are needed for cost
 
@@ -122,6 +124,6 @@ one.
 ## Related
 
 - [../evaluations.md](../evaluations.md)
-- [../architecture/activation.md](../architecture/activation.md)
+- [../product.md](../product.md)
 - [cross-process-locking.md](cross-process-locking.md)
 - [../reference/agent-integration.md](../reference/agent-integration.md)
