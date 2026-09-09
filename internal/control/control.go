@@ -74,7 +74,7 @@ func (c *Control) Issue(ctx context.Context, roomID, actorID string, ttl time.Du
 		ID:        "cred_" + randomHex(4),
 		RoomID:    roomID,
 		Actor:     actorID,
-		TokenHash: hashToken(token),
+		TokenHash: HashToken(token),
 		ExpiresAt: c.now().UTC().Add(ttl),
 		CreatedAt: c.now().UTC(),
 	}
@@ -93,7 +93,7 @@ func (c *Control) Verify(ctx context.Context, roomID, bearer string) (string, er
 	}
 	var row relational.CredentialRow
 	err := c.db.WithContext(ctx).
-		Where("room_id = ? AND token_hash = ?", roomID, hashToken(bearer)).
+		Where("room_id = ? AND token_hash = ?", roomID, HashToken(bearer)).
 		Limit(1).Find(&row).Error
 	if err != nil {
 		return "", err
@@ -129,6 +129,13 @@ func (c *Control) Revoke(ctx context.Context, roomID, credentialID string) error
 	return nil
 }
 
+// HashToken is the one hashing rule for bearer tokens, shared by credential
+// records and by the transport that compares owner tokens.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
 // newToken mints 192 bits of entropy as one printable bearer token.
 func newToken() (string, error) {
 	raw := make([]byte, 24)
@@ -144,9 +151,4 @@ func randomHex(bytes int) string {
 		panic(err)
 	}
 	return hex.EncodeToString(raw)
-}
-
-func hashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
 }

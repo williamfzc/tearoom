@@ -38,34 +38,52 @@ func (w wireError) decode() error {
 }
 
 // Client implements core.Store against a remote Tearoom server. Local and
-// remote callers therefore share exactly one domain contract.
+// remote callers therefore share exactly one domain contract. Token, when
+// set, rides the Authorization header on every request: a write credential
+// for agents, the owner token for owner operations.
 type Client struct {
-	Base string
-	HTTP *http.Client
+	Base  string
+	HTTP  *http.Client
+	Token string
 }
 
-// RequireLoopbackURL enforces the unauthenticated P0 transport boundary.
-// The served API has no credentials, so a client target must be loopback too.
-func RequireLoopbackURL(raw string) error {
+// RequireSafeURL enforces the transport boundary: plaintext http is a
+// loopback-only affair, because tokens ride the write path over https.
+// The URL may carry a room prefix of the form /r/<id> and nothing else.
+func RequireSafeURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("TEAROOM_SERVER must be an http(s) loopback URL")
+		return fmt.Errorf("TEAROOM_SERVER must be an http(s) URL")
 	}
-	if parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("TEAROOM_SERVER must be a bare loopback server URL")
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("TEAROOM_SERVER must be a bare server or room URL")
+	}
+	if parsed.Path != "" && parsed.Path != "/" && !roomPrefix(parsed.Path) {
+		return fmt.Errorf("TEAROOM_SERVER may only carry a room prefix like /r/<id>, got %q", parsed.Path)
 	}
 	host := parsed.Hostname()
+	if parsed.Scheme == "https" {
+		return nil
+	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
 	}
 	if strings.EqualFold(host, "localhost") {
 		return nil
 	}
-	return fmt.Errorf("TEAROOM_SERVER must target loopback, got %q", host)
+	return fmt.Errorf("plaintext http targets loopback only, got %q", host)
 }
 
-func NewClient(base string) *Client {
-	return &Client{Base: base, HTTP: &http.Client{Timeout: 30 * time.Second}}
+func roomPrefix(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/r/")
+	if !ok || rest == "" {
+		return false
+	}
+	return !strings.Contains(rest, "/")
+}
+
+func NewClient(base, token string) *Client {
+	return &Client{Base: base, HTTP: &http.Client{Timeout: 30 * time.Second}, Token: token}
 }
 
 func (c *Client) do(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
@@ -93,6 +111,9 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 			request.Header.Set(name, value)
 		}
 	}
+	if c.Token != "" {
+		request.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	response, err := httpClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("tearoom server unreachable: %w", err)
@@ -104,6 +125,9 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 			return fmt.Errorf("server returned %s", response.Status)
 		}
 		return envelope.Error.decode()
+	}
+	if out == nil {
+		return nil
 	}
 	return json.NewDecoder(response.Body).Decode(out)
 }
@@ -133,6 +157,32 @@ func (c *Client) Read(ctx context.Context, actor string, after uint64) ([]core.E
 	headers := map[string]string{actorHeader: actor}
 	var events []core.Event
 	return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
+}
+
+// IssueCredential mints one write credential for an admitted actor. The
+// bearer on this client must be the deployment's owner token.
+func (c *Client) IssueCredential(ctx context.Context, request IssueRequest) (IssuedCredential, error) {
+	var issued IssuedCredential
+	return issued, c.do(ctx, http.MethodPost, "/api/credentials", nil, request, &issued)
+}
+
+// RevokeCredential immediately invalidates one credential.
+func (c *Client) RevokeCredential(ctx context.Context, credentialID string) error {
+	return c.do(ctx, http.MethodPost, "/api/credentials/revoke", nil, map[string]string{"id": credentialID}, nil)
+}
+
+// IssueRequest names the actor and the lifetime of a new credential.
+type IssueRequest struct {
+	Actor      string `json:"actor"`
+	TTLSeconds int    `json:"ttl_seconds"`
+}
+
+// IssuedCredential is the one-time view of a minted credential.
+type IssuedCredential struct {
+	ID        string    `json:"id"`
+	Actor     string    `json:"actor"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Token     string    `json:"token"`
 }
 
 // Append contributes one Event as the named actor. The request body carries

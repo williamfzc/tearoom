@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/williamfzc/tearoom/internal/control"
 	"github.com/williamfzc/tearoom/internal/core"
 )
 
@@ -27,8 +28,12 @@ const idempotencyHeader = "Idempotency-Key"
 var errMethodNotAllowed = errors.New("method not allowed")
 
 // Server serves one core.Store over HTTP. It holds no state of its own.
+// A nil Auth is the local loopback profile with self-asserted actors; a set
+// Auth is the exposed profile where writes require credentials and reads
+// stay open.
 type Server struct {
 	Store core.Store
+	Auth  *Auth
 }
 
 func NewServer(store core.Store) *Server { return &Server{Store: store} }
@@ -37,11 +42,17 @@ func NewServer(store core.Store) *Server { return &Server{Store: store} }
 //
 //	GET  /api/room
 //	GET  /api/actors
-//	POST /api/actors
+//	POST /api/actors                        owner-only in the exposed profile
 //	GET  /api/events?after=42
-//	POST /api/events
+//	POST /api/events                        credential-only in the exposed profile
+//	POST /api/credentials                   owner-only, exposed profile
+//	POST /api/credentials/revoke            owner-only, exposed profile
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if s.Auth != nil {
+		mux.HandleFunc("POST /api/credentials", s.wrap(s.issueCredential))
+		mux.HandleFunc("POST /api/credentials/revoke", s.wrap(s.revokeCredential))
+	}
 	mux.HandleFunc("/api/room", s.wrap(func(r *http.Request) (any, error) {
 		if r.Method != http.MethodGet {
 			return nil, methodError(r.Method)
@@ -79,6 +90,11 @@ func (s *Server) joinActor(r *http.Request) (any, error) {
 	if err := decodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid join body: %w", err)
 	}
+	if s.Auth != nil {
+		if err := s.requireOwner(r); err != nil {
+			return nil, err
+		}
+	}
 	return s.Store.AdmitActor(r.Context(), input.ID)
 }
 
@@ -97,6 +113,13 @@ func (s *Server) appendEvent(r *http.Request) (any, error) {
 	}
 	if err := decodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid append body: %w", err)
+	}
+	if s.Auth != nil {
+		resolved, err := s.actorForWrite(r)
+		if err != nil {
+			return nil, err
+		}
+		actor = resolved
 	}
 	return s.Store.Append(r.Context(), actor, core.AppendRequest{
 		To:             input.To,
@@ -171,6 +194,10 @@ func EncodeError(err error) (int, wireError) {
 	switch {
 	case errors.Is(err, errMethodNotAllowed):
 		return http.StatusMethodNotAllowed, wireError{Code: "method_not_allowed", Message: err.Error()}
+	case errors.Is(err, errForbidden):
+		return http.StatusForbidden, wireError{Code: "forbidden", Message: err.Error()}
+	case errors.Is(err, errUnauthorized), errors.Is(err, control.ErrUnauthorized):
+		return http.StatusUnauthorized, wireError{Code: "unauthorized", Message: err.Error()}
 	case errors.Is(err, core.ErrUnknownActor):
 		return http.StatusUnauthorized, wireError{Code: "unknown_actor", Message: err.Error()}
 	case errors.Is(err, core.ErrConflict):

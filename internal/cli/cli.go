@@ -46,7 +46,8 @@ Options:
 
 Environment:
   TEAROOM_ACTOR    stable actor identity
-  TEAROOM_SERVER   shared server URL; omit for the nearest local room
+  TEAROOM_SERVER   shared server or room URL; omit for the nearest local room
+  TEAROOM_TOKEN    bearer credential for writes and owner operations
 
 Use "tearoom <command> --help" for more information.
 `
@@ -266,8 +267,7 @@ func (a *App) runSend(args []string) error {
 const readHelp = `Read events from the nearest room, one JSON object per line.
 
 An empty result prints nothing and exits 0. The read is pure: nothing in the
-Room changes, and truncation or polling for later events belongs to the
-caller.
+Room changes; truncation or polling for later events belongs to the caller.
 
 Usage:
   tearoom read [--as <actor>] [--after e42]
@@ -412,10 +412,10 @@ func requireLoopback(address string) error {
 // local room. room init never runs through this path: room creation is local.
 func (a *App) openStore() (core.Store, error) {
 	if server := strings.TrimRight(strings.TrimSpace(os.Getenv("TEAROOM_SERVER")), "/"); server != "" {
-		if err := transport.RequireLoopbackURL(server); err != nil {
+		if err := transport.RequireSafeURL(server); err != nil {
 			return nil, err
 		}
-		return transport.NewClient(server), nil
+		return transport.NewClient(server, strings.TrimSpace(os.Getenv("TEAROOM_TOKEN"))), nil
 	}
 	return store.Open(a.Dir)
 }

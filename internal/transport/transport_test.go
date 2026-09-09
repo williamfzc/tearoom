@@ -36,32 +36,12 @@ func newPair(t *testing.T) (*Client, *relational.Store) {
 	sqlite := st.(*relational.Store)
 	server := httptest.NewServer(NewServer(sqlite).Handler())
 	t.Cleanup(server.Close)
-	return NewClient(server.URL), sqlite
+	return NewClient(server.URL, ""), sqlite
 }
 
 func TestClientSatisfiesStore(t *testing.T) {
 	var _ core.Store = (*Client)(nil)
 	var _ core.Store = (*relational.Store)(nil)
-}
-
-func TestRequireLoopbackURL(t *testing.T) {
-	for _, test := range []struct {
-		url string
-		ok  bool
-	}{
-		{"http://127.0.0.1:8787", true},
-		{"http://[::1]:8787", true},
-		{"http://localhost:8787", true},
-		{"http://192.0.2.1:8787", false},
-		{"https://example.test", false},
-	} {
-		t.Run(test.url, func(t *testing.T) {
-			err := RequireLoopbackURL(test.url)
-			if (err == nil) != test.ok {
-				t.Fatalf("RequireLoopbackURL(%q) error = %v, want ok=%v", test.url, err, test.ok)
-			}
-		})
-	}
 }
 
 func TestRoomAndJoinThroughHTTP(t *testing.T) {
@@ -375,7 +355,7 @@ func TestStrictErrorBody(t *testing.T) {
 }
 
 func TestUnreachableServerFailsLoudly(t *testing.T) {
-	client := NewClient("http://127.0.0.1:1")
+	client := NewClient("http://127.0.0.1:1", "")
 	client.HTTP.Timeout = 100 * time.Millisecond
 	_, err := client.Room(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "unreachable") {

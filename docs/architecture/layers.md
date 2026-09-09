@@ -4,7 +4,7 @@ title: Layers and dependency direction
 description: The post-cutover package boundaries for one service across local and remote deployment profiles.
 resource: internal/
 tags: [architecture, boundaries, layering, migration, clean-break]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Layers and dependency direction
@@ -15,15 +15,14 @@ The clean-break target has one foundation contract and no compatibility layer:
 |---|---|---|
 | Foundation | `internal/core` | Room, Actor, minimum Event, Store, and typed domain errors |
 | Persistence | `internal/store`, `internal/relational` | Durable membership and ordered immutable Event history |
-| Application | shared service policy (not implemented) | Admission policy, identities, credentials, and management use cases |
+| Application | `internal/control` | Credential policy: issue, verify, revoke, and expiry for admitted actors |
 | Outside | `internal/transport` | The one current HTTP representation of the Store contract |
 | Outside | `internal/cli`, `cmd/tearoom` | `room`, `server`, `send`, `read`, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it; the target application layer will
-apply the same admission and capability policy in every deployment; the CLI translates
-commands. Local bootstrap and remote login are outside adapters into that one
-policy. The kernel never imports a launcher, scheduler, Agent runtime, or
+implements `core.Store`; transport adapts it and delegates credential policy
+to `internal/control`; the CLI translates commands. Local bootstrap and remote
+issuance are outside adapters into that one policy. The kernel never imports a launcher, scheduler, Agent runtime, or
 deployment-specific control plane.
 
 ## Target foundation boundary
@@ -48,8 +47,8 @@ another Event field.
 
 ## Persistence boundary
 
-`internal/store` owns the file layout and cross-process locking. The relational
-package owns ORM models, migrations, transactions, and database adaptation.
+`internal/store` owns the `.tearoom` layout. The relational package owns ORM
+models, migrations, transactions, and database adaptation.
 Both implement the same new `core.Store` contract and store only the new Event
 shape. Neither package may:
 
