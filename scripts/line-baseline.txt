@@ -7,6 +7,6 @@
 #   and needs its own justification in review.
 #
 # Measured 2026-09-09 against the P0 release tree.
-internal/cli/cli.go 456
+internal/cli/cli.go 359
 internal/core/contract.go 380
-internal/relational/store.go 358
+internal/relational/store.go 352

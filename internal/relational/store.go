@@ -18,7 +18,6 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/williamfzc/tearoom/internal/core"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -104,11 +103,6 @@ func openSQLite(path string) (*gorm.DB, error) {
 // same identity for one workspace.
 func roomIDFor(root string) string {
 	return filepath.Base(filepath.Dir(root))
-}
-
-// OpenPostgres opens a PostgreSQL connection by DSN for the gated battery.
-func OpenPostgres(dsn string) (*gorm.DB, error) {
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
 }
 
 // New wraps an existing database connection for one Room. roomID is the

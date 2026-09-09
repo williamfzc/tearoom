@@ -1,20 +1,20 @@
 ---
 type: runbook
 title: Serving a shared Room
-description: Operate the loopback-only shared server and point Actors at one Room.
+description: Operate the local loopback server and the hosted multi-room deployment with credentials.
 resource: cmd/tearoom/main.go
-tags: [runbook, server, interoperability]
-timestamp: 2026-09-09
+tags: [runbook, server, deployment, hosted, tls]
+timestamp: 2026-09-10
 ---
 
 # Serving a shared Room
 
-This runbook covers the currently shipped local profile. Remote deployment is
-not a different product or server: it will run the same Room service and
-contract with PostgreSQL, remote identity, and production network adapters.
-Those capabilities remain open in
-[status.md](../architecture/status.md); the loopback server below must not be
-treated as a remote deployment shortcut.
+One binary, two deployment profiles of the same contract. The local profile
+serves the nearest Room on loopback with self-asserted Actors; the hosted
+profile serves many Rooms of one deployment database, enforces credentials on
+writes, and reads stay open everywhere.
+
+## Local profile
 
 Create a local Room, then expose it from the same binary on the loopback
 interface:
@@ -25,9 +25,9 @@ tearoom room init --as planner
 tearoom server start --address 127.0.0.1:8787
 ```
 
-P0 refuses non-loopback listen addresses: the HTTP contract carries no
-authentication, so the service must never be exposed to a network. Bind to
-localhost only.
+The local profile binds loopback only: it has no credentials, and everything
+on the loopback interface belongs to one OS user — the same trust domain as
+the `.tearoom` directory itself. Never bind it to a public interface.
 
 Point another session or agent product at it:
 
@@ -39,11 +39,39 @@ tearoom send "hello from another session"
 tearoom read
 ```
 
-Stable Actor identity survives process and session changes. Members are
-admitted explicitly (`room init` admits the creator; `room join` admits
-others). Every member reads the same complete history; `read --after e<seq>`
-sets a caller-owned boundary, and `read --wait` holds only the current
-invocation.
+## Hosted profile
 
-See [the HTTP API](../reference/http-api.md) for the wire contract and
-[status.md](../architecture/status.md) for implementation state.
+Set two secrets and one database, then bind any interface:
+
+```bash
+export TEAROOM_DSN="postgres://user:pass@host/db"   # or a SQLite file path
+export TEAROOM_OWNER_TOKEN="tr_..."                 # the deployment bootstrap secret
+tearoom server start --address 0.0.0.0:8787
+```
+
+- The service migrates the database on start and hosts many Rooms behind
+  room-scoped URLs of the form `<base>/r/<room-id>`.
+- `TEAROOM_OWNER_TOKEN` is mandatory: an exposed service without credentials
+  is refused by design. Keep it in the platform secret store; it authorizes
+  Room creation, joins, and credential issue/revoke.
+- Writes require a per-Actor bearer credential (`TEAROOM_TOKEN`); reads
+  require no credential — the room URL is the read capability. Never serve a
+  room URL whose history is not meant to be read by whoever holds the link.
+- TLS terminates in front of the service (platform TLS or a reverse proxy):
+  tokens ride the write path, so plaintext http in production is a
+  misdeployment. The service answers plain HTTP on its bind address.
+
+Operate with the owner token:
+
+```bash
+export TEAROOM_SERVER=https://tearoom.example/r/room-id
+export TEAROOM_TOKEN="$OWNER_TOKEN"
+tearoom room join bob
+tearoom room credential issue --actor bob --expires 720h   # prints the token once
+tearoom room credential revoke cred_xxx
+```
+
+Rollback uses the previous release with its data snapshot; the deployment
+database carries the format marker, and incompatible layouts are refused, not
+upgraded. See [the HTTP API](../reference/http-api.md) for the wire contract
+and [status.md](../architecture/status.md) for implementation state.

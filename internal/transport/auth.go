@@ -15,9 +15,11 @@ import (
 	"github.com/williamfzc/tearoom/internal/control"
 )
 
+// ErrUnauthorized and ErrForbidden are the exposed-profile refusal classes;
+// they map to 401 and 403 and never masquerade as an empty read.
 var (
-	errUnauthorized = errors.New("authentication required")
-	errForbidden    = errors.New("not allowed for this credential")
+	ErrUnauthorized = errors.New("authentication required")
+	ErrForbidden    = errors.New("not allowed for this credential")
 )
 
 // Auth configures the exposed profile. Control verifies write credentials;
@@ -47,10 +49,10 @@ func bearer(r *http.Request) string {
 func (s *Server) requireOwner(r *http.Request) error {
 	b := bearer(r)
 	if b == "" {
-		return errUnauthorized
+		return ErrUnauthorized
 	}
 	if !s.Auth.isOwner(b) {
-		return errForbidden
+		return ErrForbidden
 	}
 	return nil
 }
@@ -60,7 +62,7 @@ func (s *Server) requireOwner(r *http.Request) error {
 func (s *Server) actorForWrite(r *http.Request) (string, error) {
 	b := bearer(r)
 	if b == "" {
-		return "", errUnauthorized
+		return "", ErrUnauthorized
 	}
 	room, err := s.Store.Room(r.Context())
 	if err != nil {
@@ -71,7 +73,7 @@ func (s *Server) actorForWrite(r *http.Request) (string, error) {
 		return "", err
 	}
 	if header := strings.TrimSpace(r.Header.Get(actorHeader)); header != "" && header != actor {
-		return "", fmt.Errorf("%w: actor %q does not match the credential", errForbidden, header)
+		return "", fmt.Errorf("%w: actor %q does not match the credential", ErrForbidden, header)
 	}
 	return actor, nil
 }

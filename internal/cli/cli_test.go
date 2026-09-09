@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -407,6 +408,33 @@ func TestServerStartRefusesNonLoopback(t *testing.T) {
 		if code := app.Run([]string{"server", "start", "--address", address}); code != ExitError {
 			t.Fatalf("server start %s exit = %d, want %d", address, code, ExitError)
 		}
+	}
+}
+
+func TestServerStartHostedModeStopsOnCancellation(t *testing.T) {
+	t.Setenv("TEAROOM_DSN", filepath.Join(t.TempDir(), "hosted.db"))
+	t.Setenv("TEAROOM_OWNER_TOKEN", "tr_owner_cli_test")
+	ctx, cancel := context.WithCancel(context.Background())
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir(), Context: ctx}
+	result := make(chan error, 1)
+	go func() { result <- app.serverStart([]string{"--address", "127.0.0.1:0"}) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("hosted serverStart error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("hosted serverStart did not stop after context cancellation")
+	}
+}
+
+func TestServerStartRefusesHostedWithoutOwnerToken(t *testing.T) {
+	t.Setenv("TEAROOM_DSN", filepath.Join(t.TempDir(), "hosted.db"))
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"server", "start"}); code != ExitError {
+		t.Fatalf("hosted without owner token exit = %d, want %d", code, ExitError)
 	}
 }
 

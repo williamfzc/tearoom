@@ -194,9 +194,9 @@ func EncodeError(err error) (int, wireError) {
 	switch {
 	case errors.Is(err, errMethodNotAllowed):
 		return http.StatusMethodNotAllowed, wireError{Code: "method_not_allowed", Message: err.Error()}
-	case errors.Is(err, errForbidden):
+	case errors.Is(err, ErrForbidden):
 		return http.StatusForbidden, wireError{Code: "forbidden", Message: err.Error()}
-	case errors.Is(err, errUnauthorized), errors.Is(err, control.ErrUnauthorized):
+	case errors.Is(err, ErrUnauthorized), errors.Is(err, control.ErrUnauthorized):
 		return http.StatusUnauthorized, wireError{Code: "unauthorized", Message: err.Error()}
 	case errors.Is(err, core.ErrUnknownActor):
 		return http.StatusUnauthorized, wireError{Code: "unknown_actor", Message: err.Error()}
@@ -212,6 +212,12 @@ func EncodeError(err error) (int, wireError) {
 }
 
 func (s *Server) wrap(fn func(*http.Request) (any, error)) http.HandlerFunc {
+	return Wrap(fn)
+}
+
+// Wrap applies the one response policy: JSON content type, the unified error
+// envelope on failure, and one JSON body on success.
+func Wrap(fn func(*http.Request) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		out, err := fn(r)
