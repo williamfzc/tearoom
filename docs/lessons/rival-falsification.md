@@ -13,8 +13,8 @@ timestamp: 2026-09-02
 
 [../evaluations.md](../evaluations.md) states the falsifier for S1: if an
 ordinary group chat or a shared file delivers comparable replay and integration
-cost, the story does not hold. That falsifier was never executed. This document
-records the session that executed it, because the result narrows scope rather
+cost, the story does not hold. Before this recorded session, that falsifier had
+not been executed. This document records the session because the result narrows scope rather
 than widening it.
 
 Each claim below was tested by building the cheapest rival that could satisfy

@@ -4,10 +4,17 @@ title: Serving a shared Room
 description: Operate the loopback-only shared server and point Actors at one Room.
 resource: cmd/tearoom/main.go
 tags: [runbook, server, interoperability]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Serving a shared Room
+
+This runbook covers the currently shipped local profile. Remote deployment is
+not a different product or server: it will run the same Room service and
+contract with PostgreSQL, remote identity, and production network adapters.
+Those capabilities remain open in
+[status.md](../architecture/status.md); the loopback server below must not be
+treated as a remote deployment shortcut.
 
 Create a local Room, then expose it from the same binary on the loopback
 interface:

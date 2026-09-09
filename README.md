@@ -1,8 +1,9 @@
 # Tearoom
 
 A durable shared Room where people, Agents, and tools contribute to one ordered,
-replayable history. A context link carries that history anywhere: a human opens
-the replay, and an absent Agent reads it and continues the collaboration.
+replayable history. The planned context link will carry that history anywhere:
+a human opens the replay, and an absent Agent reads it and continues the
+collaboration.
 
 [`docs/product.md`](docs/product.md) is the authoritative product definition.
 Start with the [documentation route](docs/index.md). Implementation state
@@ -60,7 +61,8 @@ fi
 A Room works without an Agent runtime or wake service. When an addressed Agent
 is absent, delivery happens outside the product: a human forwards the Event
 reference or a context link, or an operator runs their own script against the
-Room contract. The planned context link (the first hosted slice, see
+Room contract. The planned context link (the first remote-facing slice of the
+same product, see
 [docs/product.md](docs/product.md)) turns a Room range into one pasteable URL
 that resolves as a human replay and as agent-readable text. A wake control
 plane — daemon, ledger, launcher — was measured against a sixty-line external

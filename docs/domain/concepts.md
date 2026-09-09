@@ -108,14 +108,14 @@ never acceptable.
   ([lessons/rival-falsification.md](../lessons/rival-falsification.md)).
   Anything that delivers must never present its state as Actor read,
   comprehension, or task completion.
-- **Hosted (deferred):** the future hosted phase requires a user login
-  identity as the security boundary — never Actor-as-secret, never silent
-  membership from a presented credential — with separate revocable per-Agent
-  credentials and explicit owner-managed admission. The adopted slice is the
-  context link in [product.md](../product.md).
-- **Before hostile or hosted use:** transport security (TLS in front),
+- **Deployment identity:** Tearoom has one authorization model. Local setup may
+  bootstrap its owner from the trusted machine; remote setup uses a user login
+  and separate revocable per-Agent credentials. Actor names are never secrets,
+  and presenting a credential never silently creates membership. This shared
+  path is not implemented yet; see [status.md](../architecture/status.md).
+- **Before hostile or remote use:** transport security (TLS in front),
   at-rest protection, rate limits, abuse controls, and audit records for
-  control-plane changes.
+  management changes are required.
 
 ## The failures the Room prevents
 

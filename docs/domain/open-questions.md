@@ -3,7 +3,7 @@ type: decision
 title: Open questions
 description: Decisions deliberately left unsettled after the Room, Actor, Event convergence.
 tags: [domain, decision, open]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Open questions
@@ -44,9 +44,15 @@ Keep them above the minimum `seq`/`actor`/`at`/`to`/`content` shape until two
 independent callers require the same contract. Request-level append idempotency
 is a transport/Store retry contract, not an Event field.
 
-## Hosted authorization details
+## Deployment identity details
 
-GitHub sign-in for humans, explicit Room ownership, and separate Agent credentials are settled directions. Remaining choices include organization mapping, role names, token scopes and expiry defaults, invitation flow, and whether self-hosted deployments may replace GitHub with another identity provider. The adopted hosted entry point is the context link in [../product.md](../product.md).
+One authorization path across local and remote deployment, explicit Room
+ownership, and separate Agent credentials are settled directions. Local setup
+may bootstrap its owner; remote setup requires a login identity. Remaining
+choices include identity-provider adapters, organization mapping, role names,
+token scopes and expiry defaults, and invitation flow. None of those choices
+may create a separate local or remote product. The first remote-facing slice is
+the context link in [../product.md](../product.md).
 
 ## Retention
 

@@ -4,7 +4,7 @@ title: Storage layout
 description: Authoritative on-disk Room representation and the boundary around operational state.
 resource: internal/store/file.go
 tags: [reference, storage, concurrency]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Storage layout
@@ -73,9 +73,10 @@ No in-product delivery or wake service exists (adjudicated 2026-09-09; see
 [product.md](../product.md)); this Room layout does not
 store Actor read progress, delivery attempts, bindings, or Runtime state.
 
-The two backends are separate creation choices. The clean break does not
-import pre-adoption Room data or session state. PostgreSQL targets a future
-hosted operation with the same Store boundary; see
+The two current local backends are separate creation choices behind one
+contract. The clean break does not import pre-adoption Room data or session
+state. PostgreSQL is the remote database adapter for the same service, schema
+owner, and Store boundary; see
 [persistence.md](../architecture/persistence.md).
 
 ## Portability

@@ -39,8 +39,10 @@ This page records what the shipped code implements against the target in
 | Item | State |
 |---|---|
 | P1 cross-product handoff and human intervention (S2, S7) | Stories defined; evaluations E3/E4 planned |
-| Context link (first hosted slice: snapshot link, continuation room) | Defined in product.md; evaluation E8 planned; not implemented |
-| Hosted identity (login, org, revocable credentials) | Deferred beyond the link slice; defined in product.md |
+| One service across local and remote profiles | Core Store and HTTP contracts are shared; the current entry point still hard-codes loopback trust and local Room creation |
+| Deployment database profiles | Local SQLite and remote PostgreSQL are the target; the CLI still defaults to the file backend and PostgreSQL is not wired into the service entry point |
+| Shared authorization path | Local bootstrap and remote login/credentials are defined in product.md; not implemented |
+| Context link (first remote-facing slice: snapshot link, continuation room) | Defined in product.md; evaluation E8 planned; not implemented |
 | PostgreSQL Store validation | Gated suite ready; runs when `TEAROOM_TEST_PG` points at a database |
 | Second-domain stress test (S6 Werewolf) | Defined; evaluation E6 planned |
 

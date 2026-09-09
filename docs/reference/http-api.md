@@ -4,7 +4,7 @@ title: HTTP API
 description: Authoritative HTTP protocol for the served Room.
 resource: internal/transport/server.go
 tags: [reference, contract, http, api]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # HTTP API
@@ -103,14 +103,13 @@ retry (same compacted content and normalized `to`) returns the original Event;
 the same key with different content returns `409`. No key: every append
 creates a distinct Event. The key is never stored as an Event field.
 
-## Activation boundary
+## Delivery and deployment boundary
 
-Activation is not part of the Room API. A separate service may observe an
-append, record an operational delivery attempt, and send a reference such as
-`(room, sequence, target Actor)` to a launcher. The Runtime then reads the
-Room through this API. Delivery state, retry, and restart recovery must not
+Delivery to an absent Agent is outside this API. A paste, context link, or
+operator-owned script may carry an Event reference, but delivery state must not
 become read state or alter Event visibility.
 
-Hosted identity and authorization are deferred; a future hosted phase is
-secured by a user login identity, not by Actor-as-secret. No legacy request
-body or endpoint alias is part of this contract.
+Remote identity and authorization are deferred. They extend this same service:
+local bootstrap and remote login resolve through one authorization path before
+these Room operations. Actor names are not secrets. No separate remote Room API,
+legacy request body, or endpoint alias is part of the contract.

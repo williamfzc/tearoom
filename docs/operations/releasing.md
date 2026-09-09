@@ -4,7 +4,7 @@ title: Releasing the Tearoom binary
 description: The public artifact contract, installation checks, release credentials, and rollback boundary for Tearoom binaries.
 resource: .github/workflows/release.yml
 tags: [runbook, release, artifacts, security, rollback]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Releasing the Tearoom binary
@@ -127,9 +127,11 @@ matches, and the publication step must be able to create missing objects. A
 write-only token cannot safely resume or prove immutability and is invalid for
 this workflow.
 
-The current P0 local server has no hosted authentication layer. `TEAROOM_ACTOR`
-identifies a local Actor and is not a release credential. Hosted credentials
-remain a deferred product boundary; see [domain concepts](../domain/concepts.md).
+The current P0 local profile has no shared authorization layer.
+`TEAROOM_ACTOR` identifies a local Actor and is not a credential. Remote
+credentials remain deferred, but they must extend the same service and
+authorization path rather than create a separate remote product; see
+[domain concepts](../domain/concepts.md).
 
 ## Publish and verify
 

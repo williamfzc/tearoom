@@ -4,7 +4,7 @@ title: Invariants belong under the Store interface
 description: A rule enforced only by one client disappears as soon as a second client arrives.
 resource: internal/store/file.go
 tags: [lesson, invariants, layering]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Invariants belong under the Store interface
@@ -33,11 +33,11 @@ The HTTP server delegates to this boundary, so a raw HTTP caller and the CLI rec
 
 ## Guarded by
 
-- Existing Store and HTTP tests guard the v0.1 behavior.
-- The migration must replace hidden-Event and mandatory stale-write cases with
-  membership visibility, pure reads, and concurrent ordinary append cases.
-- Duplicate-retry tests remain relevant if explicit append idempotency survives
-  the migration.
+- The Store and HTTP tests guard the adopted Room contract.
+- The completed clean break replaced hidden-Event and mandatory stale-write
+  cases with membership visibility, pure reads, and concurrent ordinary append
+  cases.
+- Duplicate-retry tests guard the optional append idempotency capability.
 
 ## Related
 

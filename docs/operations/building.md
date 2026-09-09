@@ -4,7 +4,7 @@ title: Building and testing
 description: Build the single Tearoom binary and run its verification suites.
 resource: Makefile
 tags: [runbook, build, testing]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Building and testing
@@ -54,4 +54,5 @@ TEAROOM_TEST_PG=postgres://... go test -ldflags=-linkmode=external -count=1 ./in
 ```
 
 Without the DSN the battery records an explicit skip; SQLite always runs the
-same conformance battery.
+same conformance battery. PostgreSQL validation is required before claiming the
+shared service is ready for the remote deployment profile.

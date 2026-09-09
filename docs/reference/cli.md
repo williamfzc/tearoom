@@ -4,7 +4,7 @@ title: CLI reference
 description: Authoritative command contract for the shipped tearoom binary.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # CLI reference
@@ -21,7 +21,7 @@ tearoom room join <actor>
 tearoom room members
 
 tearoom send <text> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
-tearoom send --json <json> [--as <actor>] [--to <member>]...
+tearoom send --json <json> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
 
 tearoom read [--as <actor>] [--after e<seq>] [--limit N] [--wait <duration>]
 
@@ -55,7 +55,10 @@ tearoom server start [--address 127.0.0.1:8787]
 When `TEAROOM_SERVER` is set to a server URL, `join`, `members`, `send`, and
 `read` speak the [HTTP contract](http-api.md) instead of opening a local Room.
 `room init` is always local and refuses to run while `TEAROOM_SERVER` is set.
-There is no token: the served Room is protected by the loopback trust domain.
+There is no token in the currently shipped loopback profile. The target remote
+profile uses the same commands and service contract with a credential supplied
+by deployment configuration; see [product.md](../product.md). This is open work,
+not a second CLI.
 
 ## Exit codes
 
@@ -72,7 +75,7 @@ server is unreachable.
 - Plain-text sends are stored as JSON strings, so `read` output is always
   machine-parseable.
 
-## Activation boundary
+## Delivery boundary
 
 The CLI does not wake offline Actors, and no such service ships in this
 repository (adjudicated 2026-09-09): delivery is a paste, a context link, or an

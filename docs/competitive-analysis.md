@@ -3,7 +3,7 @@ type: product
 title: Competitive analysis
 description: Evidence-based 2026 comparison of the minimum Room/Event model, context-link delivery, and replayable human-Agent collaboration.
 tags: [product, market, competition, priorities]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Competitive analysis
@@ -44,7 +44,7 @@ and portable export substantially easier than those products. Those are
 migration conveniences, not a moat. A user will not leave Slack, Matrix, or
 Agent Mail merely for another `send`/`read` API.
 
-## B: optional offline Agent activation
+## B: carrying context to an absent Agent
 
 B is the strongest near-term wedge, but “wake an Agent” is not unique. aweb's
 official material explicitly describes waking the right recipient and leaves
@@ -64,22 +64,12 @@ replay ([JetStream](https://docs.nats.io/concepts/jetstream)). These systems do
 not make a human-readable Room, stable cross-product Actor identity, or an
 Agent's collaboration history the canonical object.
 
-The narrow gap is therefore a neutral, local-first activation contract:
-
-```text
-addressed Event -> durable activation claim/lease
-                -> operator-owned launcher
-                -> offline Agent resumes as its stable Actor
-                -> Agent reads the Room and appends a contribution
-```
-
-The Event must remain the source of truth; the trigger carries a reference, not
-a copied transcript. Delivery is at-least-once, and read/completion state must
-not be inferred from a wake attempt. This is the precise place where Tearoom
-could migrate users from chat, queues, or workflow engines: it joins their
-strengths without pretending that a queue acknowledgement is collaboration
-success. The measured outcome — an external rival matched an in-product wake
-service — moved this delivery role to the [context link](#context-links-as-the-share-surface).
+The measured outcome was that an external script matched an in-product wake
+service, so activation is not a Tearoom product layer. The remaining gap is
+portable context: an Event range stays the source of truth and travels through
+a [context link](#context-links-as-the-share-surface), while any process launch
+or retry remains operator-owned. Delivery state must not be mistaken for an
+Actor having read, understood, or completed the work.
 
 ## C: replayable human-Agent collaboration
 
@@ -101,8 +91,8 @@ then a PR and human review ([agent feature](https://github.com/features/copilot/
 [2026-02-13 changelog](https://github.blog/changelog/2026-02-13-network-configuration-changes-for-copilot-coding-agent/)).
 
 Replay can differentiate only if it reconstructs more than messages: Actor
-identity, Event order, decisions, activation attempts, tool/result references,
-permissions, and caller-supplied replay boundaries. The August 24, 2026 AgentRoom paper is early
+identity, Event order, decisions, tool/result references, permissions, and
+caller-supplied replay boundaries. The August 24, 2026 AgentRoom paper is early
 research evidence that shared state and explicit concurrent claims may improve
 coding-agent outcomes, not market validation ([paper](https://arxiv.org/abs/2608.23740)).
 Building the full workspace, file editor, CRDT, permissions, and artifact
@@ -115,9 +105,9 @@ The delivery answer to B is no longer a wake service — the 2026-09-02
 falsification retired that — but a **context link**: a content-addressed,
 immutable snapshot of a Room range, at one URL that resolves on two faces. A
 human opens the replay view; an agent fetches plain text or JSONL with no
-Tearoom install. Continuation is a fork chain, later a hosted continuation
-room with a scoped append credential. A chat thread carrying the links
-(Feishu, Slack, WeCom) is a transport, never a Room.
+Tearoom install. Continuation is a fork chain, later a remotely available
+continuation Room with a scoped append credential in the same service. A chat
+thread carrying the links (Feishu, Slack, WeCom) is a transport, never a Room.
 
 Existing share surfaces are all product-bound:
 
@@ -143,8 +133,8 @@ unclaimed as of 2026-09-09.
 
 The distribution mechanism is the point: chat groups are where collaborators
 already are, and every paste is an adoption event. This is the wedge by which
-the Room's coordination record travels, and the route by which hosted
-Tearoom grows its first slice before any account machinery exists.
+the Room's coordination record travels, and the first remote-facing capability
+of the same Tearoom service before account machinery exists.
 
 ## Position and migration reasons
 
@@ -179,9 +169,9 @@ vendor-specific logs.
 ## Moat and falsification
 
 Room CRUD and schemas have a weak moat. A stronger, still uncertain moat could
-come from interoperable activation adapters, conformance tests for restart and
-duplicate behavior, and portable replay bundles adopted by several Agent
-products. Network effects are possible only if the same Actor/Event contract is
+come from conformance tests for restart and duplicate behavior, and portable
+replay bundles adopted by several Agent products. Network effects are possible
+only if the same Actor/Event contract is
 used across products; A2A and MCP standardization make an incompatible private
 protocol a liability.
 

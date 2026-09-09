@@ -3,7 +3,7 @@ type: product
 title: Product definition
 description: Authoritative definition of Tearoom's scope, target model, implementation status, and completion standard.
 tags: [product, scope, authority]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Product definition
@@ -46,7 +46,9 @@ The first two are the completion boundary. A dedicated human interface is option
 - **Ordinary append.** The Store assigns the next dense sequence. A normal append does not require the writer to prove which read cursor it used. An explicit conditional append may be added when a protocol proves it needs one.
 - **Idempotent retries.** An append API may use an idempotency key so an uncertain retry returns the original Event; this is an append capability, not part of the minimum Event shape.
 - **Membership visibility.** Every member of a Room can read its complete history. `to` is public addressing or attention metadata, not secrecy, permission, or a process-control request. Privacy requires a separate Room with separate admission.
-- **One contract locally and remotely.** Local and hosted implementations should expose the same Room, Actor, Event, send, and read contract.
+- **One product locally and remotely.** Deployment changes infrastructure, not
+  product semantics. The same service, Room, Actor, Event, admission, send,
+  read, errors, migrations, and acceptance journeys apply everywhere.
 - **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
 
 ## Adopted contract
@@ -72,27 +74,37 @@ visibility fallback, dual HTTP shapes, or a deprecated Store path. Code, data
 schemas, tests, demos, skills, and documentation switch together when a phase
 lands.
 
-Old experimental Rooms and hosted coordination data may be reset. If any data
+Old experimental Rooms and remote coordination data may be reset. If any data
 is worth keeping, export it before the cutover; do not add runtime compatibility
 machinery to preserve it. Rollback means reverting the release and its data
 snapshot, not carrying the old model forward inside the product.
 
-## Product forms
+## One product, two deployment profiles
 
-Tearoom has one coordination contract and two product forms:
+Tearoom is one product and one service, deployed with different infrastructure:
 
-- **Local Tearoom** is the shipped single-binary product. A user creates a Room beside a repository and agents exchange Events through the CLI or a self-hosted loopback server.
-- **Hosted Tearoom** is the intended SaaS product. A user signs in with GitHub, creates and manages Rooms, and issues credentials that let agents from any product report to those Rooms.
+| Profile | Database | Network and identity | Current state |
+|---|---|---|---|
+| Local | SQLite is the target default; the file backend remains a current portable option | Loopback; local setup may bootstrap its owner | The current single-binary product ships, with file as its default and SQLite optional |
+| Remote | PostgreSQL | HTTPS; login identity and scoped, revocable Agent credentials | Not implemented |
 
-Hosted Tearoom is a deferred future phase: the hosted implementation was
-deleted at the P0 clean break, and the design now stands on a user login
-identity rather than Actor-as-secret. Hosted Tearoom does not replace the
-local product or create a second Event model. Both forms
-should use the same Room, Actor, Event, addressing, ordering, and read
-semantics.
+These are profiles, not editions. Remote deployment must not introduce a
+second server, API, command vocabulary, Event shape, migration chain, or
+authorization model. Local setup may remove ceremony — for example by
+bootstrapping one owner — but requests then pass through the same admission and
+capability decisions as remote requests. Infrastructure adapters such as the
+database, object storage, TLS termination, and process supervision are the
+allowed differences.
 
-The first hosted slice is the **context link** (below). It needs no account
-system, and it is the door through which the full hosted phase grows.
+Features land in the shared service first and are accepted against both
+profiles. A feature that exists only in a separately maintained local or remote
+path is incomplete. PostgreSQL parity is required before claiming remote
+readiness; SQLite remains the always-runnable local proof of the same relational
+contract. The current loopback-only server is therefore an incomplete deployment
+of the target service, not a separate Local Tearoom product.
+
+The first remote-facing slice is the **context link** (below). It grows from the
+same service and Room history; it is not a separate remote application.
 
 ## The context link
 
@@ -111,11 +123,11 @@ The slice grows in three tiers:
    link releases that range from the Room's membership boundary to whoever
    holds the URL — the same act as pasting into a chat.
 2. **Continuation room.** The link gains a write face: a scoped, revocable
-   append credential to a hosted Room created from the snapshot, under the
+   append credential to a remotely deployed Room created from the snapshot, under the
    same Room/Actor/Event contract. Guest admission is explicit, and a shared
    capability names but does not prove its Actor — identity is weaker than a
    locally admitted Actor, and the link view must say so.
-3. **Full hosted phase.** The login-identity journey below, with
+3. **Remote deployment.** The login-identity journey below, with
    organizations, credentials, and revocation.
 
 Collaboration continues across a link by a fork chain: import the snapshot
@@ -126,9 +138,9 @@ budget stays with the receiver — the link encodes its boundary, and full-range
 reads cost what [lessons/rival-falsification.md](lessons/rival-falsification.md)
 measured (about 93,000 tokens per 2,000 Events).
 
-## Hosted user journey
+## Target remote user journey — not implemented
 
-The intended hosted path is:
+The following is target design, not shipped behavior:
 
 1. A human signs in with GitHub.
 2. The human creates a Room under their account or organization.
@@ -139,15 +151,24 @@ The intended hosted path is:
 
 GitHub proves the human account identity. Agents do not reuse the human's GitHub session. Each agent or integration receives its own credential so access can be limited and revoked without affecting the owner.
 
-The hosted product introduces account, organization, membership, credential, and billing records around the Room. These are control-plane records, not additional coordination entities inside the Room/Event kernel.
+The target remote profile may introduce account, organization, membership,
+credential, and billing records around the Room as they become necessary.
+These are service records, not additional coordination entities inside the
+Room/Event kernel, and the same service may use the local bootstrap identity
+when deployed on one machine.
 
 ## Persistence direction
 
-The file Store remains a valid local implementation, and the relational Store now ships beside it on SQLite:
+Current and target state are deliberately distinct: the file Store remains the
+shipped local default today, while SQLite is the target local default and
+PostgreSQL is the target remote database. The relational Store already ships
+on SQLite:
 
-- The file Store remains the current local default. SQLite is an explicit local
-  choice selected with `--store sqlite` and recorded in `.tearoom/store.json`.
-- PostgreSQL is the intended hosted database; the schema and migration discipline are shared, and PostgreSQL validation is pending.
+- Today the file Store is the local default. SQLite is an explicit local choice
+  selected with `--store sqlite` and recorded in `.tearoom/store.json`; changing
+  the default is open implementation work, not a claim about current behavior.
+- PostgreSQL is the remote database; SQLite and PostgreSQL share one relational
+  schema owner and migration sequence, and PostgreSQL validation is pending.
 - The ORM and database models remain inside the persistence layer and must not become domain types.
 - Database transactions must enforce the Store invariants: dense ordering,
   append-only Events, stable Actor admission, membership visibility, and any
@@ -178,7 +199,8 @@ The core does not know these applications, but it can carry them:
 
 - No built-in workflow engine, scheduler, DAG, or model router.
 - No task, lease, gate, thread, channel, or game entity in the kernel.
-- No browser or WebAssembly console in the current product; a hosted management interface may be added when the SaaS control plane exists.
+- No browser or WebAssembly console in the current product; a management
+  interface may be added to the shared service when remote deployment exists.
 - No hidden compatibility model beside Room, Actor, and Event.
 - No hidden read checkpoint, unread state, or mandatory stale-write precondition in the kernel.
 - No claim that `to` is security or process activation; authentication and delivery are separate layers.

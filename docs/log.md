@@ -3,10 +3,29 @@ type: log
 title: Change log
 description: Dated record of product decisions and structural changes, newest first.
 tags: [log, history]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Change log
+
+## 2026-09-09 — Make local and remote one deployment-shaped product
+
+Adopted one service across local and remote deployment. SQLite is the target
+local database and PostgreSQL the remote database; network, identity, object
+storage, and process supervision are deployment adapters. Room, Actor, Event,
+commands, HTTP behavior, authorization decisions, migrations, errors, and
+acceptance journeys remain shared. Local setup may bootstrap an owner but does
+not define a second trust model after bootstrap.
+
+The evaluation sequence was compacted after the retired wake gate: current
+remote hardening is P2. Older entries keep their historical gate labels.
+
+Rejected separate Local and Hosted editions, separate server entry points, and
+remote-only product behavior. The current file backend remains a portable
+implementation while it satisfies the same Store contract; its long-term
+retention requires evidence that SQLite cannot serve that use case. Reopen the
+single-service decision only if a required infrastructure difference cannot be
+contained behind the existing boundaries without changing the Room contract.
 
 ## 2026-09-09 — Retire history and deferred design; consolidate the domain page
 
@@ -22,7 +41,7 @@ addressing invariant was restated in 15 files. Deleted, with successors:
   their surviving decisions were already in this log, and the command surface
   is owned by [reference/cli.md](reference/cli.md).
 - `architecture/hosted-plan.md`, `domain/hosted-identity.md` — deferred-phase
-  design; the adopted hosted slice and journey live in
+  design; the adopted remote-facing slice and journey live in
   [product.md](product.md).
 - `domain/problem.md`, `domain/boundaries.md`, `domain/security.md`,
   `domain/agent-experience.md` — merged into
@@ -57,10 +76,11 @@ immediately caught a genuinely broken (unquoted-colon) frontmatter in
 Settled the open conflict from 2026-09-02: delivery of an Event to an absent
 Agent is a paste, a context link, or an operator-owned external script, and
 the in-product wake control plane is out of product scope. Story S4 moved to
-`deferred`, evaluation E5 was removed, gate P2 is retired, and
-`architecture/activation.md` remains as a
-retained reference design with its reopening condition. The first hosted
-slice is the **context link** defined in [product.md](product.md): a
+`deferred`, evaluation E5 was removed, and gate P2 was retired. At that point
+`architecture/activation.md` remained as a reference design; it
+was later removed during the 2026-09-09 documentation consolidation recorded
+at the top of this log. The replacement delivery slice is the **context link**
+defined in [product.md](product.md): a
 content-addressed, immutable snapshot URL with a human replay face and an
 agent-readable face, growing through fork chains and continuation rooms
 before any account machinery. A chat thread carrying links is a transport,

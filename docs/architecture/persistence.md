@@ -1,30 +1,31 @@
 ---
 type: architecture
 title: Persistence direction
-description: How persistence stores the durable Room and Event history without leaking database or activation concerns into the kernel.
+description: How one service stores the durable Room and Event history across local and remote deployment profiles.
 tags: [architecture, persistence, sqlite, postgresql, orm]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Persistence direction
 
 The target contract remains `core.Store`: a durable Room with membership and
 one ordered immutable Event history. Database records and ORM APIs stay behind
-that boundary. SQLite is shipped; PostgreSQL validation is gated.
+that boundary. SQLite is shipped; PostgreSQL validation is gated. They are
+database adapters for one service, not separate product implementations.
 Implementation status belongs in [status.md](status.md); this document defines
 only the persistence target and clean-break boundary.
 
 ## Deployment matrix
 
-| Product form | Storage choice | Purpose |
+| Deployment profile | Target storage choice | Purpose |
 |---|---|---|
-| Local single-user | File Store by default; SQLite optional | One-directory setup and durable local use |
-| Self-hosted service | SQLite or PostgreSQL | Small deployments can remain simple; larger ones can share a database |
-| Hosted service | PostgreSQL | Concurrent instances, backups, operations, and tenant growth |
+| Local | SQLite; file remains today's default and a current portable option | One-machine setup and durable local use |
+| Remote | PostgreSQL | Concurrent instances, backups, operations, and tenant growth |
 
-Use one ORM-supported schema where SQLite and PostgreSQL semantics genuinely
-agree. Backend-specific behavior must not leak into Room, Actor, Event, the
-CLI, or the HTTP contract.
+Use one relational schema owner and migration sequence where SQLite and
+PostgreSQL semantics genuinely agree. The same service and acceptance journeys
+must run against both. Backend-specific behavior must not leak into Room,
+Actor, Event, identity decisions, the CLI, or the HTTP contract.
 
 ## Ownership
 
@@ -34,8 +35,8 @@ CLI, or the HTTP contract.
 - The file Store remains an independent implementation until a separate
   migration decision removes it.
 - CLI and HTTP depend on `core.Store`, never on ORM or concrete database types.
-- A future activation service owns its delivery ledger; activation state is not
-  part of the Room/Event kernel tables.
+- Delivery state, if an external operator needs it, is not part of the
+  Room/Event kernel tables.
 
 The ORM is replaceable infrastructure. Its model types must not be exported as
 product entities. The shipped SQLite backend uses GORM with the pure-Go
@@ -52,10 +53,11 @@ The minimum durable coordination data is:
 
 Content is stored and transported as compact JSON; plain text is represented as
 a JSON string. `type`, `caused_by`, or other envelope fields may be protocol
-conventions later, but they are not required by the minimum model. Hosted
-control-plane tables such as accounts, memberships, credentials, and billing
-records remain outside coordination data; they authorize access but do not
-change Event semantics.
+conventions later, but they are not required by the minimum model. Target
+service tables such as accounts, memberships, credentials, and billing records
+remain outside coordination data; when implemented, they authorize access but
+do not change Event semantics. Local bootstrap and remote login will feed the
+same authorization path.
 
 Room membership is the visibility boundary. Every admitted member may read the
 complete Room history. `to` is public addressing metadata, not an Event-level
@@ -71,7 +73,7 @@ precondition from a hidden or saved read cursor.
 
 Reading is a repeatable query with a caller-supplied boundary such as `after
 seq`; it does not silently advance Actor state. If reliable delivery progress
-becomes necessary, an explicitly named consumer or activation identity owns
+becomes necessary, an explicitly named consumer identity owns
 that state outside the Actor's identity.
 
 Idempotent append is an optional append capability, not part of the minimum
@@ -88,7 +90,7 @@ decoder, shadow table, or old/new double write. Data worth retaining is exported
 before cutover; rollback restores the previous binary with its matching data
 snapshot.
 
-## Activation persistence
+## Delivery persistence
 
 No activation ledger will be implemented in this repository (adjudicated
 2026-09-09); an external deliverer owns its own persistence. The boundary it
@@ -102,7 +104,7 @@ bindings; the refusal and its reopening condition are recorded in
 
 Schema changes are versioned migrations committed with the code that needs
 them. Migrations run before serving traffic and are tested against SQLite and
-PostgreSQL before a hosted release.
+PostgreSQL before a remote-capable release.
 
 A future importer must preserve Room identity, Actor identity, Event ids and
 sequence numbers, timestamps, addressing, and any adopted idempotency keys.

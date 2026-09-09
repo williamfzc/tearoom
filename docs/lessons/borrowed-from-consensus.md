@@ -4,7 +4,7 @@ title: Borrowed from consensus systems
 description: Serialize Room facts once and make uncertain retries safe without turning every append into consensus.
 resource: internal/store/file.go
 tags: [lesson, concurrency, consensus, design]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Borrowed from consensus systems
@@ -30,7 +30,10 @@ not to impose one precondition on every Event.
 
 ## Idempotent effects
 
-A transport error can leave a caller unsure whether its Event landed. Every append therefore carries a caller-chosen key. Retrying identical content with that key returns the original Event; using the key for different content is refused.
+A transport error can leave a caller unsure whether its Event landed. An
+append may therefore carry a caller-chosen key. Retrying identical content with
+that key returns the original Event; using the key for different content is
+refused. Appends without a key remain valid and create distinct Events.
 
 ## Shared rules below every client
 

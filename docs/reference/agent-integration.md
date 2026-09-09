@@ -3,7 +3,7 @@ type: reference
 title: Agent integration guide
 description: A minimal, replayable integration path for an Agent using Tearoom's local or HTTP Room contract.
 tags: [reference, agents, integration, cli, http]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Agent integration guide
@@ -16,7 +16,7 @@ workflow schema. Application-level examples belong in
 
 ## Find the Room
 
-In local mode, run commands from the project directory or one of its
+In the currently shipped local profile, run commands from the project directory or one of its
 descendants. Tearoom discovers the nearest ancestor `.tearoom` directory; it
 does not create a Room during `send`, `read`, or `room join`. Create one once:
 
@@ -24,10 +24,11 @@ does not create a Room during `send`, `read`, or `room join`. Create one once:
 tearoom room init --as planner
 ```
 
-In server mode, set `TEAROOM_SERVER` to the loopback server URL. Client
+When using the same service over HTTP, set `TEAROOM_SERVER` to the loopback server URL. Client
 commands then use that Room instead of local directory discovery. `room init`
-is always local; the server itself must be started from a directory containing
-the Room:
+is local in the current implementation; the server itself must be started from
+a directory containing the Room. Remote Room creation will extend this same
+service and CLI rather than define another product:
 
 ```bash
 tearoom server start --address 127.0.0.1:8787
@@ -83,14 +84,18 @@ key with different content or addressing is a conflict and exits with code 1.
 tearoom send --json '{"kind":"proposal"}' --idempotency-key proposal-42
 ```
 
-## Use HTTP from a separate local process/runtime
+## Use HTTP from a separate process/runtime
 
-For the P0 loopback path, the server and Runtime run on the same host. Send
+For the currently shipped loopback profile, the server and Runtime run on the same host. Send
 `X-Tearoom-Actor` on every events request. `POST /api/events` accepts only
 `to` and `content`; `Idempotency-Key` is a request header. Errors are structured
 as `{"error":{"code":"...","message":"..."}}`. The server's `wait` query
 parameter is invocation-scoped and capped at 60 seconds. For a longer wait,
 loop externally, preserving the same `after` boundary and handling an empty
 array as "nothing new".
+
+The target remote profile keeps this Room/Event contract and command behavior,
+while deployment supplies PostgreSQL, HTTPS, and credentials. Its current gap
+is tracked in [status.md](../architecture/status.md).
 
 The copyable request sequence is in the [HTTP curl journey](http-api.md#minimal-curl-journey).

@@ -1,10 +1,10 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: The post-cutover package boundaries and the removal of legacy cursor, visibility, and activation leakage.
+description: The post-cutover package boundaries for one service across local and remote deployment profiles.
 resource: internal/
 tags: [architecture, boundaries, layering, migration, clean-break]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Layers and dependency direction
@@ -15,15 +15,16 @@ The clean-break target has one foundation contract and no compatibility layer:
 |---|---|---|
 | Foundation | `internal/core` | Room, Actor, minimum Event, Store, and typed domain errors |
 | Persistence | `internal/store`, `internal/relational` | Durable membership and ordered immutable Event history |
-| Application | future activation service (hosted control plane deferred) | Admission policy, credentials, activation ledger, leases, and runtime binding |
+| Application | shared service policy (not implemented) | Admission policy, identities, credentials, and management use cases |
 | Outside | `internal/transport` | The one current HTTP representation of the Store contract |
 | Outside | `internal/cli`, `cmd/tearoom` | `room`, `server`, `send`, `read`, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it; the CLI translates commands. A
-future hosted control plane would authorize admission outside the Store. Optional
-activation may consume and append through `core.Store`, but the kernel never
-imports a launcher, scheduler, Agent runtime, or hosted control plane.
+implements `core.Store`; transport adapts it; the target application layer will
+apply the same admission and capability policy in every deployment; the CLI translates
+commands. Local bootstrap and remote login are outside adapters into that one
+policy. The kernel never imports a launcher, scheduler, Agent runtime, or
+deployment-specific control plane.
 
 ## Target foundation boundary
 
@@ -56,21 +57,22 @@ shape. Neither package may:
 - create membership as a side effect of reading or sending;
 - compare an append with a hidden Actor cursor;
 - persist or interpret the old Event representation;
-- host activation claims or process state.
+- host delivery claims or process state.
 
 The pre-cutover implementations violated these target rules: they contained
 `Event.VisibleTo`, auto-registration, and expected-cursor append. Stages 1–2 of
 the cutover in [status.md](status.md) removed those behaviors rather than
 wrapping them.
 
-## Application boundary
+## Target application boundary
 
-Hosted control is a deferred application boundary around the Store (the
-implementation was deleted at the cutover; the future hosted phase is defined
-in [../product.md](../product.md)). When it returns, it resolves credentials to
-an already admitted Room/Actor and applies capabilities; it does not rewrite
-Event semantics. Membership is admitted explicitly and is the visibility
-boundary.
+The application layer will be shared by local and remote deployment. It resolves an
+identity, applies admission and capabilities, and then calls the Store; it does
+not rewrite Event semantics. Local setup may bootstrap an owner while remote
+setup uses login and scoped credentials, but both enter the same policy path.
+Membership remains explicit and is the visibility boundary. The current code
+has only the loopback trust shortcut; the shared policy and remote adapters are
+open work recorded in [status.md](status.md).
 
 Delivery to an absent Agent is not an application component of this
 repository (adjudicated 2026-09-09): it is a paste, a context link, or an
@@ -105,17 +107,17 @@ may keep them alive.
 
 After the cutover, the following must hold:
 
-1. `core` has no import path to persistence, transport, CLI, control, or
-   activation.
+1. `core` has no import path to persistence, transport, CLI, service policy, or
+   deployment adapters.
 2. Both Stores satisfy one new interface and have no old/new reader or writer.
 3. No Store operation silently admits an Actor: membership is explicit, and
-   authorization (today absent on loopback, in the future hosted login
-   identity) happens before Store access.
+   one authorization path handles both local bootstrap identity and remote
+   credentials before Store access.
 4. Transport has one route/body/error vocabulary.
 5. CLI, skills, tests, demos, and docs use only the new command and Event
    vocabulary.
-6. Activation is removable without changing Room visibility or append/read
-   semantics.
+6. Switching SQLite for PostgreSQL, or local identity for remote login, does
+   not change Room visibility or append/read semantics.
 
 The migration is complete only when `make check`, `make docs`, and repository
 searches verify these boundaries. If a stage fails, rollback is a Git/deploy
