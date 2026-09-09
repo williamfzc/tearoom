@@ -3,10 +3,39 @@ type: log
 title: Change log
 description: Dated record of product decisions and structural changes, newest first.
 tags: [log, history]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Change log
+
+## 2026-09-10 — Cut the surface and settle the authentication shape
+
+Shrank the product to the concepts the continuation story actually uses. The
+CLI is now `room init|join`, `send` (`--as`, `--json`, `--idempotency-key`),
+`read` (`--after`), `server start`, and `skill`. Removed: `room members`,
+the `--to` flag (the `to` Event field remains domain and HTTP vocabulary with
+no CLI writer), `--limit` (callers truncate — that is what caller-owned
+boundaries means), `--wait` with exit code 3 and the invocation-wait transport
+path (polling is a caller loop), and the `--store` flag together with the file
+backend itself. `.tearoom` is one SQLite database in WAL mode behind the
+format-2 marker; a pre-cut directory is an incompatible store and rollback is
+the previous release with its data snapshot. Production Go shrank by roughly
+600 lines and `cli.go`'s ratchet baseline dropped 567 to 456.
+
+Adjudicated the authentication shape for the remote profile: one authorization
+model everywhere — reads are open and the Room URL is the read capability;
+credentials gate writes; Room creation and credential issue/revoke stay owner
+operations. A credential is an opaque random token, hashed at rest, printed
+once, and distributed over the operator-controlled channel; revocation blocks
+further writes without touching history. There are no credential scopes, no
+read authorization, and no local login state. GitHub OAuth device flow is
+reserved as a future issuance ceremony in front of the same credential model,
+reconsidered only when a deployment needs identities the operator channel
+cannot name. TLS remains a deployment requirement because bearer tokens ride
+the write path.
+
+E1 was rewritten over the local SQLite room plus the loopback HTTP service and
+E2 over pure boundaries and restarts; both ship in `make check`.
 
 ## 2026-09-09 — Reduce the product to one CLI continuation story
 

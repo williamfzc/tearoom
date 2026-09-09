@@ -3,7 +3,7 @@ type: product
 title: Product definition
 description: Authoritative definition of Tearoom's single user story, target model, deployment profiles, and completion standard.
 tags: [product, scope, authority]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Product definition
@@ -78,6 +78,8 @@ CLI or HTTP contract, but Tearoom does not require a separate human interface.
 - **Caller-owned read boundaries.** Reading is repeatable. A caller supplies
   its own sequence boundary; Tearoom stores no implicit per-Actor cursor,
   unread marker, or acknowledgement.
+- **Open reads.** Reading requires no credential: the Room URL is the read
+  capability. Authorization gates writes and Room management, never reads.
 - **Ordinary append.** The Store assigns the next position. A normal append
   does not depend on the writer's last read.
 - **Idempotent retries.** A caller may attach an idempotency key so an uncertain
@@ -95,8 +97,8 @@ CLI or HTTP contract, but Tearoom does not require a separate human interface.
 
 | Profile | Database | Connection and identity | Current state |
 |---|---|---|---|
-| Local | SQLite is the target default; the file backend remains a current portable option | Nearest local Room or loopback URL; local setup may bootstrap its owner | File is the current default, SQLite is optional, and the loopback service ships |
-| Remote | PostgreSQL | HTTPS Room URL plus login identity and scoped revocable Agent credentials | Not implemented |
+| Local | SQLite is the only local backend | Nearest local Room or loopback URL; local setup bootstraps its owner with no login ceremony | SQLite ships as the only local backend and the loopback service ships |
+| Remote | PostgreSQL | HTTPS Room URL plus login identity and revocable Agent credentials | Not implemented |
 
 These are profiles, not editions. After profile bootstrap, both run the same
 four-step `read` / `send` journey. Remote deployment must not add a second
@@ -107,7 +109,8 @@ model. PostgreSQL is selected by the service, never by an Agent-side
 Features land in the shared service and are accepted against both profiles.
 A feature maintained only in a separate local or remote path is incomplete.
 The current loopback-only server is an incomplete deployment of the target
-service, not a separate Local Tearoom product.
+service, not a separate Local Tearoom product. The storage backend is a
+deployment fact, never an Agent-side flag.
 
 ## Target remote journey — not implemented
 
@@ -115,8 +118,8 @@ The [CLI reference](reference/cli.md#target-remote-profile-not-shipped) owns
 the exact target commands:
 
 1. An owner authenticates to the remote service and creates a Room.
-2. The owner explicitly admits an Actor and issues that Actor a scoped,
-   expiring credential.
+2. The owner explicitly admits an Actor and issues that Actor an expiring
+   credential.
 3. The Agent receives the Room URL, Actor identity, and credential through an
    operator-controlled channel.
 4. The Agent uses ordinary `read` and `send`; no remote-only collaboration
@@ -126,16 +129,20 @@ the exact target commands:
 
 Each Agent or integration receives its own credential. Actor names are not
 credentials, and presenting a credential never silently creates membership.
-The specific login provider, invitation flow, and default expiry remain open
-until implementation evidence requires a decision.
+Credentials are opaque random tokens, hashed at rest, printed once, and
+distributed over the operator-controlled channel; revocation blocks further
+writes without touching history. A hosted GitHub OAuth login may later become
+the issuance layer for human owners — a ceremony in front of the same
+credential model, never a second authorization model — and is reconsidered
+only when a deployment needs identities the operator channel cannot name. The
+default expiry remains open until implementation evidence requires a decision.
 
 ## Persistence direction
 
-The file Store is the shipped local default today. SQLite is the target local
-default and PostgreSQL the target remote database:
+SQLite is the only local backend and PostgreSQL the target remote database:
 
-- `room init --store sqlite` selects SQLite and records the choice in
-  `.tearoom/store.json`.
+- `room init` creates the SQLite Room; the storage backend is not a flag. The
+  layout is recorded in `.tearoom/store.json`.
 - SQLite and PostgreSQL share one relational schema owner and migration
   sequence; PostgreSQL validation is still pending.
 - Database models remain behind the Store boundary.
@@ -165,6 +172,7 @@ or another core entity.
 - No hidden compatibility model beside Room, Actor, and Event.
 - No hidden read checkpoint, unread state, or mandatory stale-write
   precondition.
+- No read authorization, credential scopes, or a local login state.
 - No claim that `to` is security or process activation.
 - No product-owned wake control plane.
 - No chat application as a Room; an external channel may carry connection
