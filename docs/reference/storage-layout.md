@@ -2,49 +2,29 @@
 type: reference
 title: Storage layout
 description: Authoritative on-disk Room representation and the boundary around operational state.
-resource: internal/store/file.go
-tags: [reference, storage, concurrency]
-timestamp: 2026-09-09
+resource: internal/store/open.go
+tags: [reference, storage, sqlite]
+timestamp: 2026-09-10
 ---
 
 # Storage layout
 
 ## Room state
 
-Every local Room is a `.tearoom` directory containing a backend marker. Both
-storage implementations sit behind the same Room contract:
+Every local Room is a `.tearoom` directory containing a format marker and one
+SQLite database behind the single Room contract:
 
 ```text
 .tearoom/
-  store.json      backend marker: format 2, {"backend":"file"|"sqlite"}
-```
-
-The marker is the format gate: only `format: 2` is accepted. A markerless,
-version-1, or unknown-backend layout is refused with an incompatible-store
-error; there is no import and no automatic upgrade.
-
-The file backend stores:
-
-```text
-.tearoom/
-  store.json      backend marker
-  room.json       Room identity and creation time
-  actors.json     admitted Actor identities
-  events.jsonl    ordered append-only Events with idempotency metadata
-  lock            flock coordination target, created on demand
-```
-
-`events.jsonl` keeps an internal record envelope: the Event plus the request
-idempotency key and fingerprint used to answer retries. Only Events are ever
-exposed through the Store contract.
-
-The SQLite backend stores the equivalent records in:
-
-```text
-.tearoom/
-  store.json      backend marker
+  store.json      format marker: {"format":2,"backend":"sqlite"}
   room.db         Rooms, Actors, Events, and idempotency records
 ```
+
+The marker is the format gate: only `format: 2` with backend `sqlite` is
+accepted. A markerless, version-1, or retired-backend layout is refused with
+an incompatible-store error; there is no import and no automatic upgrade. The
+database runs in WAL mode with a busy timeout, so concurrent processes append
+safely without any external lock file.
 
 The relational schema is versioned and refuses to open a database without the
 format-2 marker. `append_idempotency` is a separate table: the idempotency key
@@ -73,13 +53,14 @@ No in-product delivery or wake service exists (adjudicated 2026-09-09; see
 [product.md](../product.md)); this Room layout does not
 store Actor read progress, delivery attempts, bindings, or Runtime state.
 
-The two current local backends are separate creation choices behind one
-contract. The clean break does not import pre-adoption Room data or session
-state. PostgreSQL is the remote database adapter for the same service, schema
-owner, and Store boundary; see
+There is one local backend and no creation choice to make. The clean break
+does not import pre-adoption Room data or session state: an old `.tearoom`
+directory is an incompatible store. PostgreSQL is the remote database adapter
+for the same service, schema owner, and Store boundary; see
 [persistence.md](../architecture/persistence.md).
 
 ## Portability
 
-Unix-like systems use `flock` for the current file implementation. Windows has
-no safe cross-process implementation yet and must not be used concurrently.
+The storage engine is the pure-Go `glebarez/sqlite` driver, so release
+binaries stay static (`CGO_ENABLED=0`) and SQLite's own locking serializes
+concurrent writers on every platform.

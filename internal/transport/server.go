@@ -1,7 +1,7 @@
 // Package transport carries the core.Store contract over HTTP.
 // The server owns routing, strict JSON decoding, and error mapping, never
-// room policy. Wait lives here, invocation-scoped: bounded polling against
-// the Store, with no cursor, no subscription, and no durable state.
+// room policy. Every route is one Store call: reads are pure, so callers
+// that need to wait for new history poll from their own boundary.
 package transport
 
 import (
@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
 )
@@ -23,21 +22,11 @@ const actorHeader = "X-Tearoom-Actor"
 // idempotencyHeader is the optional append request header.
 const idempotencyHeader = "Idempotency-Key"
 
-// waitCap caps one wait request server-side; callers slice longer waits into
-// repeated requests.
-const waitCap = 60 * time.Second
-
-const waitCapSeconds = uint64(waitCap / time.Second)
-
-// waitInterval is the bounded-polling cadence of a wait request.
-const waitInterval = 25 * time.Millisecond
-
 // errMethodNotAllowed distinguishes a route with the wrong method so the
 // client sees 405 instead of a generic bad request.
 var errMethodNotAllowed = errors.New("method not allowed")
 
-// Server serves one core.Store over HTTP. It holds no state of its own: wait
-// is answered by polling the Store within one request.
+// Server serves one core.Store over HTTP. It holds no state of its own.
 type Server struct {
 	Store core.Store
 }
@@ -49,7 +38,7 @@ func NewServer(store core.Store) *Server { return &Server{Store: store} }
 //	GET  /api/room
 //	GET  /api/actors
 //	POST /api/actors
-//	GET  /api/events?after=42&limit=100&wait=30
+//	GET  /api/events?after=42
 //	POST /api/events
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -116,9 +105,8 @@ func (s *Server) appendEvent(r *http.Request) (any, error) {
 	})
 }
 
-// readEvents serves GET /api/events with an Event array. The wait parameter,
-// in seconds, makes the request poll the Store until an event past after
-// appears or the wait elapses; an empty array then means "nothing new".
+// readEvents serves GET /api/events with one Event array. The read is pure:
+// callers truncate or poll from their own boundary.
 func (s *Server) readEvents(r *http.Request) (any, error) {
 	actor := strings.TrimSpace(r.Header.Get(actorHeader))
 	if actor == "" {
@@ -128,43 +116,7 @@ func (s *Server) readEvents(r *http.Request) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	limit, err := parseNonNegativeInt(r.URL.Query().Get("limit"), "limit")
-	if err != nil {
-		return nil, err
-	}
-	wait, err := parseUint(r.URL.Query().Get("wait"), "wait")
-	if err != nil {
-		return nil, err
-	}
-	if wait == 0 {
-		return s.Store.Read(r.Context(), actor, after, limit)
-	}
-	if wait > waitCapSeconds {
-		wait = waitCapSeconds
-	}
-	budget := time.Duration(wait) * time.Second
-	deadline := time.Now().Add(budget)
-	for {
-		events, err := s.Store.Read(r.Context(), actor, after, limit)
-		if err != nil {
-			return nil, err
-		}
-		if len(events) > 0 {
-			return events, nil
-		}
-		if remaining := time.Until(deadline); remaining <= 0 {
-			return events, nil
-		}
-		step := waitInterval
-		if remaining := time.Until(deadline); remaining < step {
-			step = remaining
-		}
-		select {
-		case <-time.After(step):
-		case <-r.Context().Done():
-			return nil, r.Context().Err()
-		}
-	}
+	return s.Store.Read(r.Context(), actor, after)
 }
 
 // decodeStrict decodes exactly one JSON object and rejects unknown fields, so
@@ -192,17 +144,6 @@ func parseUint(value, name string) (uint64, error) {
 	}
 	parsed, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
-		return 0, errors.New(name + " must be a non-negative integer")
-	}
-	return parsed, nil
-}
-
-func parseNonNegativeInt(value, name string) (int, error) {
-	if strings.TrimSpace(value) == "" {
-		return 0, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed < 0 {
 		return 0, errors.New(name + " must be a non-negative integer")
 	}
 	return parsed, nil

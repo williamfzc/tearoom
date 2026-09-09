@@ -1,6 +1,5 @@
-// Contract tests prove the Store contract against the file backend, the only
-// implementation present in this wave; every later backend runs the same
-// battery from its own tests.
+// Contract tests prove the Store contract against the shipped local store;
+// the HTTP client runs the same battery from the transport tests.
 package core_test
 
 import (
@@ -10,9 +9,9 @@ import (
 	"github.com/williamfzc/tearoom/internal/store"
 )
 
-func TestFileStoreContract(t *testing.T) {
+func TestLocalStoreContract(t *testing.T) {
 	core.StoreContract(t, func(t *testing.T) core.Store {
-		st, err := store.Init(t.TempDir(), store.BackendFile, "planner")
+		st, err := store.Init(t.TempDir(), "planner")
 		if err != nil {
 			t.Fatal(err)
 		}

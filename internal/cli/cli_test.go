@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -132,6 +131,7 @@ func TestRemovedCommandsAreRejected(t *testing.T) {
 		{"actor"},
 		{"help"},
 		{"room", "info"},
+		{"room", "members"},
 	} {
 		app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
 		if code := app.Run(args); code != ExitError {
@@ -150,6 +150,10 @@ func TestRemovedFlagsAreRejected(t *testing.T) {
 		{"send", "hello", "--id", "k", "--as", "alice"},
 		{"read", "--cursor", "3", "--as", "alice"},
 		{"read", "--type", "message", "--as", "alice"},
+		{"send", "hello", "--to", "bob", "--as", "alice"},
+		{"read", "--limit", "2", "--as", "alice"},
+		{"read", "--wait", "5s", "--as", "alice"},
+		{"room", "init", "--as", "alice", "--store", "file"},
 		{"server", "start", "--directory", t.TempDir()},
 	} {
 		app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
@@ -208,23 +212,6 @@ func TestRoomInitAdmitsCreator(t *testing.T) {
 	}
 }
 
-func TestRoomInitStoreChoice(t *testing.T) {
-	for _, backend := range []string{"file", "sqlite"} {
-		dir := t.TempDir()
-		app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-		if code := app.Run([]string{"room", "init", "--as", "a", "--store", backend}); code != ExitOK {
-			t.Fatalf("room init --store %s exit = %d", backend, code)
-		}
-		st, err := store.Open(dir)
-		if err != nil {
-			t.Fatalf("open %s room: %v", backend, err)
-		}
-		if _, err := st.Room(context.Background()); err != nil {
-			t.Fatalf("room %s: %v", backend, err)
-		}
-	}
-}
-
 func TestRoomInitWithoutActorFails(t *testing.T) {
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: t.TempDir()}
 	t.Setenv("TEAROOM_ACTOR", "")
@@ -233,7 +220,7 @@ func TestRoomInitWithoutActorFails(t *testing.T) {
 	}
 }
 
-func TestJoinAndMembers(t *testing.T) {
+func TestJoinAdmitsActors(t *testing.T) {
 	dir := t.TempDir()
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
 	if code := app.Run([]string{"room", "init", "--as", "planner"}); code != ExitOK {
@@ -248,14 +235,15 @@ func TestJoinAndMembers(t *testing.T) {
 	if err := json.Unmarshal(joinOut.Bytes(), &actor); err != nil || actor.ID != "developer" {
 		t.Fatalf("room join output = %q", joinOut.String())
 	}
-	var members bytes.Buffer
-	membersApp := &App{Out: &members, Err: io.Discard, Dir: dir}
-	if code := membersApp.Run([]string{"room", "members"}); code != ExitOK {
-		t.Fatalf("room members exit = %d", code)
+	// Repeating the join returns the existing membership.
+	var repeatOut bytes.Buffer
+	repeat := &App{Out: &repeatOut, Err: io.Discard, Dir: dir}
+	if code := repeat.Run([]string{"room", "join", "developer"}); code != ExitOK {
+		t.Fatalf("repeat join exit = %d", code)
 	}
-	var actors []core.Actor
-	if err := json.Unmarshal(members.Bytes(), &actors); err != nil || len(actors) != 2 {
-		t.Fatalf("room members output = %q", members.String())
+	var repeated core.Actor
+	if err := json.Unmarshal(repeatOut.Bytes(), &repeated); err != nil || repeated.ID != "developer" {
+		t.Fatalf("repeat join output = %q", repeatOut.String())
 	}
 }
 
@@ -315,45 +303,11 @@ func TestSendRequiresActor(t *testing.T) {
 	}
 }
 
-func TestSendToRepeatable(t *testing.T) {
-	dir := initRoom(t, "planner")
-	for _, member := range []string{"bob", "carol"} {
-		app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-		if code := app.Run([]string{"room", "join", member}); code != ExitOK {
-			t.Fatalf("join %s exit = %d", member, code)
-		}
-	}
-	var out bytes.Buffer
-	app := &App{Out: &out, Err: io.Discard, Dir: dir}
-	if code := app.Run([]string{"send", "hi", "--to", "bob", "--to", "carol", "--as", "planner"}); code != ExitOK {
-		t.Fatalf("send exit = %d", code)
-	}
-	var event core.Event
-	if err := json.Unmarshal(out.Bytes(), &event); err != nil {
-		t.Fatal(err)
-	}
-	if len(event.To) != 2 || event.To[0] != "bob" || event.To[1] != "carol" {
-		t.Fatalf("to = %v, want [bob carol]", event.To)
-	}
-}
-
 func TestSendUnjoinedActorRejected(t *testing.T) {
 	dir := initRoom(t, "planner")
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
 	if code := app.Run([]string{"send", "hello", "--as", "stranger"}); code != ExitError {
 		t.Fatalf("unjoined send exit = %d, want %d", code, ExitError)
-	}
-}
-
-func TestSendUnknownRecipientSuggestsJoin(t *testing.T) {
-	dir := initRoom(t, "planner")
-	var errOut bytes.Buffer
-	app := &App{Out: io.Discard, Err: &errOut, Dir: dir}
-	if code := app.Run([]string{"send", "hello", "--as", "planner", "--to", "bob"}); code != ExitError {
-		t.Fatalf("send unknown recipient exit = %d, want %d", code, ExitError)
-	}
-	if !strings.Contains(errOut.String(), "tearoom room join <actor>") {
-		t.Fatalf("error = %q, want join hint", errOut.String())
 	}
 }
 
@@ -428,24 +382,6 @@ func TestReadAfterRequiresPresentationAddress(t *testing.T) {
 	}
 }
 
-func TestReadLimit(t *testing.T) {
-	dir := initRoom(t, "planner")
-	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-	for i := 1; i <= 3; i++ {
-		if code := app.Run([]string{"send", "m", "--as", "planner"}); code != ExitOK {
-			t.Fatalf("send exit = %d", code)
-		}
-	}
-	var out bytes.Buffer
-	reader := &App{Out: &out, Err: io.Discard, Dir: dir}
-	if code := reader.Run([]string{"read", "--limit", "2", "--as", "planner"}); code != ExitOK {
-		t.Fatalf("read --limit exit = %d", code)
-	}
-	if n := strings.Count(strings.TrimSpace(out.String()), "\n") + 1; n != 2 {
-		t.Fatalf("read --limit 2 = %q, want 2 lines", out.String())
-	}
-}
-
 func TestReadRepeatedHasNoSideEffects(t *testing.T) {
 	dir := initRoom(t, "planner")
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
@@ -461,61 +397,6 @@ func TestReadRepeatedHasNoSideEffects(t *testing.T) {
 		if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 1 {
 			t.Fatalf("read %d = %q, want 1 line", i, out.String())
 		}
-	}
-}
-
-func TestReadWaitTimeout(t *testing.T) {
-	dir := initRoom(t, "planner")
-	var out bytes.Buffer
-	app := &App{Out: &out, Err: io.Discard, Dir: dir}
-	if code := app.Run([]string{"read", "--wait", "200ms", "--as", "planner"}); code != ExitTimeout {
-		t.Fatalf("read --wait timeout exit = %d, want %d", code, ExitTimeout)
-	}
-	if out.Len() != 0 {
-		t.Fatalf("read --wait timeout output = %q, want nothing", out.String())
-	}
-}
-
-func TestReadWaitReturnsExistingEvents(t *testing.T) {
-	dir := initRoom(t, "planner")
-	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-	if code := app.Run([]string{"send", "m", "--as", "planner"}); code != ExitOK {
-		t.Fatalf("send exit = %d", code)
-	}
-	var out bytes.Buffer
-	reader := &App{Out: &out, Err: io.Discard, Dir: dir}
-	if code := reader.Run([]string{"read", "--wait", "5s", "--as", "planner"}); code != ExitOK {
-		t.Fatalf("read --wait with events exit = %d", code)
-	}
-	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 1 {
-		t.Fatalf("read --wait output = %q, want 1 line", out.String())
-	}
-}
-
-func TestReadWaitSeesLaterAppend(t *testing.T) {
-	dir := initRoom(t, "planner")
-	st, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out bytes.Buffer
-	app := &App{Out: &out, Err: io.Discard, Dir: dir}
-	done := make(chan int, 1)
-	go func() { done <- app.Run([]string{"read", "--wait", "10s", "--as", "planner"}) }()
-	time.Sleep(300 * time.Millisecond)
-	if _, err := st.Append(context.Background(), "planner", core.AppendRequest{Content: json.RawMessage(`"late"`)}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case code := <-done:
-		if code != ExitOK {
-			t.Fatalf("read --wait exit = %d", code)
-		}
-		if !strings.Contains(out.String(), `"late"`) {
-			t.Fatalf("read --wait output = %q, missing the later event", out.String())
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("read --wait did not return after a later append")
 	}
 }
 
@@ -574,21 +455,6 @@ func TestRemoteServerRefusesNonLoopback(t *testing.T) {
 	}
 	if !strings.Contains(errOut.String(), "loopback") {
 		t.Fatalf("error = %q, want loopback validation", errOut.String())
-	}
-}
-
-func TestReadWaitHonorsCancellation(t *testing.T) {
-	dir := initRoom(t, "planner")
-	st, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
-	_, err = app.readWithWait(ctx, st, "planner", 0, 0, time.Second)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("readWithWait error = %v, want context cancellation", err)
 	}
 }
 

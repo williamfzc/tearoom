@@ -4,7 +4,7 @@ title: HTTP API
 description: Authoritative HTTP protocol for the served Room.
 resource: internal/transport/server.go
 tags: [reference, contract, http, api]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # HTTP API
@@ -21,17 +21,13 @@ the loopback interface only in P0. Implementation status belongs in
 | `GET` | `/api/room` | Read Room identity |
 | `GET` | `/api/actors` | List admitted Actors |
 | `POST` | `/api/actors` | Explicitly join an Actor |
-| `GET` | `/api/events?after=42&limit=100&wait=30` | Read Events after a caller boundary, optionally waiting |
+| `GET` | `/api/events?after=42` | Read Events after a caller boundary |
 | `POST` | `/api/events` | Append one Event |
 
 - `GET /api/events` returns a plain JSON Event array — there is no Feed and no
   cursor. `after` is the exclusive caller-owned boundary; the server never
-  saves or advances it. `wait` is an integer number of seconds: the request
-  holds until an Event past `after` exists or the wait elapses, then returns
-  an array (possibly empty). This is invocation-scoped transport behavior, not
-  a durable Feed/ReadWait abstraction; it creates no cursor or delivery state.
-  The server caps one wait invocation at 60 seconds; callers needing a longer
-  wait must loop externally with the same caller-owned boundary. An empty array
+  saves or advances it. The read is pure and unbounded: a caller that truncates
+  or polls for new history owns that loop and its boundary. An empty array
   is "nothing new", not an error.
 - `POST /api/actors` is explicit join under loopback/OS trust. The body is
   `{"id":"<actor>"}`.
@@ -88,13 +84,11 @@ curl -sS -X POST http://127.0.0.1:8787/api/events \
   -H 'Idempotency-Key: review-1' \
   -d '{"to":["bob"],"content":{"request":"review"}}'
 
-curl -sS 'http://127.0.0.1:8787/api/events?after=0&limit=100' \
+curl -sS 'http://127.0.0.1:8787/api/events?after=0' \
   -H 'X-Tearoom-Actor: bob'
 ```
 
-The response to the last request is a JSON Event array. A wait request such as
-`/api/events?after=1&wait=1` returns an empty array if nothing new arrives;
-repeat it in the caller when more than the 60-second server cap is needed.
+The response to the last request is a JSON Event array.
 
 ## Idempotency
 

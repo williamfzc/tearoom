@@ -1,6 +1,6 @@
-// Backend selection tests: Open must return the backend its marker declares
-// and reject every older layout loudly; Init must refuse an unknown backend
-// and an existing room.
+// Store selection tests: Open must return the sqlite room its marker
+// declares and reject every older layout loudly; Init must refuse an existing
+// room and leave no temporary siblings behind.
 package store
 
 import (
@@ -16,27 +16,9 @@ import (
 	"github.com/williamfzc/tearoom/internal/relational"
 )
 
-func TestOpenReturnsFileBackend(t *testing.T) {
+func TestOpenReturnsSQLiteRoom(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile, "planner"); err != nil {
-		t.Fatal(err)
-	}
-	st, err := Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := st.(*File); !ok {
-		t.Fatalf("file marker opened %T, want *File", st)
-	}
-	room, err := st.Room(context.Background())
-	if err != nil || room.ID == "" {
-		t.Fatalf("room = %+v, %v", room, err)
-	}
-}
-
-func TestOpenReturnsSQLiteBackend(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := Init(dir, BackendSQLite, "planner"); err != nil {
+	if _, err := Init(dir, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	st, err := Open(dir)
@@ -46,7 +28,7 @@ func TestOpenReturnsSQLiteBackend(t *testing.T) {
 	if _, ok := st.(*relational.Store); !ok {
 		t.Fatalf("sqlite marker opened %T, want *relational.Store", st)
 	}
-	// The dispatched store answers the full contract.
+	// The opened store answers the full contract.
 	ctx := context.Background()
 	room, err := st.Room(ctx)
 	if err != nil || room.ID == "" {
@@ -62,7 +44,7 @@ func TestOpenReturnsSQLiteBackend(t *testing.T) {
 	if _, err := st.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"via dispatch"`)}); err != nil {
 		t.Fatal(err)
 	}
-	events, err := st.Read(ctx, "a", 0, 0)
+	events, err := st.Read(ctx, "a", 0)
 	if err != nil || len(events) != 1 || events[0].Seq != 1 {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
@@ -78,9 +60,9 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 		name   string
 		marker *marker
 	}{
-		{name: "markerless old file layout", marker: nil},
-		{name: "pre-cutover backend marker", marker: &marker{Backend: "sqlite"}},
-		{name: "format 1 marker", marker: &marker{Format: 1, Backend: "file"}},
+		{name: "markerless old layout", marker: nil},
+		{name: "retired file backend marker", marker: &marker{Format: formatVersion, Backend: "file"}},
+		{name: "format 1 marker", marker: &marker{Format: 1, Backend: "sqlite"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -102,40 +84,19 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 	}
 }
 
-func TestOpenAtRejectsMissingMarker(t *testing.T) {
-	dir := t.TempDir()
-	st, err := Init(dir, BackendFile, "planner")
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := st.(*File).Root()
-	if err := os.Remove(filepath.Join(root, markerName)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := OpenAt(root); err == nil || !strings.Contains(err.Error(), "incompatible") {
-		t.Fatalf("OpenAt missing marker error = %v", err)
-	}
-}
-
-func TestInitRejectsUnknownBackend(t *testing.T) {
-	if _, err := Init(t.TempDir(), Backend("oracle"), "planner"); err == nil {
-		t.Fatal("unknown backend accepted by Init")
-	}
-}
-
 func TestInitRefusesExistingRoom(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile, "planner"); err != nil {
+	if _, err := Init(dir, "planner"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(dir, BackendFile, "planner"); err == nil {
+	if _, err := Init(dir, "planner"); err == nil {
 		t.Fatal("second Init over an existing room accepted")
 	}
 }
 
 func TestInitAdmitsCreatorBeforePublishingRoom(t *testing.T) {
 	dir := t.TempDir()
-	st, err := Init(dir, BackendFile, "planner")
+	st, err := Init(dir, "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +115,7 @@ func TestInitAdmitsCreatorBeforePublishingRoom(t *testing.T) {
 
 func TestInitRejectsBlankCreatorWithoutRoom(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := Init(dir, BackendFile, "  "); err == nil {
+	if _, err := Init(dir, "  "); err == nil {
 		t.Fatal("blank creator accepted")
 	}
 	if _, err := os.Stat(filepath.Join(dir, Dir)); !errors.Is(err, os.ErrNotExist) {
@@ -171,7 +132,7 @@ func TestFindWalksUpAndFailsOutsideARoom(t *testing.T) {
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Init(dir, BackendFile, "planner"); err != nil {
+	if _, err := Init(dir, "planner"); err != nil {
 		t.Fatal(err)
 	}
 	found, err := Find(nested)

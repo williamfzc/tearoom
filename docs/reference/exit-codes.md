@@ -4,7 +4,7 @@ title: Exit codes
 description: Authoritative machine-readable CLI outcomes.
 resource: internal/cli/cli.go
 tags: [reference, contract, cli, agents]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Exit codes
@@ -15,7 +15,6 @@ timestamp: 2026-09-09
 |---|---|
 | 0 | Operation succeeded; an empty `read` is still success |
 | 1 | Invalid command, validation, unknown Actor, or any store/HTTP error — including an HTTP 409 idempotency conflict |
-| 3 | `read --wait` elapsed without a later Event |
 | 4 | No Room can be opened in the current profile, or the configured server is unreachable |
 
 There is no mandatory stale-write precondition, so no separate stale-cursor

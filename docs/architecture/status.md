@@ -3,7 +3,7 @@ type: architecture
 title: Implementation status
 description: What the code ships today and what remains open — the single implementation-gap source.
 tags: [architecture, status]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Implementation status
@@ -21,17 +21,16 @@ This page records what the shipped code implements against the target in
   `at`, optional `to`, `content`), and the five-method `Store` seam; the
   conformance battery in `contract.go` runs against every Store
   implementation.
-- `internal/store` implements the file layout: explicit admission, dense
-  append under flock, caller-owned reads, per-request idempotency records.
+- `internal/store` owns the `.tearoom` layout over SQLite: explicit admission,
+  dense append, caller-owned reads, per-request idempotency records.
 - `internal/relational` implements the same contract on SQLite (format-2
   gate); a PostgreSQL suite exists behind `TEAROOM_TEST_PG` and is pending
   validation.
 - `internal/transport` serves the HTTP contract: `X-Tearoom-Actor`, Event
-  arrays, unified error envelope, invocation-scoped wait.
-- `internal/cli` exposes `room init|join|members`, `send`, `read`, `skill`
-  (the binary-carried agent guide), and `server start` (loopback only); it
-  owns no session state. The command contract is
-  [reference/cli.md](../reference/cli.md).
+  arrays, unified error envelope.
+- `internal/cli` exposes `room init|join`, `send`, `read`, `skill` (the
+  binary-carried agent guide), and `server start` (loopback only); it owns no
+  session state. The command contract is [reference/cli.md](../reference/cli.md).
 - `scripts/target-room.sh` and `scripts/target-replay.sh` prove the P0
   claims and run in `make check`.
 
@@ -41,7 +40,7 @@ This page records what the shipped code implements against the target in
 |---|---|
 | P1 single cross-product continuation story (S1) | Foundation evaluations E1/E2 ship; the full four-step evaluation E3 is planned |
 | One service across local and remote profiles | Core Store and HTTP contracts are shared; the current entry point still hard-codes loopback trust and local Room creation |
-| Deployment database profiles | Local SQLite and remote PostgreSQL are the target; the CLI still defaults to the file backend and PostgreSQL is not wired into the service entry point |
+| Deployment database profiles | Local SQLite ships and remote PostgreSQL is the target; PostgreSQL is not wired into the service entry point |
 | Shared authorization path | Target `auth login` and `room credential issue` / `revoke` behavior is defined in the CLI contract; not implemented |
 | PostgreSQL Store validation | Gated suite ready; runs when `TEAROOM_TEST_PG` points at a database |
 | Remote form of the same read/write loop | Evaluation E7 is planned; no separate remote collaboration command is allowed |

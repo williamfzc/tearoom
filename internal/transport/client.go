@@ -44,8 +44,6 @@ type Client struct {
 	HTTP *http.Client
 }
 
-const maxWaitRequest = 60 * time.Second
-
 // RequireLoopbackURL enforces the unauthenticated P0 transport boundary.
 // The served API has no credentials, so a client target must be loopback too.
 func RequireLoopbackURL(raw string) error {
@@ -127,106 +125,14 @@ func (c *Client) Actors(ctx context.Context) ([]core.Actor, error) {
 }
 
 // Read returns the events after the exclusive caller-owned boundary, read as
-// the named actor.
-func (c *Client) Read(ctx context.Context, actor string, after uint64, limit int) ([]core.Event, error) {
-	return c.read(ctx, actor, after, limit, 0)
-}
-
-// ReadWait waits for the caller's full budget. The server caps each held
-// request at 60 seconds, so a longer wait is retried without changing the
-// caller-owned boundary.
-func (c *Client) ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
-	if wait <= 0 {
-		return c.Read(ctx, actor, after, limit)
-	}
-	deadline := time.Now().Add(wait)
-	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
-		deadline = contextDeadline
-	}
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		remaining := time.Until(deadline)
-		if remaining <= 0 {
-			return []core.Event{}, nil
-		}
-		seconds := int64(remaining / time.Second)
-		if seconds > int64(maxWaitRequest/time.Second) {
-			seconds = int64(maxWaitRequest / time.Second)
-		}
-		if seconds == 0 {
-			attemptCtx, cancel := context.WithTimeout(ctx, remaining)
-			// The server accepts whole seconds, so ask it to hold for one
-			// second and let the caller's remaining context cap the request.
-			events, err := c.read(attemptCtx, actor, after, limit, time.Second)
-			cancel()
-			if err != nil {
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
-				}
-				if !time.Now().Before(deadline) && errors.Is(err, context.DeadlineExceeded) {
-					return []core.Event{}, nil
-				}
-				return nil, err
-			}
-			if len(events) > 0 {
-				return events, nil
-			}
-			remaining = time.Until(deadline)
-			if remaining <= 0 {
-				return []core.Event{}, nil
-			}
-			timer := time.NewTimer(remaining)
-			select {
-			case <-timer.C:
-				return []core.Event{}, nil
-			case <-ctx.Done():
-				if !timer.Stop() {
-					<-timer.C
-				}
-				return nil, ctx.Err()
-			}
-		}
-		requestWait := time.Duration(seconds) * time.Second
-		attemptTimeout := requestWait + time.Second
-		if remaining < attemptTimeout {
-			attemptTimeout = remaining
-		}
-		attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
-		events, err := c.read(attemptCtx, actor, after, limit, requestWait)
-		cancel()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			if time.Now().Before(deadline) && errors.Is(err, context.DeadlineExceeded) {
-				continue
-			}
-			if !time.Now().Before(deadline) {
-				return []core.Event{}, nil
-			}
-			return nil, err
-		}
-		if len(events) > 0 {
-			return events, nil
-		}
-	}
-}
-
-func (c *Client) read(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
+// the named actor. The read is pure; callers that need to wait for new
+// history poll from their own boundary.
+func (c *Client) Read(ctx context.Context, actor string, after uint64) ([]core.Event, error) {
 	params := url.Values{}
 	params.Set("after", strconv.FormatUint(after, 10))
-	params.Set("limit", strconv.Itoa(limit))
 	headers := map[string]string{actorHeader: actor}
 	var events []core.Event
-	if wait == 0 {
-		return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
-	}
-	params.Set("wait", strconv.FormatInt(int64((wait+time.Second-1)/time.Second), 10))
-	waiter := *c.HTTP
-	waiter.Timeout = wait + 10*time.Second
-	return events, c.doWith(&waiter, ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
+	return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
 }
 
 // Append contributes one Event as the named actor. The request body carries

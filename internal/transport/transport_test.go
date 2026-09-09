@@ -1,7 +1,7 @@
-// Transport contract tests prove the HTTP surface against the new Room
-// contract: join, unjoined rejection, dense order, public To addressing, pure
-// reads, idempotent retry and conflict, invocation-scoped wait, the unified
-// error body, and rejection of the old append fields.
+// Transport contract tests prove the HTTP surface against the Room contract:
+// join, unjoined rejection, dense order, public To addressing, pure reads,
+// idempotent retry and conflict, the unified error body, and rejection of the
+// old append fields.
 package transport
 
 import (
@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/relational"
 	"github.com/williamfzc/tearoom/internal/store"
 )
 
@@ -27,109 +27,21 @@ func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) 
 	return f(request)
 }
 
-func newPair(t *testing.T) (*Client, *store.File) {
+func newPair(t *testing.T) (*Client, *relational.Store) {
 	t.Helper()
-	st, err := store.Init(t.TempDir(), store.BackendFile, "planner")
+	st, err := store.Init(t.TempDir(), "planner")
 	if err != nil {
 		t.Fatal(err)
 	}
-	file := st.(*store.File)
-	server := httptest.NewServer(NewServer(file).Handler())
+	sqlite := st.(*relational.Store)
+	server := httptest.NewServer(NewServer(sqlite).Handler())
 	t.Cleanup(server.Close)
-	return NewClient(server.URL), file
+	return NewClient(server.URL), sqlite
 }
 
 func TestClientSatisfiesStore(t *testing.T) {
 	var _ core.Store = (*Client)(nil)
-	var _ core.Store = (*store.File)(nil)
-}
-
-func TestClientReadWaitRetriesPastServerCap(t *testing.T) {
-	var requests int
-	client := NewClient("http://tearoom.test")
-	client.HTTP.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		requests++
-		if got := request.URL.Query().Get("wait"); got != "60" {
-			t.Fatalf("request %d wait = %q, want 60", requests, got)
-		}
-		body := "[]"
-		if requests == 2 {
-			body = `[{"seq":1,"actor":"a","at":"2026-01-01T00:00:00Z","content":"ok"}]`
-		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Request:    request,
-		}, nil
-	})
-	events, err := client.ReadWait(context.Background(), "a", 0, 0, 5*time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if requests != 2 || len(events) != 1 || events[0].Seq != 1 {
-		t.Fatalf("requests = %d, events = %+v", requests, events)
-	}
-}
-
-func TestClientReadWaitHonorsSubsecondBudget(t *testing.T) {
-	client := NewClient("http://tearoom.test")
-	client.HTTP.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader("[]")),
-			Request:    request,
-		}, nil
-	})
-	started := time.Now()
-	events, err := client.ReadWait(context.Background(), "a", 0, 0, 20*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 0 {
-		t.Fatalf("events = %+v, want empty", events)
-	}
-	if elapsed := time.Since(started); elapsed > time.Second {
-		t.Fatalf("wait took %s, want under one second", elapsed)
-	}
-}
-
-func TestClientReadWaitSeesSubsecondAppend(t *testing.T) {
-	client, file := newPair(t)
-	if _, err := client.AdmitActor(context.Background(), "a"); err != nil {
-		t.Fatal(err)
-	}
-	started := time.Now()
-	result := make(chan struct {
-		events []core.Event
-		err    error
-	}, 1)
-	go func() {
-		events, err := client.ReadWait(context.Background(), "a", 0, 0, 300*time.Millisecond)
-		result <- struct {
-			events []core.Event
-			err    error
-		}{events, err}
-	}()
-	time.Sleep(50 * time.Millisecond)
-	if _, err := file.Append(context.Background(), "a", core.AppendRequest{Content: json.RawMessage(`"later"`)}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case outcome := <-result:
-		if outcome.err != nil {
-			t.Fatal(outcome.err)
-		}
-		if len(outcome.events) != 1 || string(outcome.events[0].Content) != `"later"` {
-			t.Fatalf("events = %+v, want one later event", outcome.events)
-		}
-		if elapsed := time.Since(started); elapsed >= 300*time.Millisecond {
-			t.Fatalf("wait returned after %s, want before 300ms", elapsed)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("subsecond wait did not return after an append")
-	}
+	var _ core.Store = (*relational.Store)(nil)
 }
 
 func TestRequireLoopbackURL(t *testing.T) {
@@ -191,7 +103,7 @@ func TestRoomAndJoinThroughHTTP(t *testing.T) {
 func TestUnjoinedActorRejected(t *testing.T) {
 	client, _ := newPair(t)
 	ctx := context.Background()
-	if _, err := client.Read(ctx, "stranger", 0, 0); !errors.Is(err, core.ErrUnknownActor) {
+	if _, err := client.Read(ctx, "stranger", 0); !errors.Is(err, core.ErrUnknownActor) {
 		t.Fatalf("read error = %v, want %v", err, core.ErrUnknownActor)
 	}
 	if _, err := client.Append(ctx, "stranger", core.AppendRequest{Content: json.RawMessage(`"hi"`)}); !errors.Is(err, core.ErrUnknownActor) {
@@ -216,7 +128,7 @@ func TestDenseOrderAndPublicToOverHTTP(t *testing.T) {
 
 	// Every member reads the same dense history.
 	for _, actor := range []string{"a", "b", "c"} {
-		events, err := client.Read(ctx, actor, 0, 0)
+		events, err := client.Read(ctx, actor, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +143,7 @@ func TestDenseOrderAndPublicToOverHTTP(t *testing.T) {
 	}
 
 	// To is public addressing: the event addressed to b is visible to c.
-	events, err := client.Read(ctx, "c", 0, 0)
+	events, err := client.Read(ctx, "c", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +164,7 @@ func TestPureReadsAndBoundariesOverHTTP(t *testing.T) {
 		}
 	}
 
-	after2, err := client.Read(ctx, "a", 2, 0)
+	after2, err := client.Read(ctx, "a", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,21 +172,14 @@ func TestPureReadsAndBoundariesOverHTTP(t *testing.T) {
 		t.Fatalf("read after 2 = %+v, want seqs 3..5", after2)
 	}
 	// Repeated reads are side-effect-free and return identical history.
-	again, err := client.Read(ctx, "a", 2, 0)
+	again, err := client.Read(ctx, "a", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(again) != 3 || again[0].Seq != 3 {
 		t.Fatalf("repeated read changed results: %+v", again)
 	}
-	limited, err := client.Read(ctx, "a", 1, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(limited) != 2 || limited[0].Seq != 2 || limited[1].Seq != 3 {
-		t.Fatalf("limited read = %+v, want seqs 2..3", limited)
-	}
-	tail, err := client.Read(ctx, "a", 5, 0)
+	tail, err := client.Read(ctx, "a", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +206,7 @@ func TestIdempotentRetryAndConflictOverHTTP(t *testing.T) {
 		t.Fatalf("retry did not return the original event: first=%+v retry=%+v", first, retry)
 	}
 	// The retry created no new event.
-	events, err := client.Read(ctx, "a", 0, 0)
+	events, err := client.Read(ctx, "a", 0)
 	if err != nil || len(events) != 1 {
 		t.Fatalf("events after retry = %+v, %v", events, err)
 	}
@@ -328,75 +233,6 @@ func TestIdempotentRetryAndConflictOverHTTP(t *testing.T) {
 	}
 	if e1.Seq == e2.Seq {
 		t.Fatalf("no-key appends collapsed into %d", e1.Seq)
-	}
-}
-
-func TestWaitReturnsWhenEventAppends(t *testing.T) {
-	client, _ := newPair(t)
-	ctx := context.Background()
-	for _, actor := range []string{"a", "b"} {
-		if _, err := client.AdmitActor(ctx, actor); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got := make(chan []core.Event, 1)
-	go func() {
-		events, err := client.ReadWait(ctx, "b", 0, 0, 5*time.Second)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		got <- events
-	}()
-	time.Sleep(150 * time.Millisecond)
-	if _, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"wake"`)}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case events := <-got:
-		if len(events) != 1 || events[0].Seq != 1 || !bytes.Equal(events[0].Content, json.RawMessage(`"wake"`)) {
-			t.Fatalf("events = %+v", events)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("wait did not return after an append")
-	}
-}
-
-func TestWaitTimesOutEmpty(t *testing.T) {
-	client, _ := newPair(t)
-	ctx := context.Background()
-	if _, err := client.AdmitActor(ctx, "a"); err != nil {
-		t.Fatal(err)
-	}
-	before := time.Now()
-	events, err := client.ReadWait(ctx, "a", 0, 0, 2*time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 0 {
-		t.Fatalf("events = %+v, want none", events)
-	}
-	if elapsed := time.Since(before); elapsed < 1500*time.Millisecond {
-		t.Fatalf("empty wait returned too early: %s", elapsed)
-	}
-}
-
-func TestWaitShortCircuitsOnAvailableEvents(t *testing.T) {
-	client, _ := newPair(t)
-	ctx := context.Background()
-	if _, err := client.AdmitActor(ctx, "a"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.Append(ctx, "a", core.AppendRequest{Content: json.RawMessage(`"already"`)}); err != nil {
-		t.Fatal(err)
-	}
-	before := time.Now()
-	events, err := client.ReadWait(ctx, "a", 0, 0, 5*time.Second)
-	if err != nil || len(events) != 1 {
-		t.Fatalf("events = %+v, err = %v", events, err)
-	}
-	if elapsed := time.Since(before); elapsed > time.Second {
-		t.Fatalf("short circuit took %s", elapsed)
 	}
 }
 
@@ -536,35 +372,6 @@ func TestStrictErrorBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(response, http.StatusConflict, "conflict")
-}
-
-func TestWaitCapsBeforeDurationConversion(t *testing.T) {
-	client, file := newPair(t)
-	if _, err := client.AdmitActor(context.Background(), "a"); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	request := httptest.NewRequest(http.MethodGet, client.Base+"/api/events?wait=18446744073709551615", nil).WithContext(ctx)
-	request.Header.Set(actorHeader, "a")
-	response := httptest.NewRecorder()
-	done := make(chan struct{})
-	go func() {
-		NewServer(file).Handler().ServeHTTP(response, request)
-		close(done)
-	}()
-	select {
-	case <-done:
-		t.Fatal("overflowing wait returned before the bounded wait elapsed")
-	case <-time.After(50 * time.Millisecond):
-	}
-	// Stop the bounded wait without waiting for its full 60-second server cap.
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("bounded wait did not finish after the test window")
-	}
 }
 
 func TestUnreachableServerFailsLoudly(t *testing.T) {

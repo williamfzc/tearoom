@@ -76,15 +76,3 @@ func isBoolFlag(value *flag.Flag) bool {
 	flagValue, ok := value.Value.(boolFlag)
 	return ok && flagValue.IsBoolFlag()
 }
-
-// stringList collects a repeatable flag value.
-type stringList struct {
-	values []string
-}
-
-func (s *stringList) String() string { return strings.Join(s.values, ",") }
-
-func (s *stringList) Set(value string) error {
-	s.values = append(s.values, value)
-	return nil
-}

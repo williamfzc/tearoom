@@ -67,7 +67,7 @@ type Store interface {
 	Room(ctx context.Context) (*Room, error)
 	AdmitActor(ctx context.Context, actorID string) (*Actor, error)
 	Actors(ctx context.Context) ([]Actor, error)
-	Read(ctx context.Context, actorID string, after uint64, limit int) ([]Event, error)
+	Read(ctx context.Context, actorID string, after uint64) ([]Event, error)
 	Append(ctx context.Context, actorID string, request AppendRequest) (*Event, error)
 }
 

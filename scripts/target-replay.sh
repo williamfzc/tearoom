@@ -3,10 +3,9 @@
 #
 # Proves: different real processes act as the same Actor identity; a later
 # process replays from an explicit eN boundary after the writer exited; no
-# session or cursor files exist anywhere (the room layout is exactly the five
-# store files, and the client config directory stays empty); read --wait
-# affects only its own invocation; Room history is consistent across process
-# and server restarts.
+# session or cursor files exist anywhere (the client config directory stays
+# empty); every invocation picks its own boundary; Room history is consistent
+# across process and server restarts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -75,26 +74,12 @@ echo
 echo "E2: no session or cursor files"
 leftovers="$(find "$HOME" -type f | head -5)"
 check "the client config directory holds no session files" "$([ -z "$leftovers" ] && echo 0 || echo 1)"
-room_files="$(cd "$room" && find .tearoom -maxdepth 1 -type f -exec basename {} \; | sort | tr '\n' ' ')"
-check "the room holds only the five store files ($room_files)" \
-  "$(printf '%s' "$room_files" | grep -q '^actors.json events.jsonl lock room.json store.json $' && echo 0 || echo 1)"
-
-echo
-echo "E2: read --wait affects only its own invocation"
-timeout_rc=0
-in_dir "$room" "$BIN" read --after e4 --wait 2s --as alice >/dev/null 2>&1 || timeout_rc=$?
-check "read --wait with nothing new times out with exit 3" "$([ "$timeout_rc" -eq 3 ] && echo 0 || echo 1)"
-wait_full="$(in_dir "$room" "$BIN" read --as alice | seqs_of)"
-check "the timed-out wait persisted no state: full read is still 1..4" \
-  "$(printf '%s' "$wait_full" | grep -q '^1 2 3 4$' && echo 0 || echo 1)"
-tail="$(in_dir "$room" "$BIN" read --after e2 --limit 1 --as alice)"
-rc=0
-printf '%s\n' "$tail" | python3 -c '
-import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-sys.exit(0 if len(events) == 1 and events[0]["seq"] == 3 else 1)
-' || rc=$?
-check "the next invocation still picks its own boundary (e2 -> event 3)" "$rc"
+# Every invocation owns its boundary: reading from e1 twice returns the same
+# events and leaves the room untouched for the next caller.
+one="$(in_dir "$room" "$BIN" read --after e1 --as alice | seqs_of)"
+two="$(in_dir "$room" "$BIN" read --after e1 --as alice | seqs_of)"
+check "independent invocations replay the same boundary (e1 -> 2 3 4)" \
+  "$([ "$one" = "$two" ] && [ "$one" = "2 3 4" ] && echo 0 || echo 1)"
 
 echo
 echo "E2: history is consistent across restarts"
@@ -104,7 +89,7 @@ start_server() {
   ( cd "$room" && exec "$BIN" server start --address "127.0.0.1:$PORT" ) >"$WORK/server.log" 2>&1 &
   SRV_PID=$!
   for _ in $(seq 1 100); do
-    if TEAROOM_SERVER="$URL" "$BIN" room members >/dev/null 2>&1; then return 0; fi
+    if TEAROOM_SERVER="$URL" "$BIN" read --as alice >/dev/null 2>&1; then return 0; fi
     sleep 0.1
   done
   return 1

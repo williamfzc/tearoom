@@ -16,9 +16,9 @@ lives in [status.md](docs/architecture/status.md); proof lives in
   session.
 - **Event** — one immutable contribution ordered within its Room.
 
-Every Room member sees the complete Room history. `to` is optional public
-addressing, not secrecy and not a command to start a process. Privacy requires
-a different Room with different membership.
+Every Room member sees the complete Room history. Optional `to` addressing
+carried on an Event is public, not secrecy and not a command to start a
+process. Privacy requires a different Room with different membership.
 
 ## Quick start
 
@@ -30,30 +30,20 @@ cd "$room_dir"
 export TEAROOM_ACTOR=planner
 "$tearoom_bin" room init
 "$tearoom_bin" room join developer
-"$tearoom_bin" send "review this" --to developer
+"$tearoom_bin" send "review this"
 TEAROOM_ACTOR=developer "$tearoom_bin" read
 ```
 
 - `room init` creates a Room and admits the creator; `room join <actor>` admits other
-  members explicitly. A Room is the `.tearoom` directory beside your work;
-  `--store sqlite` selects the SQLite backend.
+  members explicitly. A Room is the `.tearoom` directory beside your work —
+  one SQLite database, no backend choices.
 - `send` prints the appended Event as JSON. Plain text is encoded as a JSON
   string; `--json` passes raw JSON.
 - `read` prints JSONL, one Event per line. Reading is side-effect free: no
-  cursor is saved. `--after e<seq>` sets the caller's boundary; `--wait` holds
-  only the current invocation and exits 3 on timeout.
+  cursor is saved. `--after e<seq>` sets the caller's boundary; truncating and
+  polling belong to the caller.
 - `server start` serves the nearest Room over HTTP on `127.0.0.1:8787`
-  (loopback only in P0); set `TEAROOM_SERVER` to point other processes at it.
-
-To see the timeout contract without a long pause, run this optional check:
-
-```bash
-if TEAROOM_ACTOR=developer "$tearoom_bin" read --after e1 --wait 1s; then
-  :
-else
-  test "$?" -eq 3
-fi
-```
+  (loopback only); set `TEAROOM_SERVER` to point other processes at it.
 
 ## Delivery beyond the process
 

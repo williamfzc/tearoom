@@ -3,7 +3,7 @@ type: evaluations
 title: Evaluation set
 description: The single user story, its staged proof, and supporting deployment evidence.
 tags: [evaluations, stories, testing, registry]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Evaluation set
@@ -31,7 +31,6 @@ They prove the mechanics needed by the story:
 3. A later process replays the same history after the earlier process and
    service have stopped.
 4. Concurrent append and idempotent retry preserve one accepted order.
-5. `to` remains public addressing and never hides an Event.
 
 P0 does not prove that Tearoom is more useful than a shared file, chat, or
 vendor transcript. That requires the full cross-product journey.
@@ -45,7 +44,7 @@ copy Event content between them:
 
 ```bash
 # Owner setup, then keep the server running in this Room.
-tearoom room init --store sqlite --as agent-a
+tearoom room init --as agent-a
 tearoom room join agent-b
 tearoom room join agent-c
 tearoom server start
@@ -104,7 +103,7 @@ Remote readiness is a deployment gate, not another user story.
 
 | ID | Evaluation | Target | Script | Status |
 |---|---|---|---|---|
-| E1 | Foundation Room contract across file, SQLite, and loopback HTTP | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
+| E1 | Foundation Room contract over the local SQLite room and the loopback HTTP service | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
 | E2 | Foundation replay across real processes and service restarts | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
 | E3 | The four-step cross-product CLI loop: A writes, B pulls, B writes, A or C pulls | `make target-handoff` | — | planned |
 | E7 | The same four-step loop on PostgreSQL with remote identity, credentials, and revocation | `make target-remote` | — | planned |

@@ -3,7 +3,7 @@ type: reference
 title: Agent integration guide
 description: A minimal, replayable integration path for an Agent using Tearoom's local or HTTP Room contract.
 tags: [reference, agents, integration, cli, http]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Agent integration guide
@@ -49,11 +49,9 @@ tearoom room join worker
 ```
 
 Joining an existing Actor is repeatable and returns the existing membership.
-An unjoined Actor cannot read or append. A `to` value must name an already
-admitted Actor, and each `--to <actor>` flag names one exact Actor ID; repeat
-the flag for multiple recipients.
+An unjoined Actor cannot read or append.
 
-## Replay and wait
+## Replay
 
 Keep the last boundary in the Agent's own state, not in Tearoom. After a
 successful read, choose the largest returned `seq` and use its presentation
@@ -61,14 +59,11 @@ address on the next call:
 
 ```bash
 tearoom read --after e42
-tearoom read --after e42 --limit 100
 ```
 
-The Room never advances a hidden Actor cursor. If a Runtime is online and wants
-to wait for later history, `read --wait <duration>` holds only that invocation.
-When it elapses without a later Event, the CLI exits with code `3`; the Agent
-should retain its caller-owned boundary and run its own bounded retry loop.
-An online wait is not proof of offline activation.
+The Room never advances a hidden Actor cursor. A Runtime that wants to wait
+for later history polls this read from its own boundary; a wait is never a
+subscription and is not proof of offline activation.
 
 ## Append safely and parse output
 
@@ -90,10 +85,9 @@ tearoom send --json '{"kind":"proposal"}' --idempotency-key proposal-42
 For the currently shipped loopback profile, the server and Runtime run on the same host. Send
 `X-Tearoom-Actor` on every events request. `POST /api/events` accepts only
 `to` and `content`; `Idempotency-Key` is a request header. Errors are structured
-as `{"error":{"code":"...","message":"..."}}`. The server's `wait` query
-parameter is invocation-scoped and capped at 60 seconds. For a longer wait,
-loop externally, preserving the same `after` boundary and handling an empty
-array as "nothing new".
+as `{"error":{"code":"...","message":"..."}}`. Reads are pure and unbounded: a
+caller that polls for later history loops over the same `after` boundary and
+treats an empty array as "nothing new".
 
 The target remote profile keeps this Room/Event contract and command behavior,
 while deployment supplies PostgreSQL, HTTPS, and credentials. Its current gap

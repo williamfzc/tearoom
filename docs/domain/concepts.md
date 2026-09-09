@@ -4,7 +4,7 @@ title: Domain concepts
 description: The three entities, their write/read contract, boundary behaviour, trust model, and the failures the Room prevents — the domain page the other docs link to.
 resource: docs/product.md
 tags: [domain, concepts, invariants, security]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Domain concepts
@@ -58,8 +58,8 @@ those are not kernel fields. Wire and storage details:
 An ordinary append requires no saved cursor and no proof of the writer's last
 read; the Store assigns the next dense sequence under its serialization
 boundary. `read` is a pure, repeatable query whose `--after` boundary belongs
-to the caller and is never saved by the Room. `read --wait` is
-invocation-scoped transport, not a subscription. A read boundary is not proof
+to the caller and is never saved by the Room; polling for later Events is a
+caller loop, not a subscription. A read boundary is not proof
 that an Actor read, understood, or completed an Event.
 
 ```text
@@ -80,7 +80,7 @@ meaning of `send`.
 | Room changes after an Actor read | Ordinary append remains valid; a protocol may request an explicit conditional append |
 | Identical request is retried | An idempotent append capability may return the original Event |
 | Writers race | Store serialization assigns distinct dense sequence numbers |
-| Writer crashes while holding a file lock | The operating system releases the lock; no partial Event is accepted |
+| Writer crashes mid-append | SQLite transaction semantics release the lock on recovery; no partial Event is accepted |
 | Store or server is unavailable | Command fails; no cached success is claimed |
 | Reader supplies a boundary | Read repeats from the caller's explicit boundary |
 | An addressed Agent is offline | Room alone does not wake it; an external operator starts and configures the process, which then uses CLI `read` and `send` |
@@ -89,9 +89,8 @@ meaning of `send`.
 checkpoint. A future durable consumer must own an explicit identity and ledger
 rather than borrowing Actor read state.
 
-**Platform rule:** a backend must provide a real cross-process serialization
-primitive or reject concurrent operation on that platform. A no-op lock is
-never acceptable.
+**Platform rule:** the storage backend must provide a real cross-process
+serialization primitive or reject concurrent operation on that platform.
 
 ## Trust and security
 

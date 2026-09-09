@@ -1,6 +1,6 @@
-// Backend selection: the .tearoom layout is one owner's truth, so this
-// package decides which Store implementation a room uses. The marker file
-// makes the choice explicit instead of guessing from what files exist.
+// The store package owns the .tearoom layout. SQLite is the only room
+// backend; the marker file makes the layout format explicit instead of
+// guessing from what files exist.
 package store
 
 import (
@@ -10,23 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
 	"github.com/williamfzc/tearoom/internal/relational"
 )
 
-// Backend names a storage backend for one .tearoom directory.
-type Backend string
-
-// BackendFile is the flock-protected JSON layout in this package.
-const BackendFile Backend = "file"
-
-// BackendSQLite is the relational layout on one SQLite file.
-const BackendSQLite Backend = "sqlite"
+// Dir is the room directory name discovered upward from the working directory.
+const Dir = ".tearoom"
 
 // formatVersion is the only store.json layout version accepted. Any other
-// layout — markerless, version 1, or another backend — is rejected as
+// layout — markerless, version 1, or a retired backend — is rejected as
 // incompatible; there is no import or automatic upgrade.
 const formatVersion = 2
 
@@ -36,7 +29,8 @@ func FormatVersion() int { return formatVersion }
 
 const markerName = "store.json"
 
-// marker declares the layout format and backend of a room.
+// marker declares the layout format of a room. The backend field is
+// historical: "sqlite" is the only value this release accepts.
 type marker struct {
 	Format  int    `json:"format"`
 	Backend string `json:"backend"`
@@ -44,8 +38,8 @@ type marker struct {
 
 // Init creates a Room and explicitly admits creator as one atomic operation.
 // The room is assembled in a private sibling directory and exposed only after
-// all files, the backend schema, and the creator membership are durable.
-func Init(dir string, backend Backend, creator string) (core.Store, error) {
+// the schema and the creator membership are durable.
+func Init(dir, creator string) (core.Store, error) {
 	creator = strings.TrimSpace(creator)
 	if creator == "" {
 		return nil, errors.New("creator actor is required")
@@ -68,55 +62,28 @@ func Init(dir string, backend Backend, creator string) (core.Store, error) {
 		return nil, err
 	}
 
-	var st core.Store
-	switch backend {
-	case BackendFile:
-		if _, err := initFile(tmp, creator); err != nil {
-			return nil, err
-		}
-		if err := writeMarker(tmp, marker{Format: formatVersion, Backend: string(BackendFile)}); err != nil {
-			return nil, err
-		}
-		st, err = OpenAt(tmp)
-	case BackendSQLite:
-		st, err = relational.Init(tmp, creator)
-		if err != nil {
-			return nil, err
-		}
-		if err := writeMarker(tmp, marker{Format: formatVersion, Backend: string(BackendSQLite)}); err != nil {
-			_ = st.(*relational.Store).Close()
-			return nil, err
-		}
-		if err := st.(*relational.Store).Close(); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, fmt.Errorf("unknown backend %q", backend)
-	}
+	st, err := relational.Init(tmp, creator)
 	if err != nil {
 		return nil, err
 	}
+	if err := writeMarker(tmp, marker{Format: formatVersion, Backend: "sqlite"}); err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	if err := st.Close(); err != nil {
+		return nil, err
+	}
 	if err := os.Rename(tmp, root); err != nil {
-		if sqlite, ok := st.(*relational.Store); ok {
-			_ = sqlite.Close()
-		}
 		return nil, err
 	}
 	if err := syncDirectory(dir); err != nil {
 		return nil, err
 	}
-	switch backend {
-	case BackendFile:
-		return OpenAt(root)
-	case BackendSQLite:
-		return relational.Open(root)
-	}
-	return nil, fmt.Errorf("unsupported store backend %q at %s", backend, root)
+	return relational.Open(root)
 }
 
-// Open finds the nearest room and opens the backend its marker declares.
-// Only format 2 markers are accepted; any older layout is rejected with a
-// clear incompatible error.
+// Open finds the nearest room and opens it. Only format-2 sqlite markers are
+// accepted; any older layout is rejected with a clear incompatible error.
 func Open(start string) (core.Store, error) {
 	root, err := Find(start)
 	if err != nil {
@@ -129,16 +96,12 @@ func Open(start string) (core.Store, error) {
 	if m.Format != formatVersion {
 		return nil, fmt.Errorf("incompatible store format %d at %s: format %d required, no automatic upgrade", m.Format, root, formatVersion)
 	}
-	switch Backend(m.Backend) {
-	case BackendFile:
-		return OpenAt(root)
-	case BackendSQLite:
-		// relational.Open applies the database-level format gate: a database
-		// without the format-2 marker is refused, never read or upgraded.
-		return relational.Open(root)
-	default:
-		return nil, fmt.Errorf("unsupported store backend %q at %s", m.Backend, root)
+	if m.Backend != "sqlite" {
+		return nil, fmt.Errorf("incompatible store at %s: backend %q is retired; sqlite required, no automatic upgrade", root, m.Backend)
 	}
+	// relational.Open applies the database-level format gate: a database
+	// without the format-2 marker is refused, never read or upgraded.
+	return relational.Open(root)
 }
 
 // Find walks upward from start and returns the nearest .tearoom directory.
@@ -184,23 +147,6 @@ func writeMarker(root string, m marker) error {
 	return durableReplace(filepath.Join(root, markerName), data, 0o644)
 }
 
-// initFile lays out a file-backed Room under an existing, empty root. The room
-// identity is the name of the directory that owns .tearoom.
-func initFile(root, creator string) (*File, error) {
-	f := &File{root: root, now: time.Now}
-	room := core.Room{ID: filepath.Base(filepath.Dir(root)), Created: f.now().UTC()}
-	if err := f.writeJSON("room.json", room); err != nil {
-		return nil, err
-	}
-	if err := f.writeJSON("actors.json", []core.Actor{{ID: creator, Joined: f.now().UTC()}}); err != nil {
-		return nil, err
-	}
-	if err := durableReplace(f.path("events.jsonl"), nil, 0o644); err != nil {
-		return nil, err
-	}
-	return f, nil
-}
-
 func durableReplace(path string, data []byte, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -235,8 +181,7 @@ func syncDirectory(path string) error {
 		return err
 	}
 	if err := dir.Sync(); err != nil {
-		_ = dir.Close()
-		return err
+		return errors.Join(err, dir.Close())
 	}
 	return dir.Close()
 }

@@ -234,7 +234,7 @@ func TestReadCorruptRecipientsFailsClosed(t *testing.T) {
 	if err := st.db.Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.Read(context.Background(), "planner", 0, 0); err == nil {
+	if _, err := st.Read(context.Background(), "planner", 0); err == nil {
 		t.Fatal("corrupt recipient JSON was accepted")
 	}
 }
@@ -255,7 +255,7 @@ func TestReadCorruptEventMembershipFailsClosed(t *testing.T) {
 			if err := st.db.Create(&row).Error; err != nil {
 				t.Fatal(err)
 			}
-			if _, err := st.Read(context.Background(), "planner", 0, 0); err == nil {
+			if _, err := st.Read(context.Background(), "planner", 0); err == nil {
 				t.Fatal("event with a non-member identity was accepted")
 			}
 		})

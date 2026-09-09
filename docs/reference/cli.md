@@ -4,7 +4,7 @@ title: CLI reference
 description: Authoritative shipped and target command contract for the tearoom binary.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # CLI reference
@@ -18,37 +18,33 @@ journeys belong in [evaluations.md](../evaluations.md).
 ## Shipped command contract
 
 ```text
-tearoom room init [--as <actor>] [--store file|sqlite]
+tearoom room init [--as <actor>]
 tearoom room join <actor>
-tearoom room members
-tearoom skill
 
-tearoom send <text> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
-tearoom send --json <json> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
+tearoom send <text> [--as <actor>] [--idempotency-key <key>]
+tearoom send --json <json> [--as <actor>] [--idempotency-key <key>]
 
-tearoom read [--as <actor>] [--after e<seq>] [--limit N] [--wait <duration>]
+tearoom read [--as <actor>] [--after e<seq>]
 
 tearoom server start [--address 127.0.0.1:8787]
+tearoom skill
 ```
 
 ### Room lifecycle
 
 - `room init` atomically creates a local Room in the current directory and
   admits its creator. The Room identity comes from the directory that owns
-  `.tearoom`; there is no `--name` flag. `--store` selects `file` (the current
-  default) or `sqlite`.
+  `.tearoom`; there is no `--name` flag and no backend flag: the Room is one
+  SQLite database.
 - `room join <actor>` admits the named Actor. The Actor is the positional
   argument: this command does not use `--as` or `TEAROOM_ACTOR`. Repeating the
   command for an admitted Actor succeeds and returns the existing Actor.
-- `room members` lists the admitted Actors and requires no Actor identity.
 
-Successful `room init` and `room join` calls print one JSON object; `room
-members` prints one JSON array:
+Successful `room init` and `room join` calls print one JSON object:
 
 ```json
 {"id":"room-id","created":"2026-09-09T10:00:00Z"}
 {"id":"alice","joined":"2026-09-09T10:00:00Z"}
-[{"id":"alice","joined":"2026-09-09T10:00:00Z"}]
 ```
 
 The identifiers and timestamps above are examples, not fixed values.
@@ -56,25 +52,21 @@ The identifiers and timestamps above are examples, not fixed values.
 ### Append and read
 
 - `send` appends one Event and prints it as one JSON object. Plain text becomes
-  a JSON string; `--json` accepts one valid JSON value. `--to` is repeatable,
-  public addressing metadata and never a visibility boundary.
-- `--idempotency-key` is optional. Repeating the same Actor, key, addressees,
-  and content returns the original Event. Reusing that key with different
-  addressees or content fails.
+  a JSON string; `--json` accepts one valid JSON value.
+- `--idempotency-key` is optional. Repeating the same Actor, key, and content
+  returns the original Event. Reusing that key with different content fails.
 - `read` prints JSONL: one Event per line, with no envelope and no saved cursor.
   An empty result prints nothing and succeeds. `--after e42` starts after that
-  exclusive boundary; `--limit` caps the result.
-- `read --wait 5m` holds only the current invocation. It returns when an Event
-  after the chosen boundary exists and times out with no output when the bound
-  elapses. It creates no subscription or durable delivery state.
+  exclusive boundary. The read is unbounded and pure: a caller that truncates
+  or polls for later Events owns that loop and its boundary.
 
 An Event has this output shape:
 
 ```json
-{"seq":43,"actor":"alice","at":"2026-09-09T10:01:00Z","to":["bob"],"content":{"plan":"review"}}
+{"seq":43,"actor":"alice","at":"2026-09-09T10:01:00Z","content":{"plan":"review"}}
 ```
 
-`to` is omitted when empty. `content` is always valid JSON.
+`content` is always valid JSON.
 
 ### Actor selection
 
@@ -134,8 +126,7 @@ tearoom room init --server <service-url> --as <owner>
 
 `auth login` establishes the human owner session. `room init --server` creates
 a Room through that same service and prints the selected, Room-specific server
-URL. The remote deployment uses PostgreSQL; the local form continues to use
-the backend selected by `--store`.
+URL. The remote deployment uses PostgreSQL; the local Room is always SQLite.
 
 ```json
 {"account":"alice","server":"https://tearoom.example"}
@@ -151,19 +142,20 @@ is no separate Room-ID environment variable.
 ### Per-Agent credentials
 
 ```text
-tearoom room credential issue --actor <actor> --scope read,send --expires <duration>
+tearoom room credential issue --actor <actor> --expires <duration>
 tearoom room credential revoke <credential-id>
 ```
 
 These owner operations use the selected Room. Issuing a credential requires an
-already-admitted Actor, explicit scopes, and an expiry. It prints the plaintext
-token once:
+already-admitted Actor and an expiry. It prints the plaintext token once:
 
 ```json
-{"id":"credential-id","actor":"bob","scope":["read","send"],"expires_at":"2026-10-09T10:00:00Z","token":"tr_example"}
+{"id":"credential-id","actor":"bob","expires_at":"2026-10-09T10:00:00Z","token":"tr_example"}
 ```
 
-An Agent then uses exactly one Room URL, stable Actor identity, and credential:
+A credential authorizes writes as its Actor; reading requires no credential —
+the Room URL is the read capability. An Agent uses exactly one Room URL,
+stable Actor identity, and its credential for sends:
 
 ```bash
 export TEAROOM_SERVER=https://tearoom.example/r/room-id
@@ -173,11 +165,11 @@ tearoom read
 tearoom send "review complete"
 ```
 
-The credential is bound to its Room, Actor, scopes, and expiry. An Actor
-mismatch, missing scope, expiry, or revocation fails without changing the
-Room, Actor, or history. Rotation is issue-new then revoke-old; it needs no
-separate command. The target loopback profile uses the same authorization
-decisions but may bootstrap its local owner without login ceremony.
+The credential is bound to its Room, Actor, and expiry. An Actor mismatch,
+expiry, or revocation fails without changing the Room, Actor, or history.
+Rotation is issue-new then revoke-old; it needs no separate command. The
+target loopback profile uses the same authorization decisions but bootstraps
+its local owner without login ceremony or tokens.
 
 ### Remote read/write loop
 
@@ -202,9 +194,8 @@ Tearoom does not fork collaboration implicitly.
 
 All diagnostics go to standard error; successful machine-readable output goes
 to standard output. [exit-codes.md](exit-codes.md) is the only exit-code source.
-In particular, an empty `read` succeeds, a bounded wait with no later Event is
-a timeout, and a missing local Room or unreachable configured server is an
-availability failure.
+In particular, an empty `read` succeeds, and a missing local Room or unreachable
+configured server is an availability failure.
 
 The target remote commands keep those same classes. Missing, expired, revoked,
 wrong-Actor, or insufficient-scope credentials are ordinary request failures;

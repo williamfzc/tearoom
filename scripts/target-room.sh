@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Evaluation: E1 — P0 Room contract through the shipped binary
 #
-# Proves: explicit join over the file, SQLite, and HTTP backends; read/send
-# rejected for unjoined actors; multi-actor concurrent append yields one dense
-# sequence; every member reads the same complete history; to=bob stays visible
-# to carol (public addressing); repeated reads have no side effects; ordinary
-# append does not depend on a prior read; an idempotent retry returns the
-# original event and a key conflict is an error (CLI exit 1, HTTP 409).
+# Proves: explicit join over the local SQLite room and the loopback HTTP
+# service; read/send rejected for unjoined actors; multi-actor concurrent
+# append yields one dense sequence; every member reads the same complete
+# history; repeated reads have no side effects; ordinary append does not
+# depend on a prior read; an idempotent retry returns the original event and
+# a key conflict is an error (CLI exit 1, HTTP 409).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -48,124 +48,62 @@ PY
 }
 
 echo
-echo "E1: file backend"
-file_room="$WORK/file-room"
-mkdir -p "$file_room"
+echo "E1: local room"
+local_room="$WORK/local-room"
+mkdir -p "$local_room"
 
-expect "room init admits the creator" "$file_room" "$BIN" room init --as planner
-expect "explicit join bob" "$file_room" "$BIN" room join bob
-expect "explicit join carol" "$file_room" "$BIN" room join carol
+expect "room init admits the creator" "$local_room" "$BIN" room init --as planner
+expect "explicit join bob" "$local_room" "$BIN" room join bob
+expect "explicit join carol" "$local_room" "$BIN" room join carol
 
-members="$(in_dir "$file_room" "$BIN" room members)"
-rc=0
-printf '%s' "$members" | python3 -c '
-import json, sys
-ids = {a["id"] for a in json.load(sys.stdin)}
-sys.exit(0 if ids == {"planner", "bob", "carol"} else 1)
-' || rc=$?
-check "members lists exactly planner, bob, carol" "$rc"
+reject "unjoined read rejected" "$local_room" "$BIN" read --as stranger
+reject "unjoined send rejected" "$local_room" "$BIN" send hi --as stranger
 
-reject "unjoined read rejected" "$file_room" "$BIN" read --as stranger
-reject "unjoined send rejected" "$file_room" "$BIN" send hi --as stranger
+expect "planner sends three events" "$local_room" "$BIN" send one --as planner
+expect "planner sends a second event" "$local_room" "$BIN" send two --as planner
+expect "planner sends a third event" "$local_room" "$BIN" send three --as planner
 
-expect "planner sends three events" "$file_room" "$BIN" send one --as planner
-expect "planner sends a second event" "$file_room" "$BIN" send two --as planner
-expect "planner sends a third event" "$file_room" "$BIN" send three --as planner
-expect "planner sends an event addressed to bob" "$file_room" "$BIN" send "for bob" --to bob --as planner
-
-bob_hist="$(in_dir "$file_room" "$BIN" read --as bob)"
-carol_hist="$(in_dir "$file_room" "$BIN" read --as carol)"
+bob_hist="$(in_dir "$local_room" "$BIN" read --as bob)"
+carol_hist="$(in_dir "$local_room" "$BIN" read --as carol)"
 check "bob and carol read the same complete history" "$([ "$bob_hist" = "$carol_hist" ] && echo 0 || echo 1)"
-rc=0
-printf '%s\n' "$carol_hist" | python3 -c '
-import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-sys.exit(0 if any(e.get("to") == ["bob"] and "bob" in e["content"] for e in events) else 1)
-' || rc=$?
-check "the event addressed to bob remains visible to carol" "$rc"
+check "the complete history is exactly events 1..3" \
+  "$(printf '%s' "$carol_hist" | seqs_of | grep -q '^1 2 3$' && echo 0 || echo 1)"
 
 # A freshly joined actor appends without ever reading the room first.
-expect "join dave" "$file_room" "$BIN" room join dave
-expect "append without any prior read" "$file_room" "$BIN" send "first word" --as dave
+expect "join dave" "$local_room" "$BIN" room join dave
+expect "append without any prior read" "$local_room" "$BIN" send "first word" --as dave
 
 # Six writers append concurrently; the store must issue one dense sequence.
 for id in erin frank grace hank iris joy; do
-  expect "join $id" "$file_room" "$BIN" room join "$id"
+  expect "join $id" "$local_room" "$BIN" room join "$id"
 done
 pids=()
 for id in erin frank grace hank iris joy; do
-  in_dir "$file_room" "$BIN" send "from $id" --as "$id" >/dev/null 2>&1 &
+  in_dir "$local_room" "$BIN" send "from $id" --as "$id" >/dev/null 2>&1 &
   pids+=("$!")
 done
 concurrent_rc=0
 for p in "${pids[@]}"; do wait "$p" || concurrent_rc=1; done
 check "all six concurrent appends succeed" "$concurrent_rc"
 
-seqs="$(in_dir "$file_room" "$BIN" read --as planner | seqs_of)"
+seqs="$(in_dir "$local_room" "$BIN" read --as planner | seqs_of)"
 rc=0; dense "$seqs" || rc=$?
 check "concurrent appends yield the dense sequence 1..11 ($seqs)" "$rc"
 
 # Repeated reads are side-effect-free and identical.
-again="$(in_dir "$file_room" "$BIN" read --as planner)"
-check "repeated reads return identical history" "$([ "$again" = "$(in_dir "$file_room" "$BIN" read --as planner)" ] && echo 0 || echo 1)"
+again="$(in_dir "$local_room" "$BIN" read --as planner)"
+check "repeated reads return identical history" "$([ "$again" = "$(in_dir "$local_room" "$BIN" read --as planner)" ] && echo 0 || echo 1)"
 
 # Idempotent retry returns the original event; a key conflict is an error.
-before_key="$(in_dir "$file_room" "$BIN" read --as planner | seqs_of | wc -w | tr -d ' ')"
-first="$(in_dir "$file_room" "$BIN" send --json '{"n":1}' --idempotency-key file-k1 --as planner)"
+before_key="$(in_dir "$local_room" "$BIN" read --as planner | seqs_of | wc -w | tr -d ' ')"
+first="$(in_dir "$local_room" "$BIN" send --json '{"n":1}' --idempotency-key local-k1 --as planner)"
 seq1="$(printf '%s' "$first" | python3 -c 'import json,sys; print(json.load(sys.stdin)["seq"])')"
-retry="$(in_dir "$file_room" "$BIN" send --json '{"n": 1}' --idempotency-key file-k1 --as planner)"
+retry="$(in_dir "$local_room" "$BIN" send --json '{"n": 1}' --idempotency-key local-k1 --as planner)"
 seq2="$(printf '%s' "$retry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["seq"])')"
 check "idempotent retry returns the original event (seq $seq1)" "$([ "$seq1" = "$seq2" ] && echo 0 || echo 1)"
-reject "same key with different content conflicts" "$file_room" "$BIN" send --json '{"n":2}' --idempotency-key file-k1 --as planner
-after_key="$(in_dir "$file_room" "$BIN" read --as planner | seqs_of | wc -w | tr -d ' ')"
+reject "same key with different content conflicts" "$local_room" "$BIN" send --json '{"n":2}' --idempotency-key local-k1 --as planner
+after_key="$(in_dir "$local_room" "$BIN" read --as planner | seqs_of | wc -w | tr -d ' ')"
 check "idempotent retry created no new event" "$([ "$after_key" = "$((before_key + 1))" ] && echo 0 || echo 1)"
-
-echo
-echo "E1: sqlite backend"
-sqlite_room="$WORK/sqlite-room"
-mkdir -p "$sqlite_room"
-
-expect "sqlite room init admits the creator" "$sqlite_room" "$BIN" room init --as planner --store sqlite
-expect "sqlite join bob" "$sqlite_room" "$BIN" room join bob
-expect "sqlite join carol" "$sqlite_room" "$BIN" room join carol
-reject "sqlite unjoined read rejected" "$sqlite_room" "$BIN" read --as stranger
-reject "sqlite unjoined send rejected" "$sqlite_room" "$BIN" send hi --as stranger
-expect "sqlite send addressed to bob" "$sqlite_room" "$BIN" send "for bob" --to bob --as planner
-expect "sqlite send a second event" "$sqlite_room" "$BIN" send "second" --as planner
-
-bob_sql="$(in_dir "$sqlite_room" "$BIN" read --as bob)"
-carol_sql="$(in_dir "$sqlite_room" "$BIN" read --as carol)"
-check "sqlite members read the same complete history" "$([ "$bob_sql" = "$carol_sql" ] && echo 0 || echo 1)"
-rc=0
-printf '%s\n' "$carol_sql" | python3 -c '
-import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-sys.exit(0 if any(e.get("to") == ["bob"] for e in events) else 1)
-' || rc=$?
-check "sqlite: to=bob remains visible to carol" "$rc"
-
-for id in dave erin frank grace; do
-  expect "sqlite join $id" "$sqlite_room" "$BIN" room join "$id"
-done
-pids=()
-for id in dave erin frank grace; do
-  in_dir "$sqlite_room" "$BIN" send "from $id" --as "$id" >/dev/null 2>&1 &
-  pids+=("$!")
-done
-concurrent_rc=0
-for p in "${pids[@]}"; do wait "$p" || concurrent_rc=1; done
-check "sqlite concurrent appends all succeed" "$concurrent_rc"
-
-seqs="$(in_dir "$sqlite_room" "$BIN" read --as planner | seqs_of)"
-rc=0; dense "$seqs" || rc=$?
-check "sqlite concurrent appends yield the dense sequence 1..6 ($seqs)" "$rc"
-
-first="$(in_dir "$sqlite_room" "$BIN" send --json '{"n":1}' --idempotency-key sql-k1 --as planner)"
-seq1="$(printf '%s' "$first" | python3 -c 'import json,sys; print(json.load(sys.stdin)["seq"])')"
-retry="$(in_dir "$sqlite_room" "$BIN" send --json '{"n":1}' --idempotency-key sql-k1 --as planner)"
-seq2="$(printf '%s' "$retry" | python3 -c 'import json,sys; print(json.load(sys.stdin)["seq"])')"
-check "sqlite idempotent retry returns the original event (seq $seq1)" "$([ "$seq1" = "$seq2" ] && echo 0 || echo 1)"
-reject "sqlite same key with different content conflicts" "$sqlite_room" "$BIN" send --json '{"n":2}' --idempotency-key sql-k1 --as planner
 
 echo
 echo "E1: HTTP leg"
@@ -183,25 +121,20 @@ trap 'cleanup_server' EXIT
 
 ready=0
 for _ in $(seq 1 100); do
-  if TEAROOM_SERVER="$URL" "$BIN" room members >/dev/null 2>&1; then ready=1; break; fi
+  if TEAROOM_SERVER="$URL" "$BIN" read --as planner >/dev/null 2>&1; then ready=1; break; fi
   sleep 0.1
 done
 check "http server becomes ready on 127.0.0.1:$PORT" "$([ "$ready" -eq 1 ] && echo 0 || echo 1)"
 
 expect "http join carol" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" room join carol
-expect "http send addressed to bob" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send "for bob" --to bob --as planner
-expect "http send a second event" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send --json '{"plan":"http"}' --as planner
+expect "http send a first event" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send --json '{"plan":"http"}' --as planner
+expect "http send a second event" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send "second" --as planner
 
 http_bob="$(in_dir "$http_room" env TEAROOM_SERVER="$URL" "$BIN" read --as bob)"
 http_carol="$(in_dir "$http_room" env TEAROOM_SERVER="$URL" "$BIN" read --as carol)"
 check "http members read the same complete history" "$([ "$http_bob" = "$http_carol" ] && echo 0 || echo 1)"
-rc=0
-printf '%s\n' "$http_carol" | python3 -c '
-import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-sys.exit(0 if any(e.get("to") == ["bob"] for e in events) else 1)
-' || rc=$?
-check "http: to=bob remains visible to carol" "$rc"
+check "the http history is exactly events 1..2" \
+  "$(printf '%s' "$http_carol" | seqs_of | grep -q '^1 2$' && echo 0 || echo 1)"
 
 reject "http unjoined read rejected" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" read --as stranger
 reject "http unjoined send rejected" "$http_room" env TEAROOM_SERVER="$URL" "$BIN" send hi --as stranger

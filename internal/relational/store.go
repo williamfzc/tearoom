@@ -194,7 +194,7 @@ func (s *Store) Actors(ctx context.Context) ([]core.Actor, error) {
 
 // Read returns the events after the caller-owned exclusive boundary for an
 // admitted actor. Repeated reads are side-effect-free; no cursor is persisted.
-func (s *Store) Read(ctx context.Context, actorID string, after uint64, limit int) ([]core.Event, error) {
+func (s *Store) Read(ctx context.Context, actorID string, after uint64) ([]core.Event, error) {
 	actorID = strings.TrimSpace(actorID)
 	members, err := s.actorSet(ctx)
 	if err != nil {
@@ -203,14 +203,11 @@ func (s *Store) Read(ctx context.Context, actorID string, after uint64, limit in
 	if !isMember(members, actorID) {
 		return nil, fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
 	}
-	query := s.db.WithContext(ctx).
-		Where("room_id = ? AND seq > ?", s.roomID, after).
-		Order("seq")
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
 	var rows []EventRow
-	if err := query.Find(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("room_id = ? AND seq > ?", s.roomID, after).
+		Order("seq").
+		Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	events := make([]core.Event, 0, len(rows))

@@ -3,7 +3,7 @@ type: architecture
 title: Persistence direction
 description: How one service stores the durable Room and Event history across local and remote deployment profiles.
 tags: [architecture, persistence, sqlite, postgresql, orm]
-timestamp: 2026-09-09
+timestamp: 2026-09-10
 ---
 
 # Persistence direction
@@ -17,9 +17,9 @@ only the persistence target and clean-break boundary.
 
 ## Deployment matrix
 
-| Deployment profile | Target storage choice | Purpose |
+| Deployment profile | Storage choice | Purpose |
 |---|---|---|
-| Local | SQLite; file remains today's default and a current portable option | One-machine setup and durable local use |
+| Local | SQLite (the only local backend) | One-machine setup and durable local use |
 | Remote | PostgreSQL | Concurrent instances, backups, operations, and tenant growth |
 
 Use one relational schema owner and migration sequence where SQLite and
@@ -30,10 +30,8 @@ Actor, Event, identity decisions, the CLI, or the HTTP contract.
 ## Ownership
 
 - `internal/core` owns Room, Actor, Event, Store, and invariant language.
-- A relational persistence package owns ORM models, migrations, queries,
-  transactions, and database-specific adaptation.
-- The file Store remains an independent implementation until a separate
-  migration decision removes it.
+- `internal/relational` owns ORM models, migrations, queries, transactions,
+  and database-specific adaptation.
 - CLI and HTTP depend on `core.Store`, never on ORM or concrete database types.
 - Delivery state, if an external operator needs it, is not part of the
   Room/Event kernel tables.
@@ -104,12 +102,9 @@ bindings; the refusal and its reopening condition are recorded in
 
 Schema changes are versioned migrations committed with the code that needs
 them. Migrations run before serving traffic and are tested against SQLite and
-PostgreSQL before a remote-capable release.
-
-A future importer must preserve Room identity, Actor identity, Event ids and
-sequence numbers, timestamps, addressing, and any adopted idempotency keys.
-Until that importer exists, file and relational Stores are separate creation
-choices rather than silently interchangeable formats.
+PostgreSQL before a remote-capable release. The pre-cut file layout is retired,
+not imported: an old `.tearoom` directory is an incompatible store, and
+rollback uses the previous release with its data snapshot.
 
 ## Related
 

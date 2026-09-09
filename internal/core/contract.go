@@ -62,7 +62,7 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 
 	t.Run("UnjoinedActorRejected", func(t *testing.T) {
 		st := newStore(t)
-		if _, err := st.Read(ctx, "stranger", 0, 0); !errors.Is(err, ErrUnknownActor) {
+		if _, err := st.Read(ctx, "stranger", 0); !errors.Is(err, ErrUnknownActor) {
 			t.Fatalf("unjoined read error = %v, want %v", err, ErrUnknownActor)
 		}
 		if _, err := st.Append(ctx, "stranger", AppendRequest{Content: json.RawMessage(`"hi"`)}); !errors.Is(err, ErrUnknownActor) {
@@ -189,14 +189,6 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 		// Past the end is empty, not an error.
 		if tail := readAll(t, st, "a", 5); len(tail) != 0 {
 			t.Fatalf("read past the end = %+v", tail)
-		}
-		// Limit truncates after the boundary.
-		limited, err := st.Read(ctx, "a", 1, 2)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(limited) != 2 || limited[0].Seq != 2 || limited[1].Seq != 3 {
-			t.Fatalf("limited read = %+v, want seqs 2..3", limited)
 		}
 	})
 
@@ -380,7 +372,7 @@ func admit(t *testing.T, st Store, ids ...string) {
 
 func readAll(t *testing.T, st Store, actor string, after uint64) []Event {
 	t.Helper()
-	events, err := st.Read(context.Background(), actor, after, 0)
+	events, err := st.Read(context.Background(), actor, after)
 	if err != nil {
 		t.Fatalf("read %s: %v", actor, err)
 	}

@@ -31,15 +31,15 @@ Setup, once, in the project directory:
 Every Actor, every session:
   export TEAROOM_ACTOR=<your actor>             a stable identity, chosen once
   export TEAROOM_SERVER=http://127.0.0.1:8787   omit to use the nearest local Room
-  tearoom read [--after e<N>] [--limit N] [--wait 5m]
-  tearoom send <text>  |  tearoom send --json <json>  [--to <member>]...
+  tearoom read [--after e<N>]
+  tearoom send <text>  |  tearoom send --json <json>
 
 Rules that hold everywhere:
 - Events form one dense, ordered, durable history. The Store assigns each
   position; callers never pick one.
 - Reads are pure and repeatable. Keep your own boundary in --after; Tearoom
   stores no cursor, unread marker, or acknowledgement for you.
-- Every member sees every Event. --to is public addressing, not secrecy.
+- Every member sees every Event; no event is ever hidden from a member.
 - An empty read is success: no output, exit 0.
 - If a send may have gone through, retry with the same --idempotency-key and
   you get the original Event back instead of a duplicate.

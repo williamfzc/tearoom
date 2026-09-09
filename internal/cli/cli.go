@@ -24,10 +24,9 @@ import (
 )
 
 const (
-	ExitOK      = 0
-	ExitError   = 1
-	ExitTimeout = 3
-	ExitStore   = 4
+	ExitOK    = 0
+	ExitError = 1
+	ExitStore = 4
 )
 
 const rootHelp = `tearoom — a durable room for agents
@@ -36,9 +35,9 @@ Usage:
   tearoom <command> [flags]
 
 Commands:
-  room      init, join, and list members of the nearest room
+  room      init and join the nearest room
   send      append one event
-  read      read events, optionally waiting for later ones
+  read      read events after an explicit boundary
   server    serve the nearest room over HTTP
   skill     print the agent guide: the journey and the rules
 
@@ -60,7 +59,6 @@ Usage:
 Commands:
   init      create a room and admit the creator
   join      admit an actor as an explicit member
-  members   list the room's admitted actors
 `
 
 const serverHelp = `Run a shared room service.
@@ -114,8 +112,6 @@ func (a *App) Run(args []string) int {
 	}
 	fmt.Fprintln(a.Err, err)
 	switch {
-	case errors.Is(err, errWaitTimeout):
-		return ExitTimeout
 	case errors.Is(err, core.ErrNoRoom), strings.Contains(err.Error(), "server unreachable"):
 		return ExitStore
 	default:
@@ -133,8 +129,6 @@ func (a *App) runRoom(args []string) error {
 		return a.roomInit(args[1:])
 	case "join":
 		return a.roomJoin(args[1:])
-	case "members":
-		return a.roomMembers(args[1:])
 	default:
 		return fmt.Errorf("unknown room command %q", args[0])
 	}
@@ -147,16 +141,14 @@ func (a *App) roomInit(args []string) error {
 	const help = `Create a room in the current directory and admit the creator.
 
 Usage:
-  tearoom room init [--as <actor>] [--store file|sqlite]
+  tearoom room init [--as <actor>]
 
 Flags:
   --as string        actor identity; defaults to TEAROOM_ACTOR
-  --store string     file | sqlite (default "file")
   -h, --help         show help
 `
 	flags := newFlags("room init", a.Out, help)
 	as := flags.String("as", "", "")
-	storeName := flags.String("store", string(store.BackendFile), "")
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
 	}
@@ -167,11 +159,7 @@ Flags:
 	if os.Getenv("TEAROOM_SERVER") != "" {
 		return errors.New("room init is local; unset TEAROOM_SERVER")
 	}
-	backend, err := parseBackend(*storeName)
-	if err != nil {
-		return err
-	}
-	st, err := store.Init(a.Dir, backend, actor)
+	st, err := store.Init(a.Dir, actor)
 	if err != nil {
 		return err
 	}
@@ -217,30 +205,6 @@ Flags:
 	return json.NewEncoder(a.Out).Encode(admitted)
 }
 
-func (a *App) roomMembers(args []string) error {
-	const help = `List the room's admitted actors.
-
-Usage:
-  tearoom room members
-
-Flags:
-  -h, --help         show help
-`
-	flags := newFlags("room members", a.Out, help)
-	if err := parseNoArgs(flags, args); err != nil {
-		return err
-	}
-	st, err := a.openStore()
-	if err != nil {
-		return err
-	}
-	actors, err := st.Actors(context.Background())
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(a.Out).Encode(actors)
-}
-
 const sendHelp = `Append one event to the nearest room.
 
 Plain text is encoded as a JSON string; --json passes the raw JSON content.
@@ -253,7 +217,6 @@ Usage:
 Flags:
   --as string             actor identity; defaults to TEAROOM_ACTOR
   --json string           raw JSON content instead of positional text
-  --to string             addressed member; repeatable
   --idempotency-key string  retry identity; an equal retry returns the original event
   -h, --help              show help
 `
@@ -262,8 +225,6 @@ func (a *App) runSend(args []string) error {
 	flags := newFlags("send", a.Out, sendHelp)
 	as := flags.String("as", "", "")
 	raw := flags.String("json", "", "")
-	to := &stringList{}
-	flags.Var(to, "to", "")
 	key := flags.String("idempotency-key", "", "")
 	if err := parse(flags, args); err != nil {
 		return err
@@ -293,14 +254,10 @@ func (a *App) runSend(args []string) error {
 		return err
 	}
 	event, err := st.Append(context.Background(), actor, core.AppendRequest{
-		To:             to.values,
 		Content:        content,
 		IdempotencyKey: *key,
 	})
 	if err != nil {
-		if errors.Is(err, core.ErrUnknownActor) && strings.Contains(err.Error(), "recipient") {
-			return fmt.Errorf("%w; run `tearoom room join <actor>` first", err)
-		}
 		return err
 	}
 	return json.NewEncoder(a.Out).Encode(event)
@@ -308,34 +265,25 @@ func (a *App) runSend(args []string) error {
 
 const readHelp = `Read events from the nearest room, one JSON object per line.
 
-An empty result prints nothing and exits 0. --wait holds only the current
-invocation: it returns as soon as an event past --after exists, and exits 3
-when the bound elapses with nothing new.
+An empty result prints nothing and exits 0. The read is pure: nothing in the
+Room changes, and truncation or polling for later events belongs to the
+caller.
 
 Usage:
-  tearoom read [--as <actor>] [--after e42] [--limit N] [--wait 5m]
+  tearoom read [--as <actor>] [--after e42]
 
 Flags:
   --as string        actor identity; defaults to TEAROOM_ACTOR
   --after string     exclusive boundary, the presentation address e<seq>
-  --limit int        maximum events; 0 means all
-  --wait duration    hold the invocation for a later event (e.g. 5m)
   -h, --help         show help
 `
-
-var errWaitTimeout = errors.New("read wait elapsed without a later event")
 
 func (a *App) runRead(args []string) error {
 	flags := newFlags("read", a.Out, readHelp)
 	as := flags.String("as", "", "")
 	after := flags.String("after", "", "")
-	limit := flags.Int("limit", 0, "")
-	wait := flags.Duration("wait", 0, "")
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
-	}
-	if *limit < 0 {
-		return errors.New("--limit must be non-negative")
 	}
 	boundary, err := parseBoundary(*after)
 	if err != nil {
@@ -353,7 +301,7 @@ func (a *App) runRead(args []string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	events, err := a.readWithWait(ctx, st, actor, boundary, *limit, *wait)
+	events, err := st.Read(ctx, actor, boundary)
 	if err != nil {
 		return err
 	}
@@ -364,55 +312,6 @@ func (a *App) runRead(args []string) error {
 		}
 	}
 	return nil
-}
-
-// readWithWait keeps wait out of core.Store. A server target answers the wait
-// in one held request; a local store is polled within this invocation. Either
-// way the wait creates no cursor, subscription, or durable state.
-func (a *App) readWithWait(ctx context.Context, st core.Store, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error) {
-	if wait <= 0 {
-		return st.Read(ctx, actor, after, limit)
-	}
-	type waiter interface {
-		ReadWait(ctx context.Context, actor string, after uint64, limit int, wait time.Duration) ([]core.Event, error)
-	}
-	if remote, ok := st.(waiter); ok {
-		events, err := remote.ReadWait(ctx, actor, after, limit, wait)
-		if err != nil {
-			return nil, err
-		}
-		if len(events) == 0 {
-			return nil, errWaitTimeout
-		}
-		return events, nil
-	}
-	deadline := time.Now().Add(wait)
-	for {
-		events, err := st.Read(ctx, actor, after, limit)
-		if err != nil {
-			return nil, err
-		}
-		if len(events) > 0 {
-			return events, nil
-		}
-		if remaining := time.Until(deadline); remaining <= 0 {
-			return nil, errWaitTimeout
-		} else {
-			step := 500 * time.Millisecond
-			if remaining < step {
-				step = remaining
-			}
-			timer := time.NewTimer(step)
-			select {
-			case <-timer.C:
-			case <-ctx.Done():
-				if !timer.Stop() {
-					<-timer.C
-				}
-				return nil, ctx.Err()
-			}
-		}
-	}
 }
 
 func (a *App) runServer(args []string) error {
@@ -519,16 +418,6 @@ func (a *App) openStore() (core.Store, error) {
 		return transport.NewClient(server), nil
 	}
 	return store.Open(a.Dir)
-}
-
-func parseBackend(value string) (store.Backend, error) {
-	backend := store.Backend(strings.ToLower(strings.TrimSpace(value)))
-	switch backend {
-	case store.BackendFile, store.BackendSQLite:
-		return backend, nil
-	default:
-		return "", fmt.Errorf("unsupported --store %q; use file or sqlite", value)
-	}
 }
 
 // parseBoundary accepts only the presentation address e<seq>.
