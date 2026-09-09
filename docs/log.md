@@ -8,6 +8,30 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-09-10 — Ship the remote profile: credentials, hosted service, and the served contract
+
+Implemented the adjudicated authentication shape end to end. `internal/control`
+issues write credentials for admitted actors — 192-bit opaque tokens shown
+once, sha-256 at rest, room and actor binding, expiry, immediate idempotent
+revocation — and the credentials table joined the format-2 schema additively.
+`internal/transport` gained the exposed profile: reads stay open, writes
+require a bearer whose actor is authoritative, and joins plus credential
+management are owner operations; the local loopback profile keeps
+self-asserted actors. `internal/hosted` serves many rooms of one deployment
+database (postgres:// by DSN, SQLite for tests) behind /r/<id> URLs with
+migrations on start and owner-only room creation. The CLI ships
+`room credential issue|revoke`, `room init --server`, and TEAROOM_TOKEN; the
+URL rule follows TLS reality (plaintext http stays on loopback). `auth login`
+moved from target to reserved. The negative matrix — unauthenticated write,
+wrong-actor token, revoked token, cross-room token, open read — is proven at
+the control, transport, hosted, and CLI layers, and the CLI-level remote
+journey runs the full loop against a hosted service.
+
+What remains open is not code: running the gated PostgreSQL battery against a
+real database, deploying the hosted service behind TLS, and executing live E7
+— the four-step journey with revocation — whose transcript belongs in
+[evaluations.md](evaluations.md).
+
 ## 2026-09-10 — Cut the surface and settle the authentication shape
 
 Shrank the product to the concepts the continuation story actually uses. The
