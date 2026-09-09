@@ -87,7 +87,7 @@ func (s *Server) issueCredential(r *http.Request) (any, error) {
 		Actor      string `json:"actor"`
 		TTLSeconds int    `json:"ttl_seconds"`
 	}
-	if err := decodeStrict(r, &input); err != nil {
+	if err := DecodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid issue body: %w", err)
 	}
 	room, err := s.Store.Room(r.Context())
@@ -105,7 +105,7 @@ func (s *Server) revokeCredential(r *http.Request) (any, error) {
 	var input struct {
 		ID string `json:"id"`
 	}
-	if err := decodeStrict(r, &input); err != nil {
+	if err := DecodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid revoke body: %w", err)
 	}
 	room, err := s.Store.Room(r.Context())

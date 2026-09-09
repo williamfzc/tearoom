@@ -26,11 +26,19 @@ This page records what the shipped code implements against the target in
 - `internal/relational` implements the same contract on SQLite (format-2
   gate); a PostgreSQL suite exists behind `TEAROOM_TEST_PG` and is pending
   validation.
+- `internal/control` owns credential policy: issue for admitted actors,
+  bearer verification, expiry, and immediate revocation; tokens are stored
+  only as sha-256 hashes.
 - `internal/transport` serves the HTTP contract: `X-Tearoom-Actor`, Event
-  arrays, unified error envelope.
-- `internal/cli` exposes `room init|join`, `send`, `read`, `skill` (the
-  binary-carried agent guide), and `server start` (loopback only); it owns no
-  session state. The command contract is [reference/cli.md](../reference/cli.md).
+  arrays, unified error envelope; the exposed profile keeps reads open and
+  gates writes on bearer credentials.
+- `internal/hosted` serves many rooms of one deployment database behind
+  `/r/<id>` URLs, with owner-only room creation and migrations on start.
+- `internal/cli` exposes `room init` (local or `--server`), `room join`,
+  `room credential issue|revoke`, `send`, `read`, `skill` (the
+  binary-carried agent guide), and `server start` in local and hosted
+  profiles; it owns no session state. The command contract is
+  [reference/cli.md](../reference/cli.md).
 - `scripts/target-room.sh` and `scripts/target-replay.sh` prove the P0
   claims and run in `make check`.
 
@@ -39,11 +47,10 @@ This page records what the shipped code implements against the target in
 | Item | State |
 |---|---|
 | P1 single cross-product continuation story (S1) | Foundation evaluations E1/E2 ship; the full four-step evaluation E3 is planned |
-| One service across local and remote profiles | Core Store and HTTP contracts are shared; the current entry point still hard-codes loopback trust and local Room creation |
-| Deployment database profiles | Local SQLite ships and remote PostgreSQL is the target; PostgreSQL is not wired into the service entry point |
-| Shared authorization path | Target `auth login` and `room credential issue` / `revoke` behavior is defined in the CLI contract; not implemented |
+| Hosted deployment | The hosted service, credentials, and CLI ship; a deployed PostgreSQL instance behind TLS awaits user infrastructure |
+| `auth login` | Reserved issuance ceremony (adjudicated 2026-09-10); the operator-issued owner token ships instead |
 | PostgreSQL Store validation | Gated suite ready; runs when `TEAROOM_TEST_PG` points at a database |
-| Remote form of the same read/write loop | Evaluation E7 is planned; no separate remote collaboration command is allowed |
+| Live E7 | The four-step loop with credentials and revocation against the deployed service; evaluation E7 is planned |
 
 Delivery to an absent Agent is out of product scope (adjudicated 2026-09-09);
 see [../product.md](../product.md) and

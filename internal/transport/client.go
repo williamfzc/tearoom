@@ -159,6 +159,21 @@ func (c *Client) Read(ctx context.Context, actor string, after uint64) ([]core.E
 	return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
 }
 
+// CreatedRoom is the answer of room creation on a hosted service. Server is
+// the room URL that TEAROOM_SERVER points at from then on.
+type CreatedRoom struct {
+	ID      string    `json:"id"`
+	Created time.Time `json:"created"`
+	Server  string    `json:"server"`
+}
+
+// CreateRoom mints one Room on a hosted service and admits its creator. The
+// bearer on this client must be the deployment's owner token.
+func (c *Client) CreateRoom(ctx context.Context, creator string) (CreatedRoom, error) {
+	var room CreatedRoom
+	return room, c.do(ctx, http.MethodPost, "/api/rooms", nil, map[string]string{"actor": creator}, &room)
+}
+
 // IssueCredential mints one write credential for an admitted actor. The
 // bearer on this client must be the deployment's owner token.
 func (c *Client) IssueCredential(ctx context.Context, request IssueRequest) (IssuedCredential, error) {

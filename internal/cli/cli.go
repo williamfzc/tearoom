@@ -49,16 +49,6 @@ Environment:
 Use "tearoom <command> --help" for more information.
 `
 
-const roomHelp = `Manage the local room workspace.
-
-Usage:
-  tearoom room <command> [flags]
-
-Commands:
-  init      create a room and admit the creator
-  join      admit an actor as an explicit member
-`
-
 const serverHelp = `Run a shared room service.
 
 Usage:
@@ -115,92 +105,6 @@ func (a *App) Run(args []string) int {
 	default:
 		return ExitError
 	}
-}
-
-func (a *App) runRoom(args []string) error {
-	if len(args) == 0 || isHelp(args[0]) {
-		fmt.Fprint(a.Out, roomHelp)
-		return nil
-	}
-	switch args[0] {
-	case "init":
-		return a.roomInit(args[1:])
-	case "join":
-		return a.roomJoin(args[1:])
-	default:
-		return fmt.Errorf("unknown room command %q", args[0])
-	}
-}
-
-// roomInit atomically creates a room and admits the creator: one command, one
-// actor. The room identity comes from the directory that owns .tearoom; there
-// is no --name flag.
-func (a *App) roomInit(args []string) error {
-	const help = `Create a room in the current directory and admit the creator.
-
-Usage:
-  tearoom room init [--as <actor>]
-
-Flags:
-  --as string        actor identity; defaults to TEAROOM_ACTOR
-  -h, --help         show help
-`
-	flags := newFlags("room init", a.Out, help)
-	as := flags.String("as", "", "")
-	if err := parseNoArgs(flags, args); err != nil {
-		return err
-	}
-	actor, err := actorID(*as)
-	if err != nil {
-		return err
-	}
-	if os.Getenv("TEAROOM_SERVER") != "" {
-		return errors.New("room init is local; unset TEAROOM_SERVER")
-	}
-	st, err := store.Init(a.Dir, actor)
-	if err != nil {
-		return err
-	}
-	room, err := st.Room(context.Background())
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(a.Out).Encode(room)
-}
-
-// roomJoin is explicit admission within the trust domain of one OS user.
-func (a *App) roomJoin(args []string) error {
-	const help = `Join the nearest room as an explicit member.
-
-Usage:
-  tearoom room join <actor>
-
-Arguments:
-  <actor>            stable actor identity to admit
-
-Flags:
-  -h, --help         show help
-`
-	flags := newFlags("room join", a.Out, help)
-	if err := parse(flags, args); err != nil {
-		return err
-	}
-	if flags.NArg() != 1 {
-		return errors.New("usage: tearoom room join <actor>")
-	}
-	actor := strings.TrimSpace(flags.Arg(0))
-	if actor == "" {
-		return errors.New("actor identity is required")
-	}
-	st, err := a.openStore()
-	if err != nil {
-		return err
-	}
-	admitted, err := st.AdmitActor(context.Background(), actor)
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(a.Out).Encode(admitted)
 }
 
 const sendHelp = `Append one event to the nearest room.

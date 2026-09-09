@@ -61,14 +61,30 @@ func (s *Server) Handler() http.Handler {
 	return mux
 }
 
-// createRoom mints one Room and answers with its room-scoped URL.
+// createRoom mints one Room, admits its creator when the body names one,
+// and answers with the room-scoped URL.
 func (s *Server) createRoom(r *http.Request) (any, error) {
 	if !s.isOwner(r) {
 		return nil, transport.ErrForbidden
 	}
+	var input struct {
+		Actor string `json:"actor"`
+	}
+	if err := decodeStrict(r, &input); err != nil {
+		return nil, fmt.Errorf("invalid create-room body: %w", err)
+	}
 	roomID := "room_" + randomHex(4)
 	room := relational.RoomRow{ID: roomID, CreatedAt: s.now().UTC()}
-	if err := s.db.Create(&room).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&room).Error; err != nil {
+			return err
+		}
+		if creator := strings.TrimSpace(input.Actor); creator != "" {
+			return tx.Create(&relational.ActorRow{RoomID: roomID, ID: creator, JoinedAt: room.CreatedAt}).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return createdRoom{
@@ -95,6 +111,9 @@ func (s *Server) roomAPI(w http.ResponseWriter, r *http.Request) {
 	room.Auth = &transport.Auth{Control: s.control, OwnerTokenHash: s.ownerTokenHash}
 	http.StripPrefix("/r/"+roomID, room.Handler()).ServeHTTP(w, r)
 }
+
+// decodeStrict is transport's strict decoder for the host-level routes.
+var decodeStrict = transport.DecodeStrict
 
 // createdRoom is the response of POST /api/rooms. Server is the room-scoped
 // URL that TEAROOM_SERVER points at from then on.

@@ -16,13 +16,24 @@ the loopback interface only in P0. Implementation status belongs in
 
 ## Endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/room` | Read Room identity |
-| `GET` | `/api/actors` | List admitted Actors |
-| `POST` | `/api/actors` | Explicitly join an Actor |
-| `GET` | `/api/events?after=42` | Read Events after a caller boundary |
-| `POST` | `/api/events` | Append one Event |
+| Method | Path | Profile | Purpose |
+|---|---|---|---|
+| `GET` | `/api/room` | both | Read Room identity |
+| `GET` | `/api/actors` | both | List admitted Actors |
+| `POST` | `/api/actors` | exposed: owner | Explicitly join an Actor |
+| `GET` | `/api/events?after=42` | both | Read Events after a caller boundary |
+| `POST` | `/api/events` | exposed: credential | Append one Event |
+| `POST` | `/api/credentials` | exposed: owner | Issue one write credential |
+| `POST` | `/api/credentials/revoke` | exposed: owner | Revoke one credential |
+| `POST` | `/api/rooms` | hosted: owner | Create a Room on a hosted service |
+
+The **local** profile is a loopback server over one `.tearoom` Room with
+self-asserted Actors. The **exposed** profile (a server constructed with
+credentials) keeps every `GET` open — the room URL is the read capability —
+and gates every mutation: writes require a bearer credential bound to its
+Actor, and joins plus credential management require the deployment owner
+token. The **hosted** routes run in front of many rooms behind `/r/<id>`. A
+hosted service without an owner token is refused at startup.
 
 - `GET /api/events` returns a plain JSON Event array — there is no Feed and no
   cursor. `after` is the exclusive caller-owned boundary; the server never
@@ -44,6 +55,25 @@ the loopback interface only in P0. Implementation status belongs in
 |---|---|---|
 | `X-Tearoom-Actor` | events routes | the read/send Actor; required |
 | `Idempotency-Key` | append | optional retry identity for the append |
+| `Authorization` | exposed mutations | `Bearer <token>`: a write credential on appends, the owner token on joins and credential routes |
+
+In the exposed profile the credential is authoritative on appends: an
+`X-Tearoom-Actor` that disagrees with it fails with 403. Missing, unknown,
+expired, and revoked tokens answer 401 and never masquerade as an empty read.
+
+## Credentials (exposed profile)
+
+`POST /api/credentials` carries `{"actor":"bob","ttl_seconds":2592000}` and
+answers once with
+`{"id":"cred_...","actor":"bob","expires_at":"...","token":"tr_..."}` — the
+plaintext token appears exactly once and only its sha-256 hash is stored.
+`POST /api/credentials/revoke` carries `{"id":"cred_..."}` and invalidates
+that credential immediately without touching the Room, the Actor, or history.
+Both require the owner bearer.
+
+Hosted room creation `POST /api/rooms` carries `{"actor":"planner"}` (the
+creator to admit) and answers with
+`{"id":"room_...","created":"...","server":"<base>/r/room_..."}`.
 
 ## Append body
 

@@ -87,7 +87,7 @@ func (s *Server) joinActor(r *http.Request) (any, error) {
 	var input struct {
 		ID string `json:"id"`
 	}
-	if err := decodeStrict(r, &input); err != nil {
+	if err := DecodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid join body: %w", err)
 	}
 	if s.Auth != nil {
@@ -111,7 +111,7 @@ func (s *Server) appendEvent(r *http.Request) (any, error) {
 		To      []string        `json:"to"`
 		Content json.RawMessage `json:"content"`
 	}
-	if err := decodeStrict(r, &input); err != nil {
+	if err := DecodeStrict(r, &input); err != nil {
 		return nil, fmt.Errorf("invalid append body: %w", err)
 	}
 	if s.Auth != nil {
@@ -142,9 +142,9 @@ func (s *Server) readEvents(r *http.Request) (any, error) {
 	return s.Store.Read(r.Context(), actor, after)
 }
 
-// decodeStrict decodes exactly one JSON object and rejects unknown fields, so
+// DecodeStrict decodes exactly one JSON object and rejects unknown fields, so
 // removed fields of the old wire format fail loudly instead of being ignored.
-func decodeStrict(r *http.Request, out any) error {
+func DecodeStrict(r *http.Request, out any) error {
 	defer r.Body.Close()
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()

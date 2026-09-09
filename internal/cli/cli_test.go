@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
+	"github.com/williamfzc/tearoom/internal/hosted"
+	"github.com/williamfzc/tearoom/internal/relational"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
 	"github.com/williamfzc/tearoom/internal/version"
@@ -90,7 +92,7 @@ func TestRootAndCommandHelp(t *testing.T) {
 		want string
 	}{
 		{[]string{"--help"}, "tearoom <command>"},
-		{[]string{"room", "--help"}, "tearoom room <command>"},
+		{[]string{"room", "--help"}, "tearoom room init"},
 		{[]string{"send", "--help"}, "tearoom send <text>"},
 		{[]string{"read", "--help"}, "--after"},
 		{[]string{"server", "--help"}, "tearoom server <command>"},
@@ -547,6 +549,88 @@ func TestIdempotencyConflictExitsOne(t *testing.T) {
 	var event core.Event
 	if err := json.Unmarshal(ok.Bytes(), &event); err != nil || event.Seq != 1 {
 		t.Fatalf("equal retry returned %s, want the original event", ok.String())
+	}
+}
+
+func TestRemoteJourneyThroughCLI(t *testing.T) {
+	// A hosted service over a SQLite deployment database stands in for the
+	// remote deployment; the journey is identical over PostgreSQL.
+	db, err := relational.OpenDatabase(filepath.Join(t.TempDir(), "journey.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hostedServer, err := hosted.New(db, "tr_owner_journey", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(hostedServer.Handler())
+	t.Cleanup(httpServer.Close)
+
+	// The owner creates the room and gets its room URL back.
+	ownerHome := t.TempDir()
+	out := &bytes.Buffer{}
+	owner := &App{Out: out, Err: io.Discard, Dir: ownerHome}
+	t.Setenv("TEAROOM_TOKEN", "tr_owner_journey")
+	if code := owner.Run([]string{"room", "init", "--server", httpServer.URL, "--as", "planner"}); code != ExitOK {
+		t.Fatalf("remote room init exit = %d, output %s", code, out.String())
+	}
+	var created struct {
+		ID     string `json:"id"`
+		Server string `json:"server"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &created); err != nil || created.Server == "" {
+		t.Fatalf("remote init output = %q", out.String())
+	}
+
+	// Every following command targets the room URL with the right bearer.
+	t.Setenv("TEAROOM_SERVER", created.Server)
+	t.Setenv("TEAROOM_TOKEN", "tr_owner_journey")
+	t.Setenv("TEAROOM_ACTOR", "planner")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: ownerHome}
+	if code := app.Run([]string{"room", "join", "bob"}); code != ExitOK {
+		t.Fatal("owner join failed")
+	}
+
+	// Issue bob a credential; the plaintext token prints exactly once.
+	issueOut := &bytes.Buffer{}
+	issuer := &App{Out: issueOut, Err: io.Discard, Dir: ownerHome}
+	if code := issuer.Run([]string{"room", "credential", "issue", "--actor", "bob", "--expires", "24h"}); code != ExitOK {
+		t.Fatalf("credential issue exit = %d, output %s", code, issueOut.String())
+	}
+	var issued struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(issueOut.Bytes(), &issued); err != nil || !strings.HasPrefix(issued.Token, "tr_") {
+		t.Fatalf("issued = %q", issueOut.String())
+	}
+
+	// bob writes with the credential.
+	bobHome := t.TempDir()
+	t.Setenv("TEAROOM_TOKEN", issued.Token)
+	t.Setenv("TEAROOM_ACTOR", "bob")
+	bob := &App{Out: io.Discard, Err: io.Discard, Dir: bobHome}
+	if code := bob.Run([]string{"send", "from bob"}); code != ExitOK {
+		t.Fatal("credentialed send failed")
+	}
+
+	// The owner revokes; bob's next write fails without touching history.
+	t.Setenv("TEAROOM_TOKEN", "tr_owner_journey")
+	t.Setenv("TEAROOM_ACTOR", "planner")
+	if code := app.Run([]string{"room", "credential", "revoke", issued.ID}); code != ExitOK {
+		t.Fatal("revoke failed")
+	}
+	t.Setenv("TEAROOM_TOKEN", issued.Token)
+	revoked := &App{Out: io.Discard, Err: io.Discard, Dir: bobHome}
+	if code := revoked.Run([]string{"send", "after revoke"}); code != ExitError {
+		t.Fatal("revoked credential write succeeded")
+	}
+
+	// Reads stay open with no token at all.
+	t.Setenv("TEAROOM_TOKEN", "")
+	reader := &App{Out: io.Discard, Err: io.Discard, Dir: bobHome}
+	if code := reader.Run([]string{"read"}); code != ExitOK {
+		t.Fatal("open read failed")
 	}
 }
 
