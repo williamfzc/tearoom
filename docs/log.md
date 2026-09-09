@@ -8,6 +8,22 @@ timestamp: 2026-09-09
 
 # Change log
 
+## 2026-09-09 — Make the CLI the explicit top-level product contract
+
+Separated the CLI reference into shipped and target surfaces. The shipped
+section now records complete command, identity, output, wait, retry, and failure
+behavior and corrects Actor selection: `room join` takes its Actor positionally,
+while `room members` needs no Actor identity. The target section fixes one
+command vocabulary for human login, remote Room creation, per-Agent credentials,
+snapshot links, and continuation Rooms while marking every unimplemented
+surface plainly.
+
+The evaluation registry now classifies core stories, contract and stress
+scenarios, distribution, remote ownership, and deferred policy. Each active
+story has an expected CLI journey; individual command semantics remain owned
+only by the CLI reference. This makes the command line the top-level acceptance
+boundary without creating separate local and remote products.
+
 ## 2026-09-09 — Make local and remote one deployment-shaped product
 
 Adopted one service across local and remote deployment. SQLite is the target

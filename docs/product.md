@@ -140,7 +140,9 @@ measured (about 93,000 tokens per 2,000 Events).
 
 ## Target remote user journey — not implemented
 
-The following is target design, not shipped behavior:
+The following is target design, not shipped behavior. Its exact user-facing
+commands and expected results are owned by the
+[CLI reference](reference/cli.md#target-command-contract--not-shipped):
 
 1. A human signs in with GitHub.
 2. The human creates a Room under their account or organization.
@@ -219,29 +221,11 @@ The market evidence behind this product, and the near-term priorities it justifi
 
 ## Command surface
 
-The agent-facing path exposes actions rather than the transport model:
-
-```bash
-tearoom send "review worktree A"
-tearoom send --json '{"plan":"..."}'
-tearoom read
-tearoom read --after e42 --limit 20
-tearoom read --after e42 --wait 5m
-```
-
-Lifecycle and operator commands stay grouped below `room` and `server`:
-`room init` atomically creates the Room and admits the creator, `room join` is
-explicit admission, `room members` lists membership, and `server start` serves
-one Room on the loopback interface. Actor admission must be explicit enough
-for Room membership to be a real visibility boundary.
-
-`read` is a repeatable query. `--after` is a caller-supplied exact boundary
-(the `e<seq>` presentation address), and `--wait` is scoped to that
-invocation; neither creates durable delivery state. Plain-text sends are
-encoded as JSON strings; `--json` passes raw JSON.
-
-Actor identity comes from `--as` or `TEAROOM_ACTOR`. There is no anonymous
-fallback: an identity must be explicit so Event authorship remains stable.
+The [CLI reference](reference/cli.md) is the sole command contract. It separates
+the shipped local and loopback interface from the decided but unimplemented
+remote, credential, context-link, and continuation interface. User stories in
+[evaluations.md](evaluations.md) compose those commands into complete journeys
+without redefining individual command behavior here.
 
 ## Completion standard
 
