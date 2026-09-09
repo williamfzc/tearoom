@@ -23,13 +23,15 @@ const formatKey = "format"
 // Migrate creates or advances the format-2 schema. A completely empty
 // database receives the schema and marker in one transaction. An existing
 // database must already carry the exact format-2 marker before any schema
-// mutation; old, missing, or wrong markers are refused.
+// mutation; old, missing, or wrong markers are refused. Additive tables join
+// the format-2 schema idempotently (credentials did); a format bump stays
+// reserved for incompatible layout changes.
 func Migrate(db *gorm.DB) error {
 	if db.Migrator().HasTable(&MetaRow{}) {
 		if err := checkMarker(db); err != nil {
 			return err
 		}
-		return db.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{})
+		return db.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}, &CredentialRow{})
 	}
 	for _, table := range []string{"schema_versions", "rooms", "actors", "events", "append_idempotency"} {
 		if db.Migrator().HasTable(table) {
@@ -37,7 +39,7 @@ func Migrate(db *gorm.DB) error {
 		}
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}); err != nil {
+		if err := tx.AutoMigrate(&MetaRow{}, &RoomRow{}, &ActorRow{}, &EventRow{}, &IdempotencyRow{}, &CredentialRow{}); err != nil {
 			return err
 		}
 		return tx.Create(&MetaRow{Key: formatKey, Value: strconv.Itoa(formatVersion)}).Error

@@ -177,7 +177,7 @@ func TestSchemaIsOnlyTheFormatTwoShape(t *testing.T) {
 	}
 	want := map[string]bool{
 		"meta": true, "rooms": true, "actors": true,
-		"events": true, "append_idempotency": true,
+		"events": true, "append_idempotency": true, "credentials": true,
 	}
 	if len(tables) != len(want) {
 		t.Fatalf("tables = %v, want only %v", tables, want)

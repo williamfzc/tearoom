@@ -20,6 +20,7 @@ func (ActorRow) TableName() string       { return "actors" }
 func (EventRow) TableName() string       { return "events" }
 func (IdempotencyRow) TableName() string { return "append_idempotency" }
 func (MetaRow) TableName() string        { return "meta" }
+func (CredentialRow) TableName() string  { return "credentials" }
 
 // RoomRow is the durable Room identity and its dense sequence head. The head
 // is only ever advanced by an append transaction that holds the row lock.
@@ -64,6 +65,20 @@ type IdempotencyRow struct {
 type MetaRow struct {
 	Key   string `gorm:"primaryKey;size:64"`
 	Value string `gorm:"not null"`
+}
+
+// CredentialRow is one write credential for an admitted Actor of a Room: an
+// opaque token exists only as its sha-256 hash, and revocation and expiry are
+// checked on every verification. Service records like this authorize access
+// but never change Event semantics. RevokedAt is nil for a live credential.
+type CredentialRow struct {
+	ID        string    `gorm:"primaryKey;size:64"`
+	RoomID    string    `gorm:"primaryKey;size:64;index"`
+	Actor     string    `gorm:"not null;size:255"`
+	TokenHash string    `gorm:"not null;size:64;uniqueIndex"`
+	ExpiresAt time.Time `gorm:"not null"`
+	RevokedAt *time.Time
+	CreatedAt time.Time `gorm:"not null"`
 }
 
 // coreEvent converts a stored row back into the domain Event. The To column
