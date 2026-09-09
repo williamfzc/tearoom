@@ -74,6 +74,9 @@ continue without hidden vendor state or manual relay. No-go if a shared file,
 normal chat, repository document, or one product's native transcript completes
 the same journey with less setup and equal recovery.
 
+A hand-run instance of this journey and the method that produced it are
+recorded under [Hand-run evidence](#hand-run-evidence).
+
 ### P2 — Remote readiness
 
 Evaluation E7. **Status: planned.**
@@ -127,9 +130,30 @@ not part of the story mapping.
 
 Evidence that cannot run in `make check` is recorded here or it never ran.
 
+### Hand-running the E3 journey
+
+The cross-product claim of E3 needs two real, independent Agent products and
+cannot run in `make check`. The recorded runs follow this method:
+
+1. The owner performs setup only — `room init`, one `room join` per Actor,
+   `server start` — and never carries Event content.
+2. Each Agent product runs in its own directory and receives only the binary
+   path, the Room URL, its Actor identity, and the instruction to recover its
+   context from the Room with `read`. No Event content may appear in any
+   prompt; the prompts are the audit trail for the relay count.
+3. The journey includes a service restart and an explicit `--after` boundary.
+   The second participant's result must echo details that exist only in the
+   Room; that echo is the recovery proof.
+4. Record setup effort, manual relay count, recovery quality, and the repeated
+   handoff in the table below.
+
+A scripted stand-in for the second product collapses this proof into E1/E2
+and is not E3 evidence.
+
 | Date | Evaluation | Cases | Outcome | Record |
 |---|---|---|---|---|
 | 2026-09-02 | Foundation rival | Incremental reads, per-participant boundaries, replay, activation, and concurrent append compared with a plain JSONL file | The file matched the foundation claims; the cross-product continuation story remains unproven | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
+| 2026-09-09 | E3 journey (hand-run) | ZCode as `agent-a` and headless Claude Code as `agent-b` in its own directory over loopback HTTP. Setup: `room init --store sqlite`, two joins, `server start`. A appended a work contract (e1); B recovered it with `read`, implemented and tested the work, and appended the result (e2) with its own idempotency key; the server was killed and restarted; A pulled e2 with `--after e1` and appended acceptance (e3); C read the full history | Four steps closed with zero manual Event relays; B echoed contract details that existed only in the Room; the dense 1..3 history survived the restart; setup was five commands and B ran unattended in one ~2-minute headless session | [method](#hand-running-the-e3-journey) |
 
 ## Legacy surfaces at the P0 cutover
 
@@ -143,6 +167,5 @@ current evaluations.
 
 | Item | Evidence needed |
 |---|---|
-| Cross-product continuation | Run E3 with two independent Agent products and record setup effort, manual relay count, recovery, and repeated handoff |
 | Cheapest-rival comparison | Run the same E3 journey through a shared JSONL file, normal chat, repository document, and one vendor transcript |
 | PostgreSQL validation | Run the Store battery and E7 when a database and remote service are available |
