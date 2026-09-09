@@ -104,7 +104,7 @@ tearoom send "ready" --as alice
 tearoom read --as alice
 ```
 
-## Target command contract — not shipped
+## Target remote profile (not shipped)
 
 The target preserves the same `room`, `send`, and `read` vocabulary remotely.
 PostgreSQL is selected by the remote deployment, never by an Agent-side
@@ -124,7 +124,7 @@ URL. The remote deployment uses PostgreSQL; the local form continues to use
 the backend selected by `--store`.
 
 ```json
-{"account":"alice","provider":"github","server":"https://tearoom.example"}
+{"account":"alice","server":"https://tearoom.example"}
 ```
 
 ```json
@@ -165,37 +165,24 @@ Room, Actor, or history. Rotation is issue-new then revoke-old; it needs no
 separate command. The target loopback profile uses the same authorization
 decisions but may bootstrap its local owner without login ceremony.
 
-### Context links and continuation
+### Remote read/write loop
 
-```text
-tearoom link create [--after e<seq>] [--limit N]
-tearoom room init --from <context-url> --as <owner>
-```
-
-`link create` explicitly publishes the selected immutable Room range and
-returns its resolved boundaries. Omitting `--after` starts at the beginning;
-`--limit 0` or an omitted limit ends at the current Room head. Publishing an
-empty range fails rather than creating an ambiguous link.
-
-```json
-{"url":"https://tearoom.example/l/link-id","after":"e42","limit":20,"first":"e43","last":"e62"}
-```
-
-Opening that URL in a browser produces the human replay. A plain HTTP client
-can request agent-readable text without installing Tearoom:
+There is no share, export, snapshot, link, or continuation command. An operator
+gives each receiving Agent its Room URL, Actor identity, and credential through
+an external secure channel. The Agent pulls JSONL and writes back through the
+ordinary commands:
 
 ```bash
-curl -fsSL -H 'Accept: text/plain' https://tearoom.example/l/link-id
+export TEAROOM_SERVER=https://tearoom.example/r/room-id
+export TEAROOM_ACTOR=bob
+export TEAROOM_TOKEN=tr_example
+tearoom read --after e42
+tearoom send --json '{"result":"continued"}'
 ```
 
-`room init --from` requires an owner login, creates a continuation Room on the
-service that owns the link, imports the snapshot as its starting history, and
-returns the new Room-specific server URL. Further work uses ordinary `send`
-and `read`; chat carries only the URL and never becomes Room state.
-
-```json
-{"id":"continuation-id","created":"2026-09-09T11:00:00Z","server":"https://tearoom.example/r/continuation-id","from":"https://tearoom.example/l/link-id"}
-```
+A later person or Agent repeats `read` from its own boundary. Everyone
+continues in the same Room unless an operator explicitly creates another Room;
+Tearoom does not fork collaboration implicitly.
 
 ## Failure contract
 
@@ -207,14 +194,14 @@ availability failure.
 
 The target remote commands keep those same classes. Missing, expired, revoked,
 wrong-Actor, or insufficient-scope credentials are ordinary request failures;
-they never masquerade as an empty successful read. Remote login and context
-link errors use the same request-failure class until a shipped use case proves
-a separate machine action is necessary.
+they never masquerade as an empty successful read. Remote login and Room
+creation errors use the same request-failure class until a shipped use case
+proves a separate machine action is necessary.
 
 ## Delivery boundary
 
 The CLI does not wake offline Actors, and no such service ships in this
-repository (adjudicated 2026-09-09). Today delivery is a paste or an
-operator-owned external script that invokes `read` and `send`; the target
-context link adds the pasteable handoff described above. Neither `read` nor
-`send` acquires a hidden read cursor or scheduler responsibility.
+repository (adjudicated 2026-09-09). An external operator or Agent product
+starts and configures the receiving process, which invokes `read` and `send`.
+The Room connection, not Event content, is passed to that process. Neither
+`read` nor `send` acquires a hidden read cursor or scheduler responsibility.

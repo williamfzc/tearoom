@@ -1,250 +1,201 @@
 ---
 type: product
 title: Product definition
-description: Authoritative definition of Tearoom's scope, target model, implementation status, and completion standard.
+description: Authoritative definition of Tearoom's single user story, target model, deployment profiles, and completion standard.
 tags: [product, scope, authority]
 timestamp: 2026-09-09
 ---
 
 # Product definition
 
-This document is the only authority for product scope. The code gap is in
-[status.md](architecture/status.md), executable proof in
-[evaluations.md](evaluations.md), target interfaces under
-[reference/](reference/index.md), and dated decisions in
-[log.md](log.md). Historical behavior does not redefine this document.
+This document is the only authority for product scope. The implementation gap
+is in [status.md](architecture/status.md), executable proof in
+[evaluations.md](evaluations.md), machine-facing behavior under
+[reference/](reference/index.md), and dated decisions in [log.md](log.md).
+Historical behavior does not redefine this document.
 
 ## One sentence
 
-**Tearoom is a durable shared Room where people, Agents, and tools contribute to one ordered, replayable history; a context link carries that history anywhere — a human opens the replay, and an absent Agent reads it and continues.**
+**Tearoom is a durable shared Room where one participant writes work, another
+person or Agent product pulls the same ordered history through the CLI,
+continues, and writes back for the next participant.**
+
+## The one user story
+
+When work moves between people, processes, or Agent products, the receiving
+participant can recover the prior context and continue from the same record
+without the sender manually rewriting or relaying it.
+
+The complete journey has four steps:
+
+1. Actor A appends work.
+2. Actor B pulls the Room history through the CLI.
+3. Actor B continues the work and appends the result.
+4. Actor A or Actor C pulls the new result and can continue again.
+
+A human correction is not a separate story. A human is an Actor and uses the
+same read and append path. Process restart is not a separate story either; it
+is a required condition of the same journey.
+
+The user story is open until two independent Agent products complete the whole
+loop without a human copying Event content between them. The exact CLI journey
+and competing alternatives are recorded in [evaluations.md](evaluations.md).
+
+## Supporting requirements, not additional stories
+
+- Durable, ordered, repeatable history makes continuation possible.
+- Local and remote deployment must run the same journey.
+- Remote identity and revocable per-Agent credentials make the journey safe
+  outside one trusted machine.
+- SQLite and PostgreSQL are deployment choices, not user-visible product
+  variants.
+- Games, organization policy, browser replay, share pages, snapshots, and
+  continuation-room forks are not current product stories.
 
 ## The three entities
 
-- **Room** is the durable shared boundary and owns one ordered event sequence.
-- **Actor** is a stable participant identity independent of a process, session, model, or agent product.
-- **Event** is one immutable fact appended by an actor.
+- **Room** is the durable shared boundary and owns one ordered Event sequence.
+- **Actor** is a stable participant identity independent of a process, session,
+  model, person, or Agent product.
+- **Event** is one immutable contribution appended by an Actor.
 
-There is no fourth core entity. A task, claim, approval, handoff, game phase,
-role assignment, or vote is a content convention or a projection over Events.
-
-`Room` is the name because this product is Tearoom. It also describes the user model directly: actors enter a room and events happen there.
+There is no fourth core entity. A task, handoff, correction, approval, result,
+game phase, or vote is content inside an Event or a projection over Events.
 
 ## Who it is for
 
-1. Agents exchanging work across process and session boundaries.
-2. Different agent products that need one neutral coordination surface.
-3. Humans inspecting or participating in the same event history.
-
-The first two are the completion boundary. A dedicated human interface is optional.
+The primary user is a person or system moving ongoing work between Agent
+products or later processes. Humans may inspect or contribute through the same
+CLI or HTTP contract, but Tearoom does not require a separate human interface.
 
 ## Invariants
 
-- **One room, one sequence.** Events receive dense, increasing sequence numbers under one store lock.
-- **Append only.** Accepted events are never edited in place.
-- **Stable actors.** An actor identity survives process and session changes.
-- **Caller-owned read boundaries.** Reading is a repeatable query. A caller may provide an explicit sequence boundary; Tearoom does not persist an implicit per-Actor read cursor, unread marker, or acknowledgement.
-- **Ordinary append.** The Store assigns the next dense sequence. A normal append does not require the writer to prove which read cursor it used. An explicit conditional append may be added when a protocol proves it needs one.
-- **Idempotent retries.** An append API may use an idempotency key so an uncertain retry returns the original Event; this is an append capability, not part of the minimum Event shape.
-- **Membership visibility.** Every member of a Room can read its complete history. `to` is public addressing or attention metadata, not secrecy, permission, or a process-control request. Privacy requires a separate Room with separate admission.
-- **One product locally and remotely.** Deployment changes infrastructure, not
-  product semantics. The same service, Room, Actor, Event, admission, send,
-  read, errors, migrations, and acceptance journeys apply everywhere.
-- **No caller-owned rules.** Anything every client must obey is enforced below `Store`, never only in the CLI.
-
-## Adopted contract
-
-The collaboration kernel is intentionally small:
-
-| Area | Product contract |
-|---|---|
-| Read progress | Caller-supplied `read` boundaries; no implicit Actor cursor |
-| Visibility | Room membership exposes complete history; `to` is public addressing |
-| Event minimum | `seq`, `actor`, `at`, optional `to`, and `content` |
-| Append freshness | Ordinary append is independent of read progress; conditional append is explicit if later proven |
-| Delivery | A paste, a context link, or an operator-owned external script; no in-product wake control plane (adjudicated 2026-09-09) |
-
-The implementation may lag this contract, but no public or internal interface
-may treat the older model as a second supported product.
-
-## Clean-break migration policy
-
-The pre-adoption model has no compatibility guarantee. The migration must not
-retain command aliases, dual Event schemas, cursor session import, directed
-visibility fallback, dual HTTP shapes, or a deprecated Store path. Code, data
-schemas, tests, demos, skills, and documentation switch together when a phase
-lands.
-
-Old experimental Rooms and remote coordination data may be reset. If any data
-is worth keeping, export it before the cutover; do not add runtime compatibility
-machinery to preserve it. Rollback means reverting the release and its data
-snapshot, not carrying the old model forward inside the product.
+- **One Room, one sequence.** Events receive dense increasing sequence numbers
+  under one serialization boundary.
+- **Append only.** Accepted Events are never edited in place.
+- **Stable Actors.** Actor identity survives process, session, model, and
+  product changes.
+- **Caller-owned read boundaries.** Reading is repeatable. A caller supplies
+  its own sequence boundary; Tearoom stores no implicit per-Actor cursor,
+  unread marker, or acknowledgement.
+- **Ordinary append.** The Store assigns the next position. A normal append
+  does not depend on the writer's last read.
+- **Idempotent retries.** A caller may attach an idempotency key so an uncertain
+  retry returns the original Event.
+- **Membership visibility.** Every member reads the complete Room history.
+  `to` is public addressing metadata, not secrecy, permission, or a request
+  to start a process.
+- **One product locally and remotely.** The service, CLI, Room, Actor, Event,
+  admission, read, send, errors, migrations, and acceptance journey remain the
+  same. Deployment changes infrastructure only.
+- **No caller-owned shared rules.** Anything every client must obey is enforced
+  below the CLI rather than repeated by each caller.
 
 ## One product, two deployment profiles
 
-Tearoom is one product and one service, deployed with different infrastructure:
-
-| Profile | Database | Network and identity | Current state |
+| Profile | Database | Connection and identity | Current state |
 |---|---|---|---|
-| Local | SQLite is the target default; the file backend remains a current portable option | Loopback; local setup may bootstrap its owner | The current single-binary product ships, with file as its default and SQLite optional |
-| Remote | PostgreSQL | HTTPS; login identity and scoped, revocable Agent credentials | Not implemented |
+| Local | SQLite is the target default; the file backend remains a current portable option | Nearest local Room or loopback URL; local setup may bootstrap its owner | File is the current default, SQLite is optional, and the loopback service ships |
+| Remote | PostgreSQL | HTTPS Room URL plus login identity and scoped revocable Agent credentials | Not implemented |
 
-These are profiles, not editions. Remote deployment must not introduce a
-second server, API, command vocabulary, Event shape, migration chain, or
-authorization model. Local setup may remove ceremony — for example by
-bootstrapping one owner — but requests then pass through the same admission and
-capability decisions as remote requests. Infrastructure adapters such as the
-database, object storage, TLS termination, and process supervision are the
-allowed differences.
+These are profiles, not editions. After profile bootstrap, both run the same
+four-step `read` / `send` journey. Remote deployment must not add a second
+server, API, command vocabulary, Event shape, migration chain, or authorization
+model. PostgreSQL is selected by the service, never by an Agent-side
+`--store postgres` flag.
 
-Features land in the shared service first and are accepted against both
-profiles. A feature that exists only in a separately maintained local or remote
-path is incomplete. PostgreSQL parity is required before claiming remote
-readiness; SQLite remains the always-runnable local proof of the same relational
-contract. The current loopback-only server is therefore an incomplete deployment
-of the target service, not a separate Local Tearoom product.
+Features land in the shared service and are accepted against both profiles.
+A feature maintained only in a separate local or remote path is incomplete.
+The current loopback-only server is an incomplete deployment of the target
+service, not a separate Local Tearoom product.
 
-The first remote-facing slice is the **context link** (below). It grows from the
-same service and Room history; it is not a separate remote application.
+## Target remote journey — not implemented
 
-## The context link
+The [CLI reference](reference/cli.md#target-remote-profile-not-shipped) owns
+the exact target commands:
 
-A context link turns a caller-chosen Room range into one pasteable URL with
-two faces: a human opens it and sees the replay — actors, order, events — and
-an agent fetches it and reads the same history as text or JSONL with no
-Tearoom install. The link is a caller-owned read boundary plus transport, the
-same boundary `read --after` already takes. It is a projection, not a fourth
-kernel entity, and it carries a reference to Events, never a second copy of
-collaboration truth.
+1. An owner authenticates to the remote service and creates a Room.
+2. The owner explicitly admits an Actor and issues that Actor a scoped,
+   expiring credential.
+3. The Agent receives the Room URL, Actor identity, and credential through an
+   operator-controlled channel.
+4. The Agent uses ordinary `read` and `send`; no remote-only collaboration
+   command exists.
+5. The owner may revoke that credential without changing the Room, Actor,
+   other credentials, or prior Events.
 
-The slice grows in three tiers:
-
-1. **Snapshot link.** A content-addressed, immutable export of one Room
-   range, resolved from object storage. Publishing is explicit: creating a
-   link releases that range from the Room's membership boundary to whoever
-   holds the URL — the same act as pasting into a chat.
-2. **Continuation room.** The link gains a write face: a scoped, revocable
-   append credential to a remotely deployed Room created from the snapshot, under the
-   same Room/Actor/Event contract. Guest admission is explicit, and a shared
-   capability names but does not prove its Actor — identity is weaker than a
-   locally admitted Actor, and the link view must say so.
-3. **Remote deployment.** The login-identity journey below, with
-   organizations, credentials, and revocation.
-
-Collaboration continues across a link by a fork chain: import the snapshot
-into a Room, work, and share a new link. A chat thread carrying that sequence
-of links is a transport, not a Room: chat messages never become Events, and no
-chat application becomes a coordination surface of this product. The context
-budget stays with the receiver — the link encodes its boundary, and full-range
-reads cost what [lessons/rival-falsification.md](lessons/rival-falsification.md)
-measured (about 93,000 tokens per 2,000 Events).
-
-## Target remote user journey — not implemented
-
-The following is target design, not shipped behavior. Its exact user-facing
-commands and expected results are owned by the
-[CLI reference](reference/cli.md#target-command-contract--not-shipped):
-
-1. A human signs in with GitHub.
-2. The human creates a Room under their account or organization.
-3. Tearoom issues a revocable Room credential with an explicit scope and expiry policy.
-4. The human configures one or more agents with the Room server URL, Actor identity, and credential.
-5. Those agents register and exchange Events across products and sessions through the same Room.
-6. The human can inspect Room history, manage membership, rotate credentials, and revoke agent access.
-
-GitHub proves the human account identity. Agents do not reuse the human's GitHub session. Each agent or integration receives its own credential so access can be limited and revoked without affecting the owner.
-
-The target remote profile may introduce account, organization, membership,
-credential, and billing records around the Room as they become necessary.
-These are service records, not additional coordination entities inside the
-Room/Event kernel, and the same service may use the local bootstrap identity
-when deployed on one machine.
+Each Agent or integration receives its own credential. Actor names are not
+credentials, and presenting a credential never silently creates membership.
+The specific login provider, invitation flow, and default expiry remain open
+until implementation evidence requires a decision.
 
 ## Persistence direction
 
-Current and target state are deliberately distinct: the file Store remains the
-shipped local default today, while SQLite is the target local default and
-PostgreSQL is the target remote database. The relational Store already ships
-on SQLite:
+The file Store is the shipped local default today. SQLite is the target local
+default and PostgreSQL the target remote database:
 
-- Today the file Store is the local default. SQLite is an explicit local choice
-  selected with `--store sqlite` and recorded in `.tearoom/store.json`; changing
-  the default is open implementation work, not a claim about current behavior.
-- PostgreSQL is the remote database; SQLite and PostgreSQL share one relational
-  schema owner and migration sequence, and PostgreSQL validation is pending.
-- The ORM and database models remain inside the persistence layer and must not become domain types.
-- Database transactions must enforce the Store invariants: dense ordering,
-  append-only Events, stable Actor admission, membership visibility, and any
-  explicitly adopted append capability.
-- A backend change must not alter the CLI, HTTP contract, or Event semantics.
+- `room init --store sqlite` selects SQLite and records the choice in
+  `.tearoom/store.json`.
+- SQLite and PostgreSQL share one relational schema owner and migration
+  sequence; PostgreSQL validation is still pending.
+- Database models remain behind the Store boundary.
+- Transactions enforce dense order, append-only Events, explicit membership,
+  visibility, and adopted retry behavior.
+- Changing the backend must not change CLI, HTTP, or Event behavior.
 
-The relational Store was added beside the file Store. Either backend may be
-rewritten or removed during the clean break when that yields the smaller honest
-product; no pre-adoption storage format is promised compatibility.
+The detailed storage boundary is in
+[architecture/persistence.md](architecture/persistence.md).
 
-The detailed storage boundary is in [architecture/persistence.md](architecture/persistence.md).
+## Delivery and process boundary
 
-## What it enables
+`send` durably appends; it does not start or wake another process. An external
+operator or Agent product starts the receiving Agent and gives it the Room
+connection. The receiver then calls `read`, continues, and calls `send`.
 
-The core does not know these applications, but it can carry them:
-
-- repository and worktree handoffs;
-- task claims and progress reports;
-- review and approval protocols;
-- harness workflows in which a planner, a generator, and an evaluator run a plan/generate/evaluate loop over one Room ([domain/harness-workflow.md](domain/harness-workflow.md));
-- context links that carry a handoff into a chat thread — a colleague opens
-  the replay, and their agent reads and continues the work;
-- group chat and addressed messages;
-- games such as Werewolf, with private roles represented by separate Rooms when privacy is required;
-- any other protocol expressible as ordered facts among stable actors.
+Tearoom owns the shared record, not process scheduling. A later real need may
+justify an external runner, but runner state must never become Actor read state
+or another core entity.
 
 ## What it refuses
 
-- No built-in workflow engine, scheduler, DAG, or model router.
-- No task, lease, gate, thread, channel, or game entity in the kernel.
-- No browser or WebAssembly console in the current product; a management
-  interface may be added to the shared service when remote deployment exists.
+- No built-in workflow engine, scheduler, launcher, DAG, or model router.
+- No task, lease, gate, thread, channel, game, snapshot, or share-link entity
+  in the kernel.
+- No share page, browser replay, or management interface in the current target.
 - No hidden compatibility model beside Room, Actor, and Event.
-- No hidden read checkpoint, unread state, or mandatory stale-write precondition in the kernel.
-- No claim that `to` is security or process activation; authentication and delivery are separate layers.
-- No in-product wake control plane: delivery to an absent Agent is a paste, a
-  context link, or an operator-owned external script
-  ([lessons/rival-falsification.md](lessons/rival-falsification.md)); this
-  repository ships no daemon, ledger, or launcher. Reopen only if
-  paste-forwarded handoffs demonstrably fail a real workflow that unattended
-  wake would serve — and then as an external operator tool first.
-- No chat application as a Room: messages forwarded through IM transport
-  links; they never become Events and never gain coordination authority.
-
-## Competitive context
-
-The market evidence behind this product, and the near-term priorities it justifies, live in [competitive-analysis.md](competitive-analysis.md). This document remains authoritative over scope; the analysis only orders work already named here.
+- No hidden read checkpoint, unread state, or mandatory stale-write
+  precondition.
+- No claim that `to` is security or process activation.
+- No product-owned wake control plane.
+- No chat application as a Room; an external channel may carry connection
+  details, but its messages never become Events.
 
 ## Command surface
 
-The [CLI reference](reference/cli.md) is the sole command contract. It separates
-the shipped local and loopback interface from the decided but unimplemented
-remote, credential, context-link, and continuation interface. User stories in
-[evaluations.md](evaluations.md) compose those commands into complete journeys
-without redefining individual command behavior here.
+The [CLI reference](reference/cli.md) is the sole command contract. The normal
+collaboration surface is `read` and `send`. Lifecycle stays under `room`,
+the local service stays under `server`, and remote bootstrap adds only login,
+Room creation, and credential management.
 
 ## Completion standard
 
-Tearoom is working only when all of the following are executable tests:
+The product story is proven only when an executable evaluation shows:
 
-- A later process in the same agent product resumes a stable actor and reads prior events.
-- A different agent product exchanges events through the same server.
-- A caller can read the same Room history repeatedly and can resume from an
-  explicit Event boundary.
-- Concurrent writers receive distinct dense sequence numbers under the Room
-  serialization boundary.
-- A repeated request is duplicate-safe when the append capability uses an
-  idempotency key.
-- Every Room member can inspect the same complete Event history; `to` remains
-  visible addressing rather than filtering.
-- The shipped `tearoom` binary performs the target send/read journey without a
-  browser component. Delivery to an absent agent is a paste or an external
-  operator script; no in-product wake runtime is claimed.
+1. Actor A appends through one Agent product.
+2. A later Actor B in another Agent product pulls the JSONL history with
+   `read`, without manual relay.
+3. Actor B appends a result with `send`.
+4. Actor A or Actor C pulls that result and can repeat the loop.
 
-The cutover deletion manifest is tracked only in
-[status.md](architecture/status.md). Completion claims come only from the
-target-aligned registry in [evaluations.md](evaluations.md).
+The same evaluation must survive a process restart and explicit read boundary.
+Foundation checks separately prove dense ordering, membership visibility,
+repeatable reads, concurrency, and retry behavior. Remote readiness additionally
+requires the same journey on PostgreSQL with authentication and per-Agent
+revocation. Proof status belongs only in [evaluations.md](evaluations.md).
+
+## Clean-break policy
+
+No release carries old command aliases, dual Event schemas, cursor-session
+imports, private directed visibility, dual HTTP shapes, or deprecated Store
+paths. Rollback uses a matched release and data backup rather than a second
+compatibility model.

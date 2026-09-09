@@ -47,9 +47,10 @@ single-operator use.
 
 Consequence: the product definition then specified activation as a layer
 inside the product. That conflict was adjudicated on 2026-09-09: activation
-is out of product scope, and delivery is a paste, a context link, or an
-external script. The refusal and its reopening condition live in
-[../product.md](../product.md); the superseded design is in Git history.
+is out of product scope. An external operator starts and configures the
+receiving process; the receiver then uses CLI `read` and `send`. The refusal
+and its reopening condition live in [../product.md](../product.md); the
+superseded activation and context-link designs are in Git history.
 
 ## Claim 2: incremental reads are needed for cost
 

@@ -32,7 +32,6 @@ Use one source for each kind of claim:
 |---|---|
 | [product.md](product.md) | Authoritative target product, invariants, refusals, and proof standard |
 | [evaluations.md](evaluations.md) | Proof source: stories, evaluations, and hand-run evidence |
-| [competitive-analysis.md](competitive-analysis.md) | Supporting market evidence; it does not set product scope |
 | [domain/](domain/index.md) | Room, Actor, and Event concepts, boundary behaviour, and trust model |
 | [architecture/](architecture/index.md) | Layer ownership, persistence, and the target-to-implementation gap |
 | [reference/](reference/index.md) | The target CLI, HTTP, exit, storage, and Agent integration contracts |
@@ -49,7 +48,7 @@ Use one source for each kind of claim:
 5. [reference/index.md](reference/index.md) — target machine-facing contracts
 6. [operations/index.md](operations/index.md) — operational state, only when needed
 
-Only after this path should a reader open the competitive analysis, lessons, or
-the historical log. Product intent in the docs does not by itself establish
-that a feature is implemented; current implementation status is recorded in
+Only after this path should a reader open the lessons or historical log.
+Product intent in the docs does not by itself establish that a feature is
+implemented; current implementation status is recorded in
 [architecture/status.md](architecture/status.md).

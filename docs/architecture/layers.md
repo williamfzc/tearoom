@@ -75,13 +75,11 @@ has only the loopback trust shortcut; the shared policy and remote adapters are
 open work recorded in [status.md](status.md).
 
 Delivery to an absent Agent is not an application component of this
-repository (adjudicated 2026-09-09): it is a paste, a context link, or an
-operator-owned external script whose attempts stay outside the Room. Such a
-deliverer must not attach its state to Actor read progress or treat it as proof
-that an Event was understood or completed, and external effects need their own
-idempotency or approval contract. Without any deliverer, `send` ends at durable
-append. The refusal and its reopening condition are recorded in
-[../product.md](../product.md).
+repository (adjudicated 2026-09-09). An external operator or Agent product
+starts and configures the receiving process with its Room connection. The
+process then uses ordinary `read` and `send`. External process state must not
+attach to Actor read progress or become proof that an Event was understood or
+completed. Without a running receiver, `send` ends at durable append.
 
 ## Outside boundaries
 

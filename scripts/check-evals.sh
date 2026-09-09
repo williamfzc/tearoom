@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Validate the evaluation set (docs/evaluations.md): the story<->evaluation
-# mapping is bidirectional, statuses agree with the mapping, and every shipped
-# evaluation exists and is wired into `make check`.
+# mapping is bidirectional, story status agrees with mapped evaluation status,
+# and every shipped evaluation exists and is wired into `make check`.
 #
 # Like check-docs.sh, this exists because a registry that drifts is worse than
-# no registry: a story marked proven without a shipped evaluation, or a suite
-# dropped from make check while its story still claims proof, is the same
-# silent rot a broken link is.
+# no registry: a story marked proven while a mapped evaluation is still planned,
+# or a suite dropped from make check while its story still claims proof, is the
+# same silent rot as a broken link.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -116,17 +116,23 @@ for eid, ss in eval_map.items():
 
 # --- status consistency -------------------------------------------------------
 for sid, status in stories.items():
-    in_map = sid in story_map
-    if status == 'proven' and not in_map:
-        bad.append(f"story {sid} is proven but has no evaluation mapping")
-    if status != 'proven' and in_map:
-        bad.append(f"story {sid} is {status} but appears in the story->eval mapping")
+    mapped = story_map.get(sid, set())
+    if status == 'deferred':
+        if mapped:
+            bad.append(f"story {sid} is deferred but has evaluation mappings")
+        continue
+    if not mapped:
+        bad.append(f"story {sid} is {status} but has no evaluation mapping")
+        continue
+    mapped_statuses = [evals[e]['status'] for e in mapped if e in evals]
+    if status == 'proven' and any(s != 'shipped' for s in mapped_statuses):
+        bad.append(f"story {sid} is proven but a mapped evaluation is not shipped")
+    if status == 'open' and mapped_statuses and all(s == 'shipped' for s in mapped_statuses):
+        bad.append(f"story {sid} is open but every mapped evaluation is shipped")
 
 # --- shipped evaluations exist and are wired ---------------------------------
 for eid, ev in evals.items():
     if ev['status'] == 'planned':
-        if eid in eval_map:
-            bad.append(f"planned evaluation {eid} appears in the mapping")
         continue
     m = re.search(r'`make ([a-z0-9-]+)`', ev['target'])
     if not m:

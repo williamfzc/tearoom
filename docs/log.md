@@ -8,6 +8,26 @@ timestamp: 2026-09-09
 
 # Change log
 
+## 2026-09-09 — Reduce the product to one CLI continuation story
+
+Adopted one user story: Actor A writes, Actor B in another process or Agent
+product pulls the Room through the CLI, B writes back, and A or Actor C pulls
+the new result. Human participation and process restart are conditions of that
+same loop, not separate stories. The foundation contract, remote deployment,
+identity, credentials, and database parity are supporting requirements.
+
+Rejected the share-page and context-link direction adopted earlier that day.
+There is no browser replay, snapshot publication, link command, implicit Room
+fork, or continuation Room. An external operator or Agent product supplies the
+Room connection and starts the receiver; the receiver uses ordinary `read`
+and `send` with JSON/JSONL. Local and remote profiles keep that same interface,
+with remote adding only connection security and identity.
+
+Removed `competitive-analysis.md` because its current positioning depended on
+the rejected context-link thesis. The measured plain-file falsification remains
+in [lessons/rival-falsification.md](lessons/rival-falsification.md); the removed
+analysis and superseded decisions remain available in Git history.
+
 ## 2026-09-09 — Make the CLI the explicit top-level product contract
 
 Separated the CLI reference into shipped and target surfaces. The shipped
@@ -101,7 +121,7 @@ content-addressed, immutable snapshot URL with a human replay face and an
 agent-readable face, growing through fork chains and continuation rooms
 before any account machinery. A chat thread carrying links is a transport,
 never a Room; publish is an explicit act outside the membership boundary.
-[competitive-analysis.md](competitive-analysis.md) records the share-link
+`competitive-analysis.md` recorded the share-link
 landscape — vendor-bound share surfaces, A2A's 2026-08-17 entry into the
 Agentic AI Foundation alongside MCP — and two new falsifiers (handoffs
 staying inside one product; receivers who only view). S9 and E8 enter the
@@ -295,7 +315,7 @@ routed into the rejected model.
 
 ## 2026-08-29 — Record the competitive landscape and its priorities
 
-Added [competitive-analysis.md](competitive-analysis.md): the 2026 protocol, memory, and coding-agent market; the claim that the coordination contract A2A and MCP leave undefined is Tearoom's layer; and three near-term priorities — a server-held wait for `event watch`, the relational Store first on SQLite, and a cross-agent skill over the CLI before any MCP server.
+Added `competitive-analysis.md` (later removed): the 2026 protocol, memory, and coding-agent market; the claim that the coordination contract A2A and MCP leave undefined is Tearoom's layer; and three near-term priorities — a server-held wait for `event watch`, the relational Store first on SQLite, and a cross-agent skill over the CLI before any MCP server.
 
 Kept [product.md](product.md) authoritative over scope; the analysis only orders work already named there.
 

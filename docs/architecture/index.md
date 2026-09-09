@@ -20,6 +20,6 @@ realized; it is not a second product fact source. For executable proof, use
 
 The short version: `core` defines Room, Actor, Event, and `Store`;
 persistence enforces durable membership and ordered history; transport carries
-the Store over HTTP; the CLI presents the interaction surface. Delivery to an
-absent Agent lives outside the repository: a paste, a context link, or an
-operator-owned script.
+the Store over HTTP; the CLI presents the interaction surface. Starting an
+absent Agent lives outside the repository; once running, it continues through
+the ordinary CLI `read` and `send` path.

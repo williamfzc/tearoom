@@ -1,18 +1,23 @@
 ---
 type: domain
 title: Harness workflow
-description: A multi-round agent handoff expressed as ordinary Room Events rather than a kernel workflow.
+description: The single cross-product continuation story expressed as ordinary Room Events rather than a kernel workflow.
 tags: [domain, protocol, harness, user-story]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Harness workflow
 
 ## Target user story
 
-A harness operator starts a planner, generator, and evaluator from different products in one Room. The planner proposes work; the generator reports an attempt; the evaluator reports a decision; the planner or generator continues through one or more revision rounds; and a human may intervene before the work closes. No process relays the entire context by hand: every participant can replay the same ordered Room history.
+A person or system moves ongoing work between processes or Agent products.
+Actor A appends work; Actor B pulls the Room history through the CLI, continues,
+and appends a result; Actor A or Actor C pulls that result and can continue
+again. No human rewrites or relays Event content between products.
 
-The kernel does not define plan, generation, evaluation, revision, or closure. They are conventions in Event content or projections over the log. The story is useful only if it still works when one process ends and a later process reads the Room from an explicitly chosen boundary.
+A human participant is an ordinary Actor in the same loop, not a separate user
+story. The story is useful only if it survives process termination and a later
+process recovers from an explicitly chosen boundary.
 
 ## Protocol convention
 
@@ -35,14 +40,23 @@ These labels are examples, not kernel fields. The minimal Event still consists o
 - Every Room member can inspect the same history, including earlier rounds.
 - A caller chooses its read boundary; the Room does not advance or store one for the Actor.
 - A response may mention an earlier Event in its content, but causal links are an application convention rather than a kernel field.
-- A participant may be offline. That is ordinary replay; delivery is a paste or an external script, and no wake is implied by append.
+- A participant may be offline. An external operator or Agent product starts
+  it and supplies the Room connection; the participant then uses ordinary
+  `read` and `send`. Append itself never implies a wake.
 - A process outcome is not a collaboration outcome. Only appended Events express what the group decided or produced.
 
 ## Target evaluation
 
-The target evaluation should run at least two products through three rounds, stop one process between rounds, let a human append an intervention, and have a later process replay the complete history before contributing. It must check that no saved Room cursor, private Event filter, mandatory type, causal field, or stale-write precondition is needed.
+The target evaluation is E3 in [../evaluations.md](../evaluations.md). It runs at
+least two products through the four-step write, pull, write, pull loop, stops
+one process between steps, and has a later process replay history before
+contributing. It checks that no human copies Event content and no saved Room
+cursor, private Event filter, mandatory type, causal field, or stale-write
+precondition is needed.
 
-Delivery to an offline participant was adjudicated out of product scope on 2026-09-09. A waiting online process is not evidence that an offline Actor can be woken safely.
+Starting an offline participant was adjudicated out of product scope on
+2026-09-09. An external operator or Agent product starts it and supplies the
+Room connection; the participant then uses ordinary `read` and `send`.
 
 ## Why no new entities
 

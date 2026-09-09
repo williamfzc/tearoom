@@ -105,9 +105,10 @@ creates a distinct Event. The key is never stored as an Event field.
 
 ## Delivery and deployment boundary
 
-Delivery to an absent Agent is outside this API. A paste, context link, or
-operator-owned script may carry an Event reference, but delivery state must not
-become read state or alter Event visibility.
+Starting an absent Agent is outside this API. Once an external operator or
+Agent product starts and configures it, the Agent reads and appends through
+these same Room endpoints. Process state must not become read state or alter
+Event visibility. There is no share, snapshot, or continuation endpoint.
 
 Remote identity and authorization are deferred. They extend this same service:
 local bootstrap and remote login resolve through one authorization path before

@@ -16,7 +16,9 @@ Should one repository normally contain one Room, or should a Room live above sev
 
 ## Protocol ownership
 
-Which event conventions deserve reusable libraries? Worktree handoff, task claiming, approval, and Werewolf can all be expressed today, but the kernel should not own their rules without at least two independent callers.
+Which event conventions deserve reusable libraries? Handoff, task claiming,
+and approval can be expressed today, but the kernel should not own their rules
+without at least two independent callers.
 
 ## Explicit read and attention state
 
@@ -49,10 +51,10 @@ is a transport/Store retry contract, not an Event field.
 One authorization path across local and remote deployment, explicit Room
 ownership, and separate Agent credentials are settled directions. Local setup
 may bootstrap its owner; remote setup requires a login identity. Remaining
-choices include identity-provider adapters, organization mapping, role names,
-token scopes and expiry defaults, and invitation flow. None of those choices
+choices include identity-provider adapters, token scopes, expiry defaults, and
+invitation flow. None of those choices
 may create a separate local or remote product. The first remote-facing slice is
-the context link in [../product.md](../product.md).
+the same CLI `read` and `send` loop over an authenticated Room connection.
 
 ## Retention
 

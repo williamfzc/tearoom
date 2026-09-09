@@ -99,3 +99,11 @@ while deployment supplies PostgreSQL, HTTPS, and credentials. Its current gap
 is tracked in [status.md](../architecture/status.md).
 
 The copyable request sequence is in the [HTTP curl journey](http-api.md#minimal-curl-journey).
+
+## Complete continuation loop
+
+The product story is complete only when one Agent product appends, a later
+process in another product pulls that Event with `read`, writes its result with
+`send`, and the first or a third product pulls the new result. A human follows
+the same Actor path. The executable target and its four-step CLI sequence live
+in [evaluations.md](../evaluations.md#p1--one-cross-product-continuation-story).

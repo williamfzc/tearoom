@@ -54,10 +54,10 @@ The minimum durable coordination data is:
 Content is stored and transported as compact JSON; plain text is represented as
 a JSON string. `type`, `caused_by`, or other envelope fields may be protocol
 conventions later, but they are not required by the minimum model. Target
-service tables such as accounts, memberships, credentials, and billing records
-remain outside coordination data; when implemented, they authorize access but
-do not change Event semantics. Local bootstrap and remote login will feed the
-same authorization path.
+service records for owner identities and Agent credentials remain outside
+coordination data; when implemented, they authorize access but do not change
+Event semantics. Local bootstrap and remote login will feed the same
+authorization path.
 
 Room membership is the visibility boundary. Every admitted member may read the
 complete Room history. `to` is public addressing metadata, not an Event-level

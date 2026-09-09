@@ -22,7 +22,7 @@ boundary behaviour in one place. Implementation gaps belong only in
 A Room is a durable, named boundary containing actors and one ordered event
 stream. Local mode binds one Room to a `.tearoom` directory; `server start`
 exposes that same Room over loopback HTTP. A Room is deliberately more general
-than a task, thread, channel, repository, or game — those are interpretations
+than a task, thread, channel, or repository — those are interpretations
 of its events.
 
 ### Actor
@@ -30,7 +30,7 @@ of its events.
 An Actor is a stable participant identity. Identity comes from
 `TEAROOM_ACTOR` or `--as`, not from the process, so a later session can resume
 the same participant. Admission is explicit; an Actor may be a human, a coding
-agent, another agent product, or a game role controller — the core does not
+agent, or another agent product — the core does not
 distinguish them.
 
 ### Event
@@ -83,7 +83,7 @@ meaning of `send`.
 | Writer crashes while holding a file lock | The operating system releases the lock; no partial Event is accepted |
 | Store or server is unavailable | Command fails; no cached success is claimed |
 | Reader supplies a boundary | Read repeats from the caller's explicit boundary |
-| An addressed Agent is offline | Room alone does not wake it; delivery is a paste, a context link, or an operator-owned external script |
+| An addressed Agent is offline | Room alone does not wake it; an external operator starts and configures the process, which then uses CLI `read` and `send` |
 
 `seq` identifies an Event in shared history; it is never a per-Actor read
 checkpoint. A future durable consumer must own an explicit identity and ledger
@@ -129,7 +129,7 @@ terminals and tools:
 | Duplicate effects — retries create the same effect twice | Idempotent append capability |
 | Lost or ambiguous order under concurrency | Store-serialized dense sequence assignment |
 | Unbounded or wrongly separated context | Caller-chosen boundaries; privacy by separate Room membership |
-| Offline continuation — the addressee is absent | The Room records the opportunity; delivery is a paste, a link, or an external script |
+| Offline continuation — the addressee is absent | The Room preserves the history; an externally started process pulls it through CLI `read` and writes back through `send` |
 
 ## What the target does not promise
 
@@ -143,21 +143,7 @@ read more or run a process must prove the extra cost necessary.
 
 ## Application protocols
 
-Examples only; they add no domain entities:
-
-```text
-handoff.requested
-handoff.accepted
-task.claimed
-approval.requested
-approval.decided
-role.assigned
-phase.changed
-vote.cast
-message
-```
-
 Protocol rules belong in a protocol-specific layer or client until more than
-one caller proves they must become a shared store invariant. One worked
-protocol is [harness-workflow.md](harness-workflow.md); genuinely unsettled
+one caller proves they must become a shared Store invariant. The one target
+journey is [harness-workflow.md](harness-workflow.md); genuinely unsettled
 questions are listed in [open-questions.md](open-questions.md).

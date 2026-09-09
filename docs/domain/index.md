@@ -18,5 +18,5 @@ gaps; [evaluations.md](../evaluations.md) owns proof.
 | Document | Concern |
 |---|---|
 | [concepts.md](concepts.md) | The three entities, the write/read contract, boundary behaviour, trust model, and the failures the Room prevents |
-| [harness-workflow.md](harness-workflow.md) | Supporting multi-round handoff story |
+| [harness-workflow.md](harness-workflow.md) | The single cross-product continuation story |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |
