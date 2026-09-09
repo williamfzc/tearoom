@@ -28,9 +28,10 @@ This page records what the shipped code implements against the target in
   validation.
 - `internal/transport` serves the HTTP contract: `X-Tearoom-Actor`, Event
   arrays, unified error envelope, invocation-scoped wait.
-- `internal/cli` exposes `room init|join|members`, `send`, `read`, and
-  `server start` (loopback only); it owns no session state. The command
-  contract is [reference/cli.md](../reference/cli.md).
+- `internal/cli` exposes `room init|join|members`, `send`, `read`, `skill`
+  (the binary-carried agent guide), and `server start` (loopback only); it
+  owns no session state. The command contract is
+  [reference/cli.md](../reference/cli.md).
 - `scripts/target-room.sh` and `scripts/target-replay.sh` prove the P0
   claims and run in `make check`.
 

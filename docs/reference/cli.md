@@ -21,6 +21,7 @@ journeys belong in [evaluations.md](../evaluations.md).
 tearoom room init [--as <actor>] [--store file|sqlite]
 tearoom room join <actor>
 tearoom room members
+tearoom skill
 
 tearoom send <text> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
 tearoom send --json <json> [--as <actor>] [--to <member>]... [--idempotency-key <key>]
@@ -103,6 +104,19 @@ tearoom room members
 tearoom send "ready" --as alice
 tearoom read --as alice
 ```
+
+### Agent guide
+
+`tearoom skill` prints the orientation guide carried by the binary: the Room
+journey (setup, `send`, `read`), the environment conventions, and the rules
+that hold at every command — pure repeatable reads, caller-owned boundaries,
+membership visibility, and idempotent retries. It takes no flags, reads no
+Room, and works before any setup, so an Agent that discovers only the binary
+can onboard itself without a distributed skill file.
+
+The guide teaches the journey, not the syntax: this page and per-command
+`--help` remain the only authority for flags and output shapes. When the
+guide and a command disagree, the command wins and the guide is a bug.
 
 ## Target remote profile (not shipped)
 

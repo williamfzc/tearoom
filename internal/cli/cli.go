@@ -40,6 +40,7 @@ Commands:
   send      append one event
   read      read events, optionally waiting for later ones
   server    serve the nearest room over HTTP
+  skill     print the agent guide: the journey and the rules
 
 Options:
   --version show build and store format information
@@ -102,6 +103,8 @@ func (a *App) Run(args []string) int {
 		err = a.runRead(args[1:])
 	case "server":
 		err = a.runServer(args[1:])
+	case "skill":
+		err = a.runSkill(args[1:])
 	default:
 		fmt.Fprintf(a.Err, "unknown command %q\n\n%s", args[0], rootHelp)
 		return ExitError

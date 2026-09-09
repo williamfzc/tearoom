@@ -12,7 +12,8 @@ This guide connects an Agent Runtime to the target contracts in
 [cli.md](cli.md), [http-api.md](http-api.md), and
 [storage-layout.md](storage-layout.md). It does not define a task, result, or
 workflow schema. Application-level examples belong in
-[harness-workflow.md](../domain/harness-workflow.md).
+[harness-workflow.md](../domain/harness-workflow.md). The binary itself
+carries an orientation guide: run `tearoom skill` before any setup.
 
 ## Find the Room
 

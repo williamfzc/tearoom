@@ -47,6 +47,43 @@ func TestRootHelpDocumentsVersionOption(t *testing.T) {
 	}
 }
 
+func TestSkillPrintsAgentGuideWithoutArgs(t *testing.T) {
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"skill"}); code != ExitOK {
+		t.Fatalf("skill exit = %d", code)
+	}
+	guide := out.String()
+	for _, want := range []string{
+		"TEAROOM_ACTOR",
+		"TEAROOM_SERVER",
+		"room init",
+		"tearoom read [--after e<N>]",
+		"--idempotency-key",
+		"tearoom <command> --help",
+	} {
+		if !strings.Contains(guide, want) {
+			t.Fatalf("skill guide = %q, want it to contain %q", guide, want)
+		}
+	}
+
+	// The guide is orientation, not a Room read: it must not depend on one.
+	app = &App{Out: &out, Err: io.Discard, Dir: t.TempDir()}
+	out.Reset()
+	if code := app.Run([]string{"skill", "extra"}); code != ExitError {
+		t.Fatalf("skill extra exit = %d, want %d", code, ExitError)
+	}
+
+	var root bytes.Buffer
+	app = &App{Out: &root, Err: io.Discard, Dir: t.TempDir()}
+	if code := app.Run([]string{"--help"}); code != ExitOK {
+		t.Fatalf("--help exit = %d", code)
+	}
+	if !strings.Contains(root.String(), "skill") {
+		t.Fatalf("root help = %q, want it to route to skill", root.String())
+	}
+}
+
 func TestRootAndCommandHelp(t *testing.T) {
 	for _, test := range []struct {
 		args []string
