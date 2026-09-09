@@ -152,6 +152,7 @@ and is not E3 evidence.
 | Date | Evaluation | Cases | Outcome | Record |
 |---|---|---|---|---|
 | 2026-09-02 | Foundation rival | Incremental reads, per-participant boundaries, replay, activation, and concurrent append compared with a plain JSONL file | The file matched the foundation claims; the cross-product continuation story remains unproven | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
+| 2026-09-10 | PostgreSQL validation (gated battery) | `TEAROOM_TEST_PG` against local PostgreSQL 16.15: the 14-case contract battery (dense concurrent append, concurrent idempotency, membership visibility, read boundaries, content compaction) plus credential issue/verify/revoke on the additive credentials table | All green; PostgreSQL is validated as the remote database adapter, and the battery reruns wherever `TEAROOM_TEST_PG` points | Executable: `go test ./internal/relational/ -run TestPostgreSQL` with the env set |
 | 2026-09-09 | E3 journey (hand-run) | ZCode as `agent-a` and headless Claude Code as `agent-b` in its own directory over loopback HTTP. Setup: `room init --store sqlite`, two joins, `server start`. A appended a work contract (e1); B recovered it with `read`, implemented and tested the work, and appended the result (e2) with its own idempotency key; the server was killed and restarted; A pulled e2 with `--after e1` and appended acceptance (e3); C read the full history | Four steps closed with zero manual Event relays; B echoed contract details that existed only in the Room; the dense 1..3 history survived the restart; setup was five commands and B ran unattended in one ~2-minute headless session | [method](#hand-running-the-e3-journey) |
 
 ## Legacy surfaces at the P0 cutover
@@ -167,4 +168,4 @@ current evaluations.
 | Item | Evidence needed |
 |---|---|
 | Cheapest-rival comparison | Run the same E3 journey through a shared JSONL file, normal chat, repository document, and one vendor transcript |
-| PostgreSQL validation | Run the Store battery and E7 when a database and remote service are available |
+| Live E7 | Deploy the hosted service behind TLS on a real PostgreSQL and record the four-step journey with revocation; the Store battery and credential control already pass on PostgreSQL 16.15 |

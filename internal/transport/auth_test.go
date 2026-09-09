@@ -7,6 +7,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -105,6 +106,44 @@ func TestWritesRequireCredentialAndMatchActor(t *testing.T) {
 	owner.Token = ownerToken
 	if _, err := owner.Append(ctx, "planner", core.AppendRequest{Content: json.RawMessage(`"hi"`)}); err == nil {
 		t.Fatal("owner token write succeeded")
+	}
+}
+
+func TestExpiredTokenRefusedAtBoundary(t *testing.T) {
+	client, _ := newExposedPair(t)
+	ctx := context.Background()
+	owner := *client
+	owner.Token = ownerToken
+	issued, err := owner.IssueCredential(ctx, IssueRequest{Actor: "bob", TTLSeconds: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1500 * time.Millisecond)
+
+	// The expired token is refused at the HTTP boundary with 401.
+	bob := NewClient(client.Base, issued.Token)
+	request, _ := http.NewRequest(http.MethodPost, client.Base+"/api/events", strings.NewReader(`{"content":"late"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Tearoom-Actor", "bob")
+	request.Header.Set("Authorization", "Bearer "+issued.Token)
+	resp, err := client.HTTP.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expired write status = %d, want 401", resp.StatusCode)
+	}
+
+	// The refusal never masquerades as a successful append.
+	if _, err := bob.Append(ctx, "bob", core.AppendRequest{Content: json.RawMessage(`"late"`)}); err == nil {
+		t.Fatal("expired credential write succeeded")
+	}
+
+	// Reads stay open throughout.
+	events, err := client.Read(ctx, "planner", 0)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("open read after expiry = %+v, %v", events, err)
 	}
 }
 

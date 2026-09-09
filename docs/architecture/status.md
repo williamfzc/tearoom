@@ -49,7 +49,7 @@ This page records what the shipped code implements against the target in
 | P1 single cross-product continuation story (S1) | Foundation evaluations E1/E2 ship; the full four-step evaluation E3 is planned |
 | Hosted deployment | The hosted service, credentials, and CLI ship; a deployed PostgreSQL instance behind TLS awaits user infrastructure |
 | `auth login` | Reserved issuance ceremony (adjudicated 2026-09-10); the operator-issued owner token ships instead |
-| PostgreSQL Store validation | Gated suite ready; runs when `TEAROOM_TEST_PG` points at a database |
+| PostgreSQL Store validation | Validated 2026-09-10: the contract battery and credential control pass against PostgreSQL 16.15 (gated; rerun with `TEAROOM_TEST_PG`) |
 | Live E7 | The four-step loop with credentials and revocation against the deployed service; evaluation E7 is planned |
 
 Delivery to an absent Agent is out of product scope (adjudicated 2026-09-09);
