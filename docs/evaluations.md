@@ -107,7 +107,7 @@ The product thesis is tested by S2 and S7 first, with S1 and S3 as necessary pri
 
 | Story | Multi-turn journey | Falsifier |
 |---|---|---|
-| S1 | Alice appends; Bob joins later; Carol reads the same order; Bob contributes | Ordinary IM or a shared file gives equal replay and integration cost |
+| S1 | Alice appends; Bob joins later; Carol reads the same order; Bob contributes | Ordinary IM or a shared file gives equal replay and integration cost — **executed 2026-09-02; the shared-file rival matched. See [lessons/rival-falsification.md](lessons/rival-falsification.md)** |
 | S2 | Planner proposes; another product acts; verifier rejects; the loop revises | One orchestrator, PR thread, or Agent workspace preserves context more simply |
 | S3 | One process reads from an explicit boundary; a later process replays from that boundary | Repeated reads differ or silently change another caller's result |
 | S4 | Offline Bob is activated, reads the Room, responds, and survives daemon restart | Lost activation, unsafe duplicate effects, manual launch, or excessive idle cost |

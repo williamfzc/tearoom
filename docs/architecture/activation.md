@@ -13,6 +13,15 @@ timestamp: 2026-08-30
 > product boundary, [status.md](status.md) owns implementation state, and
 > [evaluations.md](../evaluations.md) owns executable proof.
 
+> **Open conflict, 2026-09-02.** A measured trial reached usable at-least-once
+> activation in about sixty lines of external shell over existing primitives,
+> with no ledger, state machine, or daemon in this repository. See
+> [../lessons/rival-falsification.md](../lessons/rival-falsification.md). That
+> result contradicts the decision below, which treats activation as a control
+> plane belonging to this project. The conflict is recorded rather than
+> resolved: whether activation is in scope at all is undecided, and this
+> document should not be implemented until that is settled.
+
 ## Decision
 
 Activation is an optional application control plane above the Room. It turns an

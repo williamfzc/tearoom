@@ -8,6 +8,26 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-09-02 — Execute the S1 falsifier against a plain-file rival
+
+Ran the comparison [evaluations.md](evaluations.md) requires for S1 and recorded
+the outcome in [lessons/rival-falsification.md](lessons/rival-falsification.md).
+An append-only JSONL file plus a line number matched this project on
+per-participant boundaries, full-history recovery, and replay of an earlier
+range. Full reads cost 22.4 ms against 20.1 ms for a single-Event incremental
+read over a 2,000-Event Room, so incremental reads are not a latency feature;
+their remaining value is the meaning *what is new for me*, worth about 93,000
+tokens of context per full read. Concurrent appends stayed whole for sixteen
+processes from 4 KB to 1 MB, so coordinated appends are not a differentiator
+either; the earlier contrary measurement was invalid because the rival used
+buffered shell `printf` rather than one `write()` per record. Activation reached
+usable at-least-once semantics in about sixty lines of external shell over
+existing primitives, which conflicts with
+`architecture/activation.md` specifying it as a
+product layer. That conflict is left open rather than reconciled. What survives
+is convenience — admission, addressing, dense sequences, the alternate Store,
+server mode, one error envelope — not a demonstrated product position.
+
 ## 2026-08-30 — Define the public binary release boundary
 
 The canonical release contract is recorded in

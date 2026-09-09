@@ -21,5 +21,6 @@ implementation is evidence for migration, not a normative contract.
 | [cross-process-locking.md](cross-process-locking.md) | Verify filesystem coordination with independent processes |
 | [flag-parsing.md](flag-parsing.md) | Accept the argument order callers naturally emit |
 | [borrowed-from-consensus.md](borrowed-from-consensus.md) | Order once, make retries safe, and use freshness only for real protocol preconditions |
+| [rival-falsification.md](rival-falsification.md) | Build the cheapest rival and measure before claiming an advantage |
 
 These are retained because the wrong implementation can look correct until a second client or process appears.
