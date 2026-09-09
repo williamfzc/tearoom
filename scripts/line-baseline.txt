@@ -1,0 +1,13 @@
+# Line-budget baseline: existing production Go files over the 300-line budget.
+#
+# One violation per line: <file> <lines>. This file only ever shrinks.
+# - Fixed the size? Delete the line in the same commit as the split.
+# - Grew a file past its recorded count, or went over the budget on a new
+#   file? That fails `make line-budget`; adding a line here is a rule change
+#   and needs its own justification in review.
+#
+# Measured 2026-09-09 against the P0 release tree.
+internal/cli/cli.go 643
+internal/core/contract.go 388
+internal/relational/store.go 361
+internal/store/file.go 372

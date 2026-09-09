@@ -20,7 +20,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race target-room target-replay check-evals docs fmt vet clean check package package-check release-check release-upload
+.PHONY: all build cli test test-race target-room target-replay check-evals line-budget docs fmt vet clean check package package-check release-check release-upload
 
 all: build
 
@@ -40,6 +40,12 @@ test-race:
 # removed from a script or a row removed from the registry fails the check.
 check-evals:
 	@./scripts/check-evals.sh
+
+# The line-budget ratchet: production Go files over 300 lines fail only when
+# they are new or grew past their recorded count in scripts/line-baseline.txt.
+# The baseline only ever shrinks; deleting a line is how a split pays debt off.
+line-budget:
+	@./scripts/check-line-budget.sh
 
 # E1: the P0 Room contract through the shipped binary — explicit join over the
 # file, SQLite, and HTTP backends, dense concurrent append, complete member
@@ -64,7 +70,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test test-race target-room target-replay check-evals docs
+check: fmt vet test test-race target-room target-replay check-evals line-budget docs
 
 # Release packaging is executable locally; the workflow only supplies the tag
 # and R2 credentials. package-check builds all four targets and validates the

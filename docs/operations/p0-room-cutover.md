@@ -1,7 +1,7 @@
 ---
 type: operations
 title: P0 Room clean-break — executable cutover plan
-description: The single execution contract for the P0 clean break: locked contract, implementation waves, test loop, deletion manifest, and final acceptance.
+description: "The single execution contract for the P0 clean break: locked contract, implementation waves, test loop, deletion manifest, and final acceptance."
 tags: [operations, migration, clean-break, cutover, plan]
 timestamp: 2026-08-30
 ---

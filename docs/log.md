@@ -8,6 +8,24 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-09-09 — Adopt engineering-management mechanics: budgets, adjudication, evidence
+
+Imported four mechanics from the sibling SKILLS workspace's governance design,
+adapted rather than copied. AGENTS.md now states the budget clause (every
+addition names what it replaces; unsure means no change), adjudication with
+reopening conditions for open conflicts, and the hand-run evidence rule: a
+suite never recorded has never run. [evaluations.md](evaluations.md) gains the
+hand-run evidence table, first row the 2026-09-02 falsification. New
+`make line-budget` ratchet (`scripts/check-line-budget.sh` +
+`scripts/line-baseline.txt`): production Go files over 300 lines fail only
+when new or grown past their recorded count; the four pinned files are
+`cli.go`, `contract.go`, `relational/store.go`, and `store/file.go`, and test
+batteries stay review-governed. `check-docs.sh` was hardened to parse
+frontmatter as real YAML, enforce type vocabularies per directory, require
+index registration for every page, and reject invisible characters — it
+immediately caught a genuinely broken (unquoted-colon) frontmatter in
+`operations/p0-room-cutover.md`, fixed in the same change.
+
 ## 2026-09-02 — Execute the S1 falsifier against a plain-file rival
 
 Ran the comparison [evaluations.md](evaluations.md) requires for S1 and recorded

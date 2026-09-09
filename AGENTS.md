@@ -12,6 +12,13 @@ Add nothing that is not needed now.
 The future will make its own demands; it does not need your sympathy.
 Before creating a file, a layer, a flag, or an abstraction, ask whether something
 that already exists can carry the weight. If it can, let it.
+Concept count and module count are budgets, not growth metrics. Every addition
+states what it replaces, or what count it keeps from growing. A page that could
+be a paragraph in an existing page is a bug, not a contribution. Unsure means
+no change: the correct action is a question or a no-op, not an artifact.
+The mechanical form is the line-budget ratchet (`make line-budget`):
+`scripts/line-baseline.txt` pins the files already past the budget, and that
+file only ever shrinks.
 
 Before adding or moving code, find the existing boundaries.
 Name the module you are changing, the layer it belongs to, and the responsibility
@@ -22,6 +29,10 @@ A fact — an interface, a default, a decision, a responsibility — lives in ex
 one place. Everything else links to it. Two notes that disagree are not two
 opinions; they are one bug. When you cannot reconcile them in the moment, name
 the conflict openly. Silence is how contradictions survive.
+An open conflict is a debt with a due date. Adjudicate it in the page that owns
+the decision: state the choice, what was refused, and the reopening condition.
+A refusal is recorded only when it settles a recurring dispute or constrains
+future work; ordinary no-ops need no permanent record.
 
 ---
 
@@ -96,6 +107,11 @@ source of truth.
 
 Refresh it whenever a unit of work closes — before the commit, after the commit,
 at the end of the session. Drift is decay.
+
+Evidence that cannot run in `make check` — hand-run journeys, market
+comparisons, model-judged checks — is recorded in the hand-run evidence table
+in `docs/evaluations.md` with date, cases, and outcome. A suite never recorded
+there has never run.
 
 Let your commits read as narrative. I follow Angular Conventional Commits as
 the grammar of that narrative — not for tooling, but for the discipline of
