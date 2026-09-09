@@ -37,14 +37,6 @@ Which real protocol, if any, requires a conditional append against an explicit
 Room head or another boundary? Ordinary `send` must remain independent of read
 progress unless evidence justifies a separate capability.
 
-## Offline activation proof
-
-Does a durable activation loop for an absent Agent provide value beyond an IM
-bot, queue, or workflow engine? The technical boundary is now defined in
-[activation.md](../architecture/activation.md); the open question is whether
-the P2 experiment demonstrates enough recovery, latency, cost, and integration
-value to justify implementation beyond the trivial responder.
-
 ## Event envelope evidence
 
 Which protocol has evidence for `type` or `caused_by` as a shared envelope?
@@ -54,7 +46,7 @@ is a transport/Store retry contract, not an Event field.
 
 ## Hosted authorization details
 
-GitHub sign-in for humans, explicit Room ownership, and separate Agent credentials are settled directions. Remaining choices include organization mapping, role names, token scopes and expiry defaults, invitation flow, and whether self-hosted deployments may replace GitHub with another identity provider. See [hosted-identity.md](hosted-identity.md).
+GitHub sign-in for humans, explicit Room ownership, and separate Agent credentials are settled directions. Remaining choices include organization mapping, role names, token scopes and expiry defaults, invitation flow, and whether self-hosted deployments may replace GitHub with another identity provider. The adopted hosted entry point is the context link in [../product.md](../product.md).
 
 ## Retention
 

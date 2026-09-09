@@ -8,6 +8,50 @@ timestamp: 2026-08-30
 
 # Change log
 
+## 2026-09-09 — Retire history and deferred design; consolidate the domain page
+
+The docs tree had grown to 39 documents for a three-entity kernel: 38% of it
+described things that do not exist or no longer govern, and the core
+addressing invariant was restated in 15 files. Deleted, with successors:
+
+- `architecture/activation.md` (427-line superseded design) — the refusal and
+  its reopening condition live in [product.md](product.md); the design is in
+  Git history.
+- `architecture/model-discussion.md`, `architecture/convergence.md`,
+  `operations/p0-room-cutover.md` — completed rationale and migration process;
+  their surviving decisions were already in this log, and the command surface
+  is owned by [reference/cli.md](reference/cli.md).
+- `architecture/hosted-plan.md`, `domain/hosted-identity.md` — deferred-phase
+  design; the adopted hosted slice and journey live in
+  [product.md](product.md).
+- `domain/problem.md`, `domain/boundaries.md`, `domain/security.md`,
+  `domain/agent-experience.md` — merged into
+  [domain/concepts.md](domain/concepts.md), which now states the addressing
+  invariant once and links to it.
+
+`architecture/status.md` shrank to current implementation state plus open
+work; migration stages moved to this log. Inbound links were fixed rather
+than left dangling; historical log entries that name deleted files use plain
+text, not links.
+
+## 2026-09-09 — Adopt engineering-management mechanics: budgets, adjudication, evidence
+
+Imported four mechanics from the sibling SKILLS workspace's governance design,
+adapted rather than copied. AGENTS.md now states the budget clause (every
+addition names what it replaces; unsure means no change), adjudication with
+reopening conditions for open conflicts, and the hand-run evidence rule: a
+suite never recorded has never run. [evaluations.md](evaluations.md) gains the
+hand-run evidence table, first row the 2026-09-02 falsification. New
+`make line-budget` ratchet (`scripts/check-line-budget.sh` +
+`scripts/line-baseline.txt`): production Go files over 300 lines fail only
+when new or grown past their recorded count; the four pinned files are
+`cli.go`, `contract.go`, `relational/store.go`, and `store/file.go`, and test
+batteries stay review-governed. `check-docs.sh` was hardened to parse
+frontmatter as real YAML, enforce type vocabularies per directory, require
+index registration for every page, and reject invisible characters — it
+immediately caught a genuinely broken (unquoted-colon) frontmatter in
+`operations/p0-room-cutover.md`, fixed in the same change.
+
 ## 2026-09-09 — Adjudicate delivery as paste; define the context-link slice
 
 Settled the open conflict from 2026-09-02: delivery of an Event to an absent
@@ -27,24 +71,6 @@ Agentic AI Foundation alongside MCP — and two new falsifiers (handoffs
 staying inside one product; receivers who only view). S9 and E8 enter the
 registry as the link journey; [evaluations.md](evaluations.md) and
 [status.md](architecture/status.md) carry the gate changes.
-
-## 2026-09-09 — Adopt engineering-management mechanics: budgets, adjudication, evidence
-
-Imported four mechanics from the sibling SKILLS workspace's governance design,
-adapted rather than copied. AGENTS.md now states the budget clause (every
-addition names what it replaces; unsure means no change), adjudication with
-reopening conditions for open conflicts, and the hand-run evidence rule: a
-suite never recorded has never run. [evaluations.md](evaluations.md) gains the
-hand-run evidence table, first row the 2026-09-02 falsification. New
-`make line-budget` ratchet (`scripts/check-line-budget.sh` +
-`scripts/line-baseline.txt`): production Go files over 300 lines fail only
-when new or grown past their recorded count; the four pinned files are
-`cli.go`, `contract.go`, `relational/store.go`, and `store/file.go`, and test
-batteries stay review-governed. `check-docs.sh` was hardened to parse
-frontmatter as real YAML, enforce type vocabularies per directory, require
-index registration for every page, and reject invisible characters — it
-immediately caught a genuinely broken (unquoted-colon) frontmatter in
-`operations/p0-room-cutover.md`, fixed in the same change.
 
 ## 2026-09-02 — Execute the S1 falsifier against a plain-file rival
 
@@ -107,7 +133,7 @@ implementation waves plus the CLI, deletion, and documentation passes:
 ## 2026-08-30 — Record the P0 cutover execution contract
 
 The clean break is now executable from one document:
-[operations/p0-room-cutover.md](operations/p0-room-cutover.md). It fixes the
+`operations/p0-room-cutover.md`. It fixes the
 target Store/CLI/HTTP contract, the Luna A/B/C wave ownership, the integration
 order, the test loop, and the deletion manifest. Two decisions were locked
 during review: the shell smokes (`pg-smoke.sh`, `smoke-sqlite.sh` included)
@@ -136,7 +162,7 @@ a new skill is created only when the target CLI exists.
 ## 2026-08-30 — Adopt the minimum Room and optional activation model
 
 Promoted the conclusions in
-[architecture/model-discussion.md](architecture/model-discussion.md) into the
+`architecture/model-discussion.md` into the
 authoritative product design. The Room now owns one complete history visible to
 every member; `to` is public addressing rather than privacy; reads have no
 implicit Actor checkpoint; ordinary append has no hidden freshness precondition;
@@ -161,7 +187,7 @@ offline-activation proof remain open in
 ## 2026-08-29 — Record the model discussion draft
 
 Captured the first open design discussion as
-[architecture/model-discussion.md](architecture/model-discussion.md). The file
+`architecture/model-discussion.md`. The file
 was subsequently rewritten and adopted on 2026-08-30; this entry describes its
 historical draft state rather than its current contents.
 
@@ -178,7 +204,7 @@ Operational notes recorded: Render's API types (`web_service`), the env-vars end
 
 ## 2026-08-29 — Complete the implementation queue: polling, deployment files, management UI
 
-Shipped all three steps of [hosted-plan.md](architecture/hosted-plan.md)'s implementation queue, each green in `make check` before its commit:
+Shipped all three steps of `architecture/hosted-plan.md`'s implementation queue, each green in `make check` before its commit:
 
 1. **Client-side watch polling** (`refactor: poll event watch from the client instead of the server-held wait`, 4fe77c9). `eventWatch` now reads on an interval for every store, exactly like the local branch; the CLI's waiter interface is gone. Watch's command surface, skill text, and demo semantics are unchanged — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays as the optional LAN optimization.
 2. **Deployment files** (`feat: add the deployment files`, e4c10be). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at `operations/deploy.md` (deleted at the cutover; its deployment
@@ -189,11 +215,11 @@ was never re-adopted): Neon project + pooled DSN → `tearoom hosted init-db` �
 
 Re-examined the server-held long-poll: coordination tolerates seconds of latency, so the long-poll was over-engineering. `event watch` keeps its batch semantics and its place in the skill and the demos; the wait moves to the CLI — the same `Read` + interval loop the local mode already runs. The hosted server is therefore a stateless read/append/register API; Phase 1's `wait` parameter and per-room broadcaster remain only as an optional self-hosted-LAN optimization.
 
-With the server stateless, the deployment settles ([hosted-plan.md](architecture/hosted-plan.md)): **Render free tier** hosts the Go service — 750 free instance hours/month exceed the longest month's 744, spun-down time does not consume hours, and client polling keeps the instance awake in practice, so it is genuinely 24/7 at $0. **Neon free** holds the database (Render's free PostgreSQL expires 30 days after creation by design). **Cloudflare Pages** hosts the management UI — a React + Vite static SPA calling `/api/hosted/*` with a Bearer token, the only free static host with unlimited bandwidth and no commercial-use ban (Vercel's Hobby plan forbids commercial use; Netlify's 300 build minutes are too few). Visual direction: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type. An all-Cloudflare rewrite stays out of scope until the product proves itself.
+With the server stateless, the deployment settles (`architecture/hosted-plan.md`): **Render free tier** hosts the Go service — 750 free instance hours/month exceed the longest month's 744, spun-down time does not consume hours, and client polling keeps the instance awake in practice, so it is genuinely 24/7 at $0. **Neon free** holds the database (Render's free PostgreSQL expires 30 days after creation by design). **Cloudflare Pages** hosts the management UI — a React + Vite static SPA calling `/api/hosted/*` with a Bearer token, the only free static host with unlimited bandwidth and no commercial-use ban (Vercel's Hobby plan forbids commercial use; Netlify's 300 build minutes are too few). Visual direction: Vercel/Claude-style minimal tech — restrained layout, generous whitespace, precise type. An all-Cloudflare rewrite stays out of scope until the product proves itself.
 
 ## 2026-08-29 — Ship hosted Phase 1: the multi-tenant server
 
-Implemented the first executable slice of the hosted product ([hosted-plan.md](architecture/hosted-plan.md)): a control plane and a per-room event API in front of the unchanged Room/Actor/Event kernel, all in `make check`.
+Implemented the first executable slice of the hosted product (`architecture/hosted-plan.md`): a control plane and a per-room event API in front of the unchanged Room/Actor/Event kernel, all in `make check`.
 
 `relational` became multi-tenant: the `RoomID` sentinel is now a per-store `roomID`, `New(db, roomID)` makes the Store a cheap value object over a shared `*gorm.DB`, and `OpenURL(dsn)` opens PostgreSQL by URL while local use keeps `Init`/`OpenAt`. New `internal/control` owns the control plane (`ctl_accounts`, `ctl_memberships`, `ctl_credentials`, own migration chain): credentials are opaque `tr_` tokens — 192 random bits, sha256 at rest, bound to (room, actor, capabilities, expiry), plaintext shown once, individually revocable. New `internal/hosted` serves management routes (`/api/hosted/*`, dev admin bearer) and the authenticated event API (`/r/<room-id>/api/*`): a middleware resolves the Bearer to a credential, checks room binding, actor binding, and capability, then delegates to that room's own transport server with its own long-poll broadcaster. Wrong-room tokens answer 401 so they cannot probe room existence. The CLI gained the `hosted` group (`init-db`, `create-room`, `issue-credential`, `revoke`, `serve`); clients needed no new surface — `TEAROOM_SERVER` points at `/r/<id>` and `TEAROOM_TOKEN` carries the credential.
 

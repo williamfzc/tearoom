@@ -129,7 +129,7 @@ this workflow.
 
 The current P0 local server has no hosted authentication layer. `TEAROOM_ACTOR`
 identifies a local Actor and is not a release credential. Hosted credentials
-remain a deferred product boundary; see [security posture](../domain/security.md).
+remain a deferred product boundary; see [domain concepts](../domain/concepts.md).
 
 ## Publish and verify
 
@@ -195,5 +195,5 @@ its matching pre-cutover snapshot. Never rely on `latest.json` alone to make a
 new-format dataset readable by an older binary.
 
 See [status and clean-break migration](../architecture/status.md) for the
-implementation boundary and [security posture](../domain/security.md) for the
+implementation boundary and [domain concepts](../domain/concepts.md) for the
 trust boundary around local data and public binaries.

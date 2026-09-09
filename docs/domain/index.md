@@ -1,9 +1,9 @@
 ---
 type: index
 title: Domain
-description: Tearoom's three target entities and the rules that govern them.
+description: Tearoom's three entities and the rules that govern them.
 tags: [index, domain]
-timestamp: 2026-08-30
+timestamp: 2026-09-09
 ---
 
 # Domain
@@ -17,11 +17,6 @@ gaps; [evaluations.md](../evaluations.md) owns proof.
 
 | Document | Concern |
 |---|---|
-| [concepts.md](concepts.md) | Target Room, Actor, Event vocabulary and append contract |
-| [problem.md](problem.md) | The failures the Room prevents and the optional activation gap |
-| [boundaries.md](boundaries.md) | Authoritative failure and concurrency behavior |
-| [agent-experience.md](agent-experience.md) | Target pure-read experience and the boundary with optional activation |
+| [concepts.md](concepts.md) | The three entities, the write/read contract, boundary behaviour, trust model, and the failures the Room prevents |
 | [harness-workflow.md](harness-workflow.md) | Supporting multi-round handoff story |
-| [security.md](security.md) | Membership visibility, trust boundaries, and required hardening |
-| [hosted-identity.md](hosted-identity.md) | Supporting hosted identity and control-plane boundary |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |

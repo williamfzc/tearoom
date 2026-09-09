@@ -39,4 +39,4 @@ The current Windows implementation has no safe cross-process lock. Concurrent us
 ## Related
 
 - [../reference/storage-layout.md](../reference/storage-layout.md)
-- [../domain/boundaries.md](../domain/boundaries.md)
+- [../domain/concepts.md](../domain/concepts.md)

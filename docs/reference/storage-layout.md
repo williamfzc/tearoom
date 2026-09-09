@@ -69,9 +69,8 @@ session state. Those are caller-owned or application/control-plane state.
 
 ## Operational state boundary
 
-An optional activation service keeps its operational ledger outside Room
-history. Its owner, durability, and recovery contract are defined in
-[activation.md](../architecture/activation.md); this Room layout does not
+No in-product delivery or wake service exists (adjudicated 2026-09-09; see
+[product.md](../product.md)); this Room layout does not
 store Actor read progress, delivery attempts, bindings, or Runtime state.
 
 The two backends are separate creation choices. The clean break does not

@@ -18,7 +18,6 @@ for implementation state, and [../evaluations.md](../evaluations.md) for proof.
 | [building.md](building.md) | Build targets, the test suites, and the toolchain traps |
 | [releasing.md](releasing.md) | Public binary artifacts, installation, credentials, and rollback |
 | [serving.md](serving.md) | Running the loopback-only server and pointing Actors at one Room |
-| [p0-room-cutover.md](p0-room-cutover.md) | The executable P0 clean-break cutover contract |
 
 ## The one thing to remember
 

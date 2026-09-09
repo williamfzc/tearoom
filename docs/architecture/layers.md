@@ -66,25 +66,20 @@ wrapping them.
 ## Application boundary
 
 Hosted control is a deferred application boundary around the Store (the
-implementation was deleted at the cutover; the design is recorded in
-[hosted-plan.md](hosted-plan.md)). When it returns, it resolves credentials to
+implementation was deleted at the cutover; the future hosted phase is defined
+in [../product.md](../product.md)). When it returns, it resolves credentials to
 an already admitted Room/Actor and applies capabilities; it does not rewrite
 Event semantics. Membership is admitted explicitly and is the visibility
 boundary.
 
-Offline activation is a separate optional application component:
-
-```text
-addressed Event -> policy -> durable activation claim/lease
-                -> launcher -> ephemeral Agent Runtime
-                -> Runtime reads Room and appends a contribution
-```
-
-Its ledger may contain attempt, lease, retry, budget, and failure state keyed by
-an Event reference and target Actor. It must not be attached to Actor read
-progress or treated as proof that the Event was understood or completed.
-Activation is at-least-once; external effects need their own idempotency or
-approval contract. Without this component, `send` ends at durable append.
+Delivery to an absent Agent is not an application component of this
+repository (adjudicated 2026-09-09): it is a paste, a context link, or an
+operator-owned external script whose attempts stay outside the Room. Such a
+deliverer must not attach its state to Actor read progress or treat it as proof
+that an Event was understood or completed, and external effects need their own
+idempotency or approval contract. Without any deliverer, `send` ends at durable
+append. The refusal and its reopening condition are recorded in
+[../product.md](../product.md).
 
 ## Outside boundaries
 
@@ -129,8 +124,6 @@ dependency or compatibility layer is not an allowed recovery.
 
 ## Related
 
-- [model-discussion.md](model-discussion.md)
-- [convergence.md](convergence.md)
 - [persistence.md](persistence.md)
 - [status.md](status.md)
 - [../domain/concepts.md](../domain/concepts.md)
