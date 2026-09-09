@@ -7,6 +7,8 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +87,28 @@ func roomPrefix(path string) bool {
 
 func NewClient(base, token string) *Client {
 	return &Client{Base: base, HTTP: &http.Client{Timeout: 30 * time.Second}, Token: token}
+}
+
+// UseCAFile trusts, in addition to the system roots, the PEM certificates in
+// path. Deployments whose TLS front terminates with a private or self-signed
+// CA point TEAROOM_CA_FILE at it.
+func (c *Client) UseCAFile(path string) error {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		pool = x509.NewCertPool()
+	}
+	if !pool.AppendCertsFromPEM(pem) {
+		return fmt.Errorf("no certificates found in %q", path)
+	}
+	if c.HTTP == nil {
+		c.HTTP = &http.Client{Timeout: 30 * time.Second}
+	}
+	c.HTTP.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
+	return nil
 }
 
 func (c *Client) do(ctx context.Context, method, path string, headers map[string]string, body, out any) error {

@@ -78,12 +78,14 @@ recorded under [Hand-run evidence](#hand-run-evidence).
 
 ### P2 — Remote readiness
 
-Evaluation E7. **Status: planned.**
-
-Run the same P1 journey against the shared remote service:
+Evaluation E7. **Status: shipped.** It runs in `make check` as
+`make target-remote`: the script starts a temporary PostgreSQL cluster, fronts
+the hosted service with TLS, and executes the journey below deterministically.
+Deploying the same profile to a cloud host is an operational act per
+[operations/serving.md](operations/serving.md), not another proof.
 
 1. The service uses PostgreSQL and HTTPS.
-2. Each Agent has a stable identity and separate scoped credential.
+2. Each Agent has a stable identity and its own expiring credential.
 3. Agents still use ordinary `read` and `send`; only connection and identity
    setup differ.
 4. Revoking one credential blocks that credential without changing prior
@@ -106,7 +108,7 @@ Remote readiness is a deployment gate, not another user story.
 | E1 | Foundation Room contract over the local SQLite room and the loopback HTTP service | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
 | E2 | Foundation replay across real processes and service restarts | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
 | E3 | The four-step cross-product CLI loop: A writes, B pulls, B writes, A or C pulls | `make target-handoff` | — | planned |
-| E7 | The same four-step loop on PostgreSQL with remote identity, credentials, and revocation | `make target-remote` | — | planned |
+| E7 | The same four-step loop on PostgreSQL behind TLS with per-Actor credentials, open reads, and revocation | `make target-remote` | [target-remote.sh](../scripts/target-remote.sh) | shipped |
 
 ## Story → evaluation
 
@@ -168,4 +170,4 @@ current evaluations.
 | Item | Evidence needed |
 |---|---|
 | Cheapest-rival comparison | Run the same E3 journey through a shared JSONL file, normal chat, repository document, and one vendor transcript |
-| Live E7 | Deploy the hosted service behind TLS on a real PostgreSQL and record the four-step journey with revocation; the Store battery and credential control already pass on PostgreSQL 16.15 |
+| Cloud hosting | Operational: run the hosted profile on a cloud host per [operations/serving.md](operations/serving.md); the remote-readiness proof is E7 and does not depend on a specific host |

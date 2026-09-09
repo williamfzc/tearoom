@@ -45,6 +45,7 @@ Environment:
   TEAROOM_ACTOR    stable actor identity
   TEAROOM_SERVER   shared server or room URL; omit for the nearest local room
   TEAROOM_TOKEN    bearer credential for writes and owner operations
+  TEAROOM_CA_FILE  extra TLS root for private or self-signed deployments
 
 Use "tearoom <command> --help" for more information.
 `
@@ -222,7 +223,13 @@ func (a *App) openStore() (core.Store, error) {
 		if err := transport.RequireSafeURL(server); err != nil {
 			return nil, err
 		}
-		return transport.NewClient(server, strings.TrimSpace(os.Getenv("TEAROOM_TOKEN"))), nil
+		client := transport.NewClient(server, strings.TrimSpace(os.Getenv("TEAROOM_TOKEN")))
+		if ca := strings.TrimSpace(os.Getenv("TEAROOM_CA_FILE")); ca != "" {
+			if err := client.UseCAFile(ca); err != nil {
+				return nil, err
+			}
+		}
+		return client, nil
 	}
 	return store.Open(a.Dir)
 }

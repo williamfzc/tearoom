@@ -8,6 +8,21 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-09-10 — Ship E7: remote readiness proven in make check
+
+E7 shipped as `make target-remote`: the script starts a temporary PostgreSQL
+cluster, fronts the hosted service with a standard-library TLS terminator,
+and deterministically executes remote readiness — owner room creation over
+https, per-Actor credentials, the four-step continuation journey through
+ordinary read/send with token-free open reads, and the revocation matrix
+(unauthenticated write, wrong-actor token, revoke, untouched history). The
+expired token joined the negative matrix at the HTTP boundary, the gated
+PostgreSQL battery and credential control ran green against PostgreSQL 16.15,
+and the client gained TEAROOM_CA_FILE for private-CA TLS fronts. Remote
+readiness is now a deployment gate that runs on every `make check`; putting
+the hosted profile on a cloud host is operational work per
+[operations/serving.md](operations/serving.md), not another proof.
+
 ## 2026-09-10 — Ship the remote profile: credentials, hosted service, and the served contract
 
 Implemented the adjudicated authentication shape end to end. `internal/control`

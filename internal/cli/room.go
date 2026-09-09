@@ -98,6 +98,11 @@ func (a *App) roomInitRemote(base, actor string) error {
 		return err
 	}
 	client := transport.NewClient(base, strings.TrimSpace(os.Getenv("TEAROOM_TOKEN")))
+	if ca := strings.TrimSpace(os.Getenv("TEAROOM_CA_FILE")); ca != "" {
+		if err := client.UseCAFile(ca); err != nil {
+			return err
+		}
+	}
 	room, err := client.CreateRoom(context.Background(), actor)
 	if err != nil {
 		return err

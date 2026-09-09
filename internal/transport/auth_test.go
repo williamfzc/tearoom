@@ -5,10 +5,14 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -207,6 +211,51 @@ func TestPlainLoopbackProfileKeepsSelfAssertedActors(t *testing.T) {
 	if _, err := client.Append(context.Background(), "planner", core.AppendRequest{Content: json.RawMessage(`"hi"`)}); err != nil {
 		t.Fatalf("local append = %v", err)
 	}
+}
+
+func TestUseCAFileTrustsTheDeploymentRoot(t *testing.T) {
+	_, st := newPair(t)
+	tlsServer := httptest.NewTLSServer(NewServer(st).Handler())
+	defer tlsServer.Close()
+
+	// Without the deployment root, the self-signed front is refused.
+	plain := NewClient(tlsServer.URL, "")
+	if _, err := plain.HTTP.Get(tlsServer.URL + "/api/room"); err == nil {
+		t.Fatal("self-signed front accepted without the CA file")
+	}
+
+	// Handing the client the certificate root makes the front trusted.
+	if err := plain.UseCAFile(writeCert(t, tlsServer)); err != nil {
+		t.Fatalf("UseCAFile = %v", err)
+	}
+	resp, err := plain.HTTP.Get(tlsServer.URL + "/api/room")
+	if err != nil {
+		t.Fatalf("GET with CA file = %v", err)
+	}
+	resp.Body.Close()
+}
+
+// writeCert writes the server's own certificate as a PEM root file.
+func writeCert(t *testing.T, server *httptest.Server) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ca.pem")
+	der := server.Certificate().Raw
+	var buf bytes.Buffer
+	buf.WriteString("-----BEGIN CERTIFICATE-----\n")
+	encoded := base64.StdEncoding.EncodeToString(der)
+	for len(encoded) > 0 {
+		line := encoded
+		if len(line) > 64 {
+			line = line[:64]
+		}
+		buf.WriteString(line + "\n")
+		encoded = encoded[len(line):]
+	}
+	buf.WriteString("-----END CERTIFICATE-----\n")
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestRequireSafeURL(t *testing.T) {
