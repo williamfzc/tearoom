@@ -48,6 +48,7 @@ This page records what the shipped code implements against the target in
 |---|---|
 | P1 single cross-product continuation story (S1) | Foundation evaluations E1/E2 ship; the full four-step evaluation E3 is planned |
 | `auth login` | Reserved issuance ceremony (adjudicated 2026-09-10); the operator-issued owner token ships instead |
+| Cloud hosting | Deployed 2026-09-10: the hosted profile runs live at `redacted.invalid` (Render free + Neon PostgreSQL 18) and passed the live E7 journey — see [../evaluations.md](../evaluations.md) hand-run evidence |
 | PostgreSQL Store validation | Validated 2026-09-10: the contract battery and credential control pass against PostgreSQL 16.15 (gated; rerun with `TEAROOM_TEST_PG`) |
 
 Delivery to an absent Agent is out of product scope (adjudicated 2026-09-09);

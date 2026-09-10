@@ -8,6 +8,27 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-09-10 — Deploy the hosted profile live on Render + Neon
+
+The hosted profile is live on the internet: the old `tearoom` Render service
+was re-adopted for the current contract (branch main, env vars replaced with
+the Neon pooled DSN and a fresh owner token — the stale hosted-admin secret
+died with the old contract), and the first rollout surfaced a real
+operational bug: the service still carried `healthCheckPath: /healthz` while
+the new binary no longer served it, so the platform probe failed and Render
+kept the rejected-contract container answering. GET /healthz was re-adopted
+(precedent: the pre-cutover platform check) and the rollout went live.
+
+The live E7 journey then ran against `redacted.invalid` over Neon
+PostgreSQL 18: room creation, per-Actor credentials, the four-step
+continuation journey with token-free open reads, and the revocation matrix —
+all green, zero manual relays. The transcript is recorded in
+[evaluations.md](evaluations.md) hand-run evidence. Operational facts that
+cost debugging time are in [operations/serving.md](operations/serving.md):
+the Render API requires a payment method on file even for free-service
+creation (existing services are updated freely), and macOS ignores
+SSL_CERT_FILE, which is why the client carries TEAROOM_CA_FILE.
+
 ## 2026-09-10 — Ship E7: remote readiness proven in make check
 
 E7 shipped as `make target-remote`: the script starts a temporary PostgreSQL

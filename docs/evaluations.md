@@ -81,8 +81,8 @@ recorded under [Hand-run evidence](#hand-run-evidence).
 Evaluation E7. **Status: shipped.** It runs in `make check` as
 `make target-remote`: the script starts a temporary PostgreSQL cluster, fronts
 the hosted service with TLS, and executes the journey below deterministically.
-Deploying the same profile to a cloud host is an operational act per
-[operations/serving.md](operations/serving.md), not another proof.
+The same profile was deployed to an internet host on 2026-09-10 (Render +
+Neon) and passed the live journey — see the hand-run evidence table.
 
 1. The service uses PostgreSQL and HTTPS.
 2. Each Agent has a stable identity and its own expiring credential.
@@ -154,6 +154,7 @@ and is not E3 evidence.
 | Date | Evaluation | Cases | Outcome | Record |
 |---|---|---|---|---|
 | 2026-09-02 | Foundation rival | Incremental reads, per-participant boundaries, replay, activation, and concurrent append compared with a plain JSONL file | The file matched the foundation claims; the cross-product continuation story remains unproven | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
+| 2026-09-10 | Live E7 on the deployed hosted profile | Render web service `redacted.invalid` (docker, free instance, TLS at the edge) over the Neon PostgreSQL 18 project `tearoom-e7` (pooled DSN): owner created `room_26bf35af` via `room init --server`; admitted bob and agent-c and issued per-Actor credentials; planner appended e1; bob recovered it with a token-free open read and appended e2; agent-c read e2 from the e1 boundary; then the negative matrix — unauthenticated write refused, wrong-actor token refused, owner revoked bob's credential, the revoked write refused, and open reads showed history untouched (1..2) | Four steps closed over the public internet with zero manual relays; the revocation matrix held end to end on Neon PostgreSQL 18; room and credentials persist in the deployment database | Executable journey: [operations/serving.md](operations/serving.md); service health: `GET /healthz` |
 | 2026-09-10 | PostgreSQL validation (gated battery) | `TEAROOM_TEST_PG` against local PostgreSQL 16.15: the 14-case contract battery (dense concurrent append, concurrent idempotency, membership visibility, read boundaries, content compaction) plus credential issue/verify/revoke on the additive credentials table | All green; PostgreSQL is validated as the remote database adapter, and the battery reruns wherever `TEAROOM_TEST_PG` points | Executable: `go test ./internal/relational/ -run TestPostgreSQL` with the env set |
 | 2026-09-09 | E3 journey (hand-run) | ZCode as `agent-a` and headless Claude Code as `agent-b` in its own directory over loopback HTTP. Setup: `room init --store sqlite`, two joins, `server start`. A appended a work contract (e1); B recovered it with `read`, implemented and tested the work, and appended the result (e2) with its own idempotency key; the server was killed and restarted; A pulled e2 with `--after e1` and appended acceptance (e3); C read the full history | Four steps closed with zero manual Event relays; B echoed contract details that existed only in the Room; the dense 1..3 history survived the restart; setup was five commands and B ran unattended in one ~2-minute headless session | [method](#hand-running-the-e3-journey) |
 
@@ -170,4 +171,4 @@ current evaluations.
 | Item | Evidence needed |
 |---|---|
 | Cheapest-rival comparison | Run the same E3 journey through a shared JSONL file, normal chat, repository document, and one vendor transcript |
-| Cloud hosting | Operational: run the hosted profile on a cloud host per [operations/serving.md](operations/serving.md); the remote-readiness proof is E7 and does not depend on a specific host |
+| — | *(none — cloud hosting of the hosted profile is live since 2026-09-10; see the hand-run evidence row above)* |
