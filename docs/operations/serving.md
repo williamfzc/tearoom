@@ -57,6 +57,8 @@ tearoom server start --address 0.0.0.0:8787
 - Writes require a per-Actor bearer credential (`TEAROOM_TOKEN`); reads
   require no credential — the room URL is the read capability. Never serve a
   room URL whose history is not meant to be read by whoever holds the link.
+- `GET /healthz` answers 200 without credentials; point platform health
+  checks at it (the Render blueprint service uses it implicitly).
 - TLS terminates in front of the service (platform TLS or a reverse proxy):
   tokens ride the write path, so plaintext http in production is a
   misdeployment. The service answers plain HTTP on its bind address.

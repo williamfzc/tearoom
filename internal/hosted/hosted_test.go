@@ -139,6 +139,22 @@ func TestHostedRoomLifecycle(t *testing.T) {
 	}
 }
 
+func TestHealthzIsOpenAndUnauthenticated(t *testing.T) {
+	client := newHosted(t)
+	resp, err := client.HTTP.Get(client.Base + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("healthz status = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if strings.TrimSpace(string(body)) != "ok" {
+		t.Fatalf("healthz body = %q, want ok", body)
+	}
+}
+
 func TestHostedRequiresOwnerToken(t *testing.T) {
 	db, err := relational.OpenDatabase(filepath.Join(t.TempDir(), "hosted.db"))
 	if err != nil {

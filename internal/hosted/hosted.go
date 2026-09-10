@@ -52,10 +52,15 @@ func New(db *gorm.DB, ownerToken string, now func() time.Time) (*Server, error) 
 
 // Handler routes the hosted surface:
 //
+//	GET  /healthz          platform health check, no credentials
 //	POST /api/rooms        owner-only: create a Room, learn its room URL
 //	/r/<id>/api/...        the Room contract of that Room
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("POST /api/rooms", transport.Wrap(s.createRoom))
 	mux.HandleFunc("/r/{room}/api/", s.roomAPI)
 	return mux
