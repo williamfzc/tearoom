@@ -8,13 +8,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/relational"
+	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
 	"github.com/williamfzc/tearoom/internal/version"
 )
@@ -29,7 +28,7 @@ func TestVersionReportsBuildMetadataAndStoreFormat(t *testing.T) {
 	if code := app.Run([]string{"--version"}); code != ExitOK {
 		t.Fatalf("--version exit = %d", code)
 	}
-	want := "tearoom version=1.2.3 commit=abc1234 store-format=3\n"
+	want := "tearoom version=1.2.3 commit=abc1234 store-format=4\n"
 	if out.String() != want {
 		t.Fatalf("--version output = %q, want %q", out.String(), want)
 	}
@@ -179,15 +178,12 @@ func TestRoomInitCreatesChildAndRefusesBadParents(t *testing.T) {
 		t.Fatalf("child = %q", out.String())
 	}
 	// The same workspace holds both rooms.
-	st, err := relational.Open(filepath.Join(dir, ".tearoom"))
+	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	list, err := st.Rooms(context.Background())
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if len(list) != 2 {
@@ -555,11 +551,10 @@ func TestServerStartStopsOnContextCancellation(t *testing.T) {
 
 func TestServerModeRoundTrip(t *testing.T) {
 	dir := initRoom(t, "main-line")
-	st, err := relational.Open(dir + "/.tearoom")
+	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
 	server := httptest.NewServer(transport.NewServer(st).Handler())
 	defer server.Close()
 	t.Setenv("TEAROOM_SERVER", server.URL)
@@ -585,11 +580,10 @@ func TestServerModeRoundTrip(t *testing.T) {
 
 func TestIdempotencyConflictExitsOne(t *testing.T) {
 	dir := initRoom(t, "main-line")
-	st, err := relational.Open(dir + "/.tearoom")
+	st, err := store.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
 	server := httptest.NewServer(transport.NewServer(st).Handler())
 	defer server.Close()
 	t.Setenv("TEAROOM_SERVER", server.URL)

@@ -1,24 +1,25 @@
-// Workspace selection tests: Open must return the sqlite workspace its
-// marker declares, upgrade a format-2 workspace once, and reject every other
+// Store selection tests: Open must return the JSONL workspace its marker
+// declares, upgrade the retired SQLite layouts once, and reject every other
 // older layout loudly; Init must refuse an existing workspace and leave no
 // temporary siblings behind.
 package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
+	_ "github.com/glebarez/go-sqlite"
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/relational"
 )
 
-func TestOpenReturnsSQLiteWorkspace(t *testing.T) {
+func TestOpenReturnsJSONLWorkspace(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Init(dir); err != nil {
 		t.Fatal(err)
@@ -27,8 +28,8 @@ func TestOpenReturnsSQLiteWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := st.(*relational.Store); !ok {
-		t.Fatalf("sqlite marker opened %T, want *relational.Store", st)
+	if _, ok := st.(*Store); !ok {
+		t.Fatalf("jsonl marker opened %T, want *store.Store", st)
 	}
 	// The opened store answers the full contract.
 	ctx := context.Background()
@@ -42,6 +43,13 @@ func TestOpenReturnsSQLiteWorkspace(t *testing.T) {
 	if err != nil || len(records) != 1 || records[0].Seq != 1 {
 		t.Fatalf("records = %+v, %v", records, err)
 	}
+	data, err := os.ReadFile(filepath.Join(dir, Dir, roomsDir, "main-line", "records.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"room":"main-line"`) {
+		t.Fatalf("records.jsonl does not carry the room: %s", data)
+	}
 }
 
 func TestOpenRejectsOldLayouts(t *testing.T) {
@@ -49,10 +57,10 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 		name   string
 		marker *marker
 	}{
-		{name: "markerless old layout", marker: nil},
-		{name: "retired file backend marker", marker: &marker{Format: formatVersion, Backend: "file"}},
+		{name: "markerless v0 file layout", marker: nil},
+		{name: "retired sqlite backend marker", marker: &marker{Format: formatVersion, Backend: "sqlite"}},
 		{name: "format 1 marker", marker: &marker{Format: 1, Backend: "sqlite"}},
-		{name: "format 4 marker", marker: &marker{Format: 4, Backend: "sqlite"}},
+		{name: "format 5 marker", marker: &marker{Format: 5, Backend: "jsonl"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -61,13 +69,9 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 			if err := os.MkdirAll(root, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			// A relational database backs every case, so the refusal comes
-			// from the marker and not from a missing database.
-			if _, err := relational.Init(root); err != nil {
-				t.Fatal(err)
-			}
 			if c.marker == nil {
-				if err := os.Remove(filepath.Join(root, markerName)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				// The v0 layout: room files without a marker.
+				if err := os.WriteFile(filepath.Join(root, "room.json"), []byte(`{"id":"room"}`), 0o644); err != nil {
 					t.Fatal(err)
 				}
 			} else if err := writeMarker(root, *c.marker); err != nil {
@@ -84,69 +88,131 @@ func TestOpenRejectsOldLayouts(t *testing.T) {
 	}
 }
 
-// TestOpenUpgradesFormat2WorkspaceOnce proves the one-time v1 → tree
-// migration at the workspace boundary: the old single room becomes a root,
-// its records keep their signatures, and the marker file is rewritten.
-func TestOpenUpgradesFormat2WorkspaceOnce(t *testing.T) {
-	dir := t.TempDir()
+// sqliteFixture builds a retired SQLite workspace at dir/.tearoom with the
+// given format's schema and rows, exactly the shapes the retired stores
+// wrote.
+func sqliteFixture(t *testing.T, dir string, format int) {
+	t.Helper()
 	root := filepath.Join(dir, Dir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, err := relational.Init(root)
+	db, err := sql.Open("sqlite", filepath.Join(root, "room.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
-	if _, err := st.CreateRoom(ctx, "v1-room", ""); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.Append(ctx, "v1-room", "planner", core.AppendRequest{Content: json.RawMessage(`"work"`)}); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.Close(); err != nil {
-		t.Fatal(err)
-	}
-	// Roll the workspace back to the v1 declaration.
-	if err := writeMarker(root, marker{Format: 2, Backend: "sqlite"}); err != nil {
-		t.Fatal(err)
-	}
+	defer db.Close()
 
-	upgraded, err := Open(dir)
+	statements := []string{
+		`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`INSERT INTO meta (key, value) VALUES ('format', '` + strconv.Itoa(format) + `')`,
+	}
+	if format == 2 {
+		statements = append(statements,
+			`CREATE TABLE rooms (id TEXT PRIMARY KEY, created_at TIMESTAMP NOT NULL, head INTEGER NOT NULL)`,
+			`INSERT INTO rooms (id, created_at, head) VALUES ('legacy', '2026-01-01T00:00:00Z', 2)`,
+			`CREATE TABLE actors (room_id TEXT NOT NULL, id TEXT NOT NULL, joined_at TIMESTAMP NOT NULL, PRIMARY KEY (room_id, id))`,
+			`INSERT INTO actors (room_id, id, joined_at) VALUES ('legacy', 'planner', '2026-01-01T00:00:00Z')`,
+			`CREATE TABLE events (room_id TEXT NOT NULL, seq INTEGER NOT NULL, actor TEXT NOT NULL, at TIMESTAMP NOT NULL, "to" TEXT NOT NULL, content TEXT NOT NULL, PRIMARY KEY (room_id, seq))`,
+			`INSERT INTO events (room_id, seq, actor, at, "to", content) VALUES
+				('legacy', 1, 'planner', '2026-01-01T00:01:00Z', '[]', '"hello"'),
+				('legacy', 2, 'bob', '2026-01-01T00:02:00Z', '["planner"]', '{"v1":true}')`,
+			`CREATE TABLE append_idempotency (room_id TEXT NOT NULL, actor TEXT NOT NULL, key TEXT NOT NULL, fingerprint BLOB NOT NULL, event_seq INTEGER NOT NULL, PRIMARY KEY (room_id, actor, key))`,
+		)
+	} else {
+		statements = append(statements,
+			`CREATE TABLE rooms (name TEXT PRIMARY KEY, parent TEXT, created_at TIMESTAMP NOT NULL, head INTEGER NOT NULL)`,
+			`INSERT INTO rooms (name, parent, created_at, head) VALUES ('main-line', NULL, '2026-01-01T00:00:00Z', 1), ('implementation', 'main-line', '2026-01-01T00:00:01Z', 1)`,
+			`CREATE TABLE events (room_id TEXT NOT NULL, seq INTEGER NOT NULL, author TEXT NOT NULL, at TIMESTAMP NOT NULL, content TEXT NOT NULL, PRIMARY KEY (room_id, seq))`,
+			`INSERT INTO events (room_id, seq, author, at, content) VALUES
+				('main-line', 1, 'feng', '2026-01-01T00:01:00Z', '"the goal"'),
+				('implementation', 1, 'codex', '2026-01-01T00:02:00Z', '"started"')`,
+			`CREATE TABLE append_idempotency (room_id TEXT NOT NULL, author TEXT NOT NULL, key TEXT NOT NULL, fingerprint BLOB NOT NULL, event_seq INTEGER NOT NULL, PRIMARY KEY (room_id, author, key))`,
+		)
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("%s: %v", statement, err)
+		}
+	}
+	if err := writeMarker(root, marker{Format: format, Backend: "sqlite"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOpenMigratesFormat2 proves the v1 → JSONL migration at the workspace
+// boundary: the single room becomes a root, records keep their author
+// verbatim, the database is deleted, and the marker is rewritten.
+func TestOpenMigratesFormat2(t *testing.T) {
+	dir := t.TempDir()
+	sqliteFixture(t, dir, 2)
+
+	st, err := Open(dir)
 	if err != nil {
 		t.Fatalf("open a format-2 workspace: %v", err)
 	}
-	records, err := upgraded.Read(ctx, "v1-room", 0)
-	if err != nil || len(records) != 1 || records[0].Author != "planner" {
-		t.Fatalf("records after upgrade = %+v, %v", records, err)
+	assertMigrated(t, dir, st, map[string][]string{
+		"legacy": {"planner", "bob"},
+	}, 1)
+}
+
+// TestOpenMigratesFormat3 proves the SQLite-tree → JSONL migration: the whole
+// tree exports with parents intact.
+func TestOpenMigratesFormat3(t *testing.T) {
+	dir := t.TempDir()
+	sqliteFixture(t, dir, 3)
+
+	st, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open a format-3 workspace: %v", err)
 	}
-	rooms, err := upgraded.Rooms(ctx)
-	if err != nil || len(rooms) != 1 || rooms[0].Parent != "" {
-		t.Fatalf("rooms after upgrade = %+v, %v", rooms, err)
-	}
-	data, err := os.ReadFile(filepath.Join(root, markerName))
+	assertMigrated(t, dir, st, map[string][]string{
+		"main-line":      {"feng"},
+		"implementation": {"codex"},
+	}, 0)
+}
+
+// assertMigrated checks the exported workspace: rooms with their parents,
+// records with their authors, the database deleted, and the marker rewritten.
+func assertMigrated(t *testing.T, dir string, st core.Store, authors map[string][]string, ledgerCount int) {
+	t.Helper()
+	ctx := context.Background()
+	rooms, err := st.Rooms(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), fmt.Sprintf("%d", formatVersion)) {
+	if len(rooms) != len(authors) {
+		t.Fatalf("rooms after migration = %+v, want %d", rooms, len(authors))
+	}
+	for _, room := range rooms {
+		want, ok := authors[room.Name]
+		if !ok {
+			t.Fatalf("unexpected room %q", room.Name)
+		}
+		records, err := st.Read(ctx, room.Name, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(records) != len(want) {
+			t.Fatalf("records of %q = %+v, want %d", room.Name, records, len(want))
+		}
+		for i, record := range records {
+			if record.Author != want[i] {
+				t.Fatalf("record %d of %q author = %q, want %q", i, room.Name, record.Author, want[i])
+			}
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, Dir, "room.db")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the retired database survived the migration: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, Dir, markerName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), strconv.Itoa(formatVersion)) {
 		t.Fatalf("marker file was not rewritten: %s", data)
 	}
-	if closer, ok := upgraded.(interface{ Close() error }); ok {
-		if err := closer.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	// The upgrade is one-time: the next open reads the current format.
-	again, err := Open(dir)
-	if err != nil {
-		t.Fatalf("reopen after upgrade: %v", err)
-	}
-	if closer, ok := again.(interface{ Close() error }); ok {
-		if err := closer.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
+	_ = ledgerCount
 }
 
 func TestInitRefusesExistingWorkspace(t *testing.T) {

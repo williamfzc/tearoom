@@ -11,16 +11,15 @@ import (
 	"testing"
 
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/relational"
+	"github.com/williamfzc/tearoom/internal/store"
 )
 
 func servedStore(t *testing.T) (core.Store, *httptest.Server) {
 	t.Helper()
-	st, err := relational.Init(t.TempDir())
+	st, err := store.Init(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
 	server := httptest.NewServer(NewServer(st).Handler())
 	t.Cleanup(server.Close)
 	return st, server
