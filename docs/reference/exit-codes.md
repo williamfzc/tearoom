@@ -4,7 +4,7 @@ title: Exit codes
 description: Authoritative machine-readable CLI outcomes.
 resource: internal/cli/cli.go
 tags: [reference, contract, cli, agents]
-timestamp: 2026-09-10
+timestamp: 2026-11-07
 ---
 
 # Exit codes
@@ -14,15 +14,11 @@ timestamp: 2026-09-10
 | Code | Meaning |
 |---|---|
 | 0 | Operation succeeded; an empty `read` is still success |
-| 1 | Invalid command, validation, unknown Actor, or any store/HTTP error — including an HTTP 409 idempotency conflict |
-| 4 | No Room can be opened in the current profile, or the configured server is unreachable |
-
-There is no mandatory stale-write precondition, so no separate stale-cursor
-exit class exists. A future conditional-append protocol may define a separate
-conflict outcome only when a real caller requires it.
+| 1 | Invalid command, validation error, unknown room name, or any store/HTTP error — including an HTTP 409 idempotency conflict |
+| 4 | No workspace can be opened in the current profile, or the configured server is unreachable |
 
 Agents should branch on the documented code rather than parse prose. Code `4`
-must never be treated as success because Room state is unknown.
+must never be treated as success because workspace state is unknown.
 
 Executable proof belongs in [evaluations.md](../evaluations.md). No legacy
 exit class is reserved for compatibility.

@@ -1,66 +1,78 @@
 ---
 type: reference
 title: Storage layout
-description: Authoritative on-disk Room representation and the boundary around operational state.
+description: Authoritative on-disk workspace representation and the one-time format migration.
 resource: internal/store/open.go
-tags: [reference, storage, sqlite]
-timestamp: 2026-09-10
+tags: [reference, storage, sqlite, migration]
+timestamp: 2026-11-07
 ---
 
 # Storage layout
 
-## Room state
+## Workspace state
 
-Every local Room is a `.tearoom` directory containing a format marker and one
-SQLite database behind the single Room contract:
+Every workspace is a `.tearoom` directory containing a format marker and one
+SQLite database holding the whole room tree:
 
 ```text
 .tearoom/
-  store.json      format marker: {"format":2,"backend":"sqlite"}
-  room.db         Rooms, Actors, Events, and idempotency records
+  store.json      format marker: {"format":3,"backend":"sqlite"}
+  room.db         Rooms (with parents), Records, idempotency records
 ```
 
-The marker is the format gate: only `format: 2` with backend `sqlite` is
-accepted. A markerless, version-1, or retired-backend layout is refused with
-an incompatible-store error; there is no import and no automatic upgrade. The
-database runs in WAL mode with a busy timeout, so concurrent processes append
-safely without any external lock file.
+The marker is the format gate: `format: 3` with backend `sqlite` is the
+current layout, and `format: 2` is the v1 single-room layout, upgraded once
+on open (below). Any other layout — markerless, version 1, or a retired
+backend — is refused with an incompatible-store error; there is no import and
+no automatic upgrade beyond that one step. The database runs in WAL mode with
+a busy timeout, so concurrent processes append safely without any external
+lock file.
 
-The relational schema is versioned and refuses to open a database without the
-format-2 marker. `append_idempotency` is a separate table: the idempotency key
-is persisted per `(room, actor, key)` but never becomes an Event field.
+## Tables
 
-The Event log is the durable collaboration truth. It contains no per-Actor
-read cursor, unread acknowledgement, activation delivery state, or Runtime
-session state. Those are caller-owned or application/control-plane state.
+- `rooms` — `name` (primary key), `parent` (nullable; null is a root),
+  `created_at`, and the dense sequence `head`.
+- `events` — `room_id`, `seq` (primary key pair), `author` (verbatim label),
+  `at`, `content` (compact JSON text).
+- `append_idempotency` — one row per (room, signature, key): the fingerprint
+  of the original request and the sequence it created. The key is never
+  exposed as a Record field.
+- `meta` — the format marker row.
 
-## Admission and append invariants
+The record log is the durable collaboration truth. It contains no read
+cursor, no unread acknowledgement, no delivery state, and no runtime session
+state; those are caller-owned or external. A parent's child list is derived
+by querying `rooms` and is never cached.
 
-- Admission is explicit: an Actor exists only after `room init` (creator) or
-  `room join`. Reading or sending never creates membership.
-- An append validates the Actor's admission, obtains the next dense Room
-  sequence under the backend's atomic write boundary, and writes one immutable
-  Event. Events are never rewritten through the Store API.
-- No ordinary append proves which Event a caller last read; there is no
-  expected-cursor path. Conditional append remains open.
-- An append with an idempotency key is matched per `(room, actor, key)`: an
-  equal fingerprint (compacted content, normalized `to`, Actor) returns the
-  original Event; a different one conflicts.
+## The one-time format-2 → format-3 migration
 
-## Operational state boundary
+A format-2 workspace stores the v1 model: one Room per workspace, admitted
+actors, and credentials. Opening it upgrades once:
 
-No in-product delivery or wake service exists (adjudicated 2026-09-09; see
-[product.md](../product.md)); this Room layout does not
-store Actor read progress, delivery attempts, bindings, or Runtime state.
+- the single room row becomes a root Room named by its old identifier (its
+  parent is null — a parentless room is a root);
+- every record keeps its author verbatim; the recipient column is dropped;
+- the `actors` and `credentials` tables are dropped;
+- the marker is rewritten to format 3.
 
-There is one local backend and no creation choice to make. The clean break
-does not import pre-adoption Room data or session state: an old `.tearoom`
-directory is an incompatible store. PostgreSQL is the remote database adapter
-for the same service, schema owner, and Store boundary; see
-[persistence.md](../architecture/persistence.md).
+There is no compatibility layer: after the upgrade the old layout is never
+read again, and databases without the marker are refused, never read,
+migrated, or reused.
+
+## Admission-free invariants
+
+- Reading or sending never creates Rooms; only `room init` does.
+- An append validates nothing about identity, obtains the next dense
+  sequence of the target Room under the database's atomic write boundary, and
+  writes one immutable Record. Records are never rewritten through the Store
+  API.
+- An append with an idempotency key is matched per (room, signature, key): an
+  equal fingerprint returns the original Record; a different one conflicts.
 
 ## Portability
 
 The storage engine is the pure-Go `glebarez/sqlite` driver, so release
 binaries stay static (`CGO_ENABLED=0`) and SQLite's own locking serializes
-concurrent writers on every platform.
+concurrent writers on every platform. PostgreSQL runs the same schema through
+the same migrations for the gated battery and future serving; see
+[persistence.md](../architecture/persistence.md).

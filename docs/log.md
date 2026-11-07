@@ -8,6 +8,42 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-07 — Converge the kernel: one room tree, one record stream, one signature
+
+Retired the v1 model — Room + Actor + membership + credentials + hosted
+service — and adopted the converged kernel: a single-parent room tree, one
+append-only record stream per Room, and an unverified signature label. The
+trigger was a design audit that found the coordination story living outside
+the data model: agents collaborated through prompts and transcripts while the
+Room only stored text, and every addition (admission, recipients,
+credentials, a hosted control plane) guarded a boundary nobody had crossed.
+
+What replaced what: membership/admission died (the workspace directory is the
+trust domain); the `to` recipient field died (no @-addressing); credentials
+and the hosted multi-room profile died (serving beyond one machine is a
+future need); actor identity became a plain `author` label; status, closure,
+and handoff became writing conventions. The tree arrives: each Room records
+its parent, child lists are derived at read time, and each Room owns one
+dense stream — a child's first record is seq 1.
+
+Storage moves to format 3: one workspace database holds the whole tree
+(`rooms.name/parent/head`, `events.room_id/seq/author/at/content`, the
+per-(room, signature, key) idempotency ledger). The format-2 → 3 migration is
+one-time on open: the old single room becomes a root named by its old
+identifier and every author is kept verbatim; there is no compatibility
+layer after it. The v1 code is frozen at tag `v1-final` on branch
+`archive/v1`; E7 and the Render/Neon deployment files were removed with the
+hosted profile; the PostgreSQL battery stays and must be rerun against the
+format-3 schema.
+
+Feasibility for the external half was measured the same day (herdr 0.9.5 +
+codex 0.159.2, four experiments, all green — see
+[evaluations.md](evaluations.md) hand-run evidence): start, prompt, and wait
+are reliable; a fresh process recovered full state from a room alone. The
+wake contract is `tearoom watch --json` plus an external waker; unattended
+waking requires each tool's one-time trust dialogs and login to be
+pre-cleared on the host.
+
 ## 2026-09-10 — Deploy the hosted profile live on Render + Neon
 
 The hosted profile is live on the internet: the old `tearoom` Render service
@@ -383,7 +419,7 @@ Added [evaluations.md](evaluations.md), the single registry mapping every user s
 
 ## 2026-08-29 — Add the harness workflow user story
 
-Added [domain/harness-workflow.md](domain/harness-workflow.md): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. `scripts/harness-demo.sh` ran the story against the shipped binary inside `make check` (deleted at the clean break with the old contract); it closed the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.
+Added the harness workflow page (later removed with the v1 model): a planner, a generator, and an evaluator run one plan/generate/evaluate loop through a Room with no human relay. The loop is a protocol over Events — `watch` for handoff, `caused-by` for chaining, directed Events for private reviewer notes, stale-write refusal as the resync signal — not new kernel entities. `scripts/harness-demo.sh` ran the story against the shipped binary inside `make check` (deleted at the clean break with the old contract); it closed the first evidence gap of [status.md](architecture/status.md), the task protocol outside the kernel.
 
 ## 2026-08-29 — Ship the relational Store on SQLite
 

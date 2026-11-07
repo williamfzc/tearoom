@@ -127,10 +127,9 @@ matches, and the publication step must be able to create missing objects. A
 write-only token cannot safely resume or prove immutability and is invalid for
 this workflow.
 
-The current P0 local profile has no shared authorization layer.
-`TEAROOM_ACTOR` identifies a local Actor and is not a credential. Remote
-credentials remain deferred, but they must extend the same service and
-authorization path rather than create a separate remote product; see
+The shipped profile has no authorization layer at all: the `.tearoom`
+workspace directory is the trust domain, and `TEAROOM_ACTOR` is only the
+default signature label — not a credential. See
 [domain concepts](../domain/concepts.md).
 
 ## Publish and verify

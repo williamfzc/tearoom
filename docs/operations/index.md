@@ -17,7 +17,7 @@ for implementation state, and [../evaluations.md](../evaluations.md) for proof.
 |---|---|
 | [building.md](building.md) | Build targets, the test suites, and the toolchain traps |
 | [releasing.md](releasing.md) | Public binary artifacts, installation, credentials, and rollback |
-| [serving.md](serving.md) | Running the loopback-only server and pointing Actors at one Room |
+| [serving.md](serving.md) | Running the loopback-only server and the external wake loop |
 
 ## The one thing to remember
 

@@ -1,104 +1,110 @@
 ---
 type: reference
 title: Agent integration guide
-description: A minimal, replayable integration path for an Agent using Tearoom's local or HTTP Room contract.
+description: A minimal, replayable integration path for an Agent working inside a Tearoom room tree.
 tags: [reference, agents, integration, cli, http]
-timestamp: 2026-09-10
+timestamp: 2026-11-07
 ---
 
 # Agent integration guide
 
-This guide connects an Agent Runtime to the target contracts in
-[cli.md](cli.md), [http-api.md](http-api.md), and
-[storage-layout.md](storage-layout.md). It does not define a task, result, or
-workflow schema. Application-level examples belong in
-[harness-workflow.md](../domain/harness-workflow.md). The binary itself
-carries an orientation guide: run `tearoom skill` before any setup.
+This guide connects an Agent to the contracts in [cli.md](cli.md) and
+[http-api.md](http-api.md). It does not define a task or workflow schema; what
+a record means is a convention the workers write. The binary itself carries an
+orientation guide: run `tearoom skill` before any setup.
 
-## Find the Room
+## Find the workspace
 
-In the currently shipped local profile, run commands from the project directory or one of its
-descendants. Tearoom discovers the nearest ancestor `.tearoom` directory; it
-does not create a Room during `send`, `read`, or `room join`. Create one once:
+Run commands from the project directory or one of its descendants. Tearoom
+discovers the nearest ancestor `.tearoom` workspace; it does not create Rooms
+during `send`, `read`, or `watch`. Create the first Room once:
 
 ```bash
-tearoom room init --as planner
+tearoom room init --name main-line
 ```
 
-When using the same service over HTTP, set `TEAROOM_SERVER` to the loopback server URL. Client
-commands then use that Room instead of local directory discovery. `room init`
-is local in the current implementation; the server itself must be started from
-a directory containing the Room. Remote Room creation will extend this same
-service and CLI rather than define another product:
+That first command also creates the workspace. Add children from the Room
+that owns the goal:
+
+```bash
+tearoom room init --name implementation --parent main-line
+tearoom room init --name review --parent main-line
+```
+
+Room names are the addresses everyone else will read; quote a record as
+`room-name#seq` in plain text.
+
+## Write and continue
+
+`send` appends one record to the target Room. `--as` sets the signature — a
+plain label, never verified; omit it and the record carries an empty author.
+
+```bash
+export TEAROOM_ACTOR=codex          # a stable signature, chosen once
+tearoom send --text "goal recorded" --room main-line
+tearoom send --json '{"done":"checkout flow","blocked":"none","next":"reviewer reads implementation"}' --room implementation
+```
+
+Plain text is encoded as a JSON string; `--json` passes any valid JSON value.
+`send` prints one JSON Record object; parse `content` as JSON.
+
+## Read what you need
+
+```bash
+tearoom read --room implementation                  # the whole stream
+tearoom read --room implementation --tail 5         # where this branch stands
+tearoom read --room implementation --subtree        # the room and its descendants
+tearoom read --room implementation --after e42      # from your own boundary
+tearoom tree                                        # the skeleton: parents and children
+```
+
+Reads are pure and repeatable. Keep your own boundary in `--after`; Tearoom
+stores no cursor. An empty read is success: no output, exit 0.
+
+## Wait for new work
+
+```bash
+tearoom watch --json
+```
+
+One JSON envelope per new record, until interrupted:
+
+```json
+{"room":"implementation","seq":7,"author":"codex","at":"2026-11-07T10:02:00Z"}
+```
+
+The envelope says only "there is something new". Deciding who wakes and how
+belongs to an external waker — for example a script that watches this output
+and drives `herdr agent prompt <name> "<read the room and continue>"`.
+Tearoom never starts a process itself.
+
+## Work with another process over HTTP
 
 ```bash
 tearoom server start --address 127.0.0.1:8787
 export TEAROOM_SERVER=http://127.0.0.1:8787
 ```
 
-## Establish a stable Actor
+The server binds loopback only and serves one workspace; room selection rules
+are unchanged. `POST /api/events` carries `room` and `content`;
+`X-Tearoom-Author` carries the signature; errors are structured as
+`{"error":{"code":"...","message":"..."}}`. The copyable request sequence is
+in the [HTTP curl journey](http-api.md#minimal-curl-journey).
 
-Choose an explicit stable Actor identity that survives Runtime and process
-restarts. Set `TEAROOM_ACTOR` for normal `send` and `read` calls, or pass
-`--as <actor>` when a command needs a one-off identity. Admission is explicit
-and positional:
+## Idempotent retries
 
-```bash
-export TEAROOM_ACTOR=worker
-tearoom room join worker
-```
+If a `send` may have gone through, retry with the same `--idempotency-key`
+and you get the original Record back instead of a duplicate. The key is
+scoped per (room, signature, key); reusing it with different content is a
+conflict and exits 1.
 
-Joining an existing Actor is repeatable and returns the existing membership.
-An unjoined Actor cannot read or append.
+## The three journeys this must hold for
 
-## Replay
+1. One Agent completes a task alone, reading only its Room.
+2. A reviewer Agent reads only the implementation Room and returns pass or
+   fail with evidence; the executor never certifies its own work.
+3. A new process, a day later, reads only the Rooms and answers: goal,
+   previous work, acceptance, next step.
 
-Keep the last boundary in the Agent's own state, not in Tearoom. After a
-successful read, choose the largest returned `seq` and use its presentation
-address on the next call:
-
-```bash
-tearoom read --after e42
-```
-
-The Room never advances a hidden Actor cursor. A Runtime that wants to wait
-for later history polls this read from its own boundary; a wait is never a
-subscription and is not proof of offline activation.
-
-## Append safely and parse output
-
-Plain-text `send` encodes its argument as a JSON string. Use `--json` for any
-other valid JSON value. `send` prints one JSON Event object; `read` prints one
-JSON Event per line (JSONL). Parse `content` as JSON rather than treating it as
-an untyped text field.
-
-For an uncertain append, supply an idempotency key and retry the same request
-with the same key. An identical retry returns the original Event; reusing the
-key with different content or addressing is a conflict and exits with code 1.
-
-```bash
-tearoom send --json '{"kind":"proposal"}' --idempotency-key proposal-42
-```
-
-## Use HTTP from a separate process/runtime
-
-For the currently shipped loopback profile, the server and Runtime run on the same host. Send
-`X-Tearoom-Actor` on every events request. `POST /api/events` accepts only
-`to` and `content`; `Idempotency-Key` is a request header. Errors are structured
-as `{"error":{"code":"...","message":"..."}}`. Reads are pure and unbounded: a
-caller that polls for later history loops over the same `after` boundary and
-treats an empty array as "nothing new".
-
-The target remote profile keeps this Room/Event contract and command behavior,
-while deployment supplies PostgreSQL, HTTPS, and credentials. Its current gap
-is tracked in [status.md](../architecture/status.md).
-
-The copyable request sequence is in the [HTTP curl journey](http-api.md#minimal-curl-journey).
-
-## Complete continuation loop
-
-The product story is complete only when one Agent product appends, a later
-process in another product pulls that Event with `read`, writes its result with
-`send`, and the first or a third product pulls the new result. A human follows
-the same Actor path. The executable target and its four-step CLI sequence live
-in [evaluations.md](../evaluations.md#p1--one-cross-product-continuation-story).
+The executable target and the hand-run method live in
+[evaluations.md](../evaluations.md).

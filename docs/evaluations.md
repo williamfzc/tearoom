@@ -1,9 +1,9 @@
 ---
 type: evaluations
 title: Evaluation set
-description: The single user story, its staged proof, and supporting deployment evidence.
+description: The acceptance journeys, their staged proof, and supporting hand-run evidence.
 tags: [evaluations, stories, testing, registry]
-timestamp: 2026-09-10
+timestamp: 2026-11-07
 ---
 
 # Evaluation set
@@ -12,163 +12,111 @@ This is the proof registry for [product.md](product.md). A story is `open`
 while any mapped evaluation is planned and `proven` only when every mapped
 evaluation ships. Evaluation status is `planned` or `shipped`.
 
-Tearoom has one product story. Storage, restart, remote deployment,
-authorization, human participation, and alternate domains are requirements or
-test conditions rather than additional stories.
+The product is proven by three acceptance journeys — solo delivery,
+build-and-review, and resume across a day — plus the wake journey through the
+notification envelope. Storage, concurrency, and restart behavior are
+requirements and test conditions rather than additional stories.
 
 ## Staged proof
 
-### P0 — Foundation
+### Foundation
 
-Evaluations E1 and E2 are shipped and run in `make check`.
+Evaluations E1 and E2 are shipped and run in `make check`. They prove the
+mechanics the journeys rely on:
 
-They prove the mechanics needed by the story:
+1. Rooms form a tree: children record their parent, child lists are derived
+   at read time, and each Room's stream is independent and dense.
+2. Multiple writers append concurrently and the Store issues one dense
+   sequence per Room; an idempotent retry returns the original record.
+3. A caller reads from the beginning, an explicit `after` boundary, a tail,
+   or a subtree without changing Room state.
+4. A later process replays the same history after the earlier process and
+   service have stopped; no session or cursor files exist anywhere.
 
-1. Multiple Actors append to one Room and every member reads the same complete,
-   dense, ordered history.
-2. A caller reads from the beginning or an explicit `after` boundary without
-   changing Room state or another caller's result.
-3. A later process replays the same history after the earlier process and
-   service have stopped.
-4. Concurrent append and idempotent retry preserve one accepted order.
+The foundation does not prove that a real Agent can work from the tree alone.
+That requires the acceptance journeys.
 
-P0 does not prove that Tearoom is more useful than a shared file, chat, or
-vendor transcript. That requires the full cross-product journey.
+### The acceptance journeys
 
-### P1 — One cross-product continuation story
-
-Story S1. Evaluation E3. **Status: open.**
-
-The journey must use at least two independent Agent products and no human may
-copy Event content between them:
-
-```bash
-# Owner setup, then keep the server running in this Room.
-tearoom room init --as agent-a
-tearoom room join agent-b
-tearoom room join agent-c
-tearoom server start
-
-# Agent product A writes.
-TEAROOM_SERVER=http://127.0.0.1:8787 TEAROOM_ACTOR=agent-a \
-  tearoom send --json '{"work":"first attempt"}'
-
-# A later process in agent product B pulls, continues, and writes back.
-TEAROOM_SERVER=http://127.0.0.1:8787 TEAROOM_ACTOR=agent-b \
-  tearoom read --after e0
-TEAROOM_SERVER=http://127.0.0.1:8787 TEAROOM_ACTOR=agent-b \
-  tearoom send --json '{"result":"second attempt"}'
-
-# Product A or a third product pulls the new result and can continue again.
-TEAROOM_SERVER=http://127.0.0.1:8787 TEAROOM_ACTOR=agent-c \
-  tearoom read --after e1
-```
-
-The exact command, JSON, JSONL, and failure behavior is owned by
-[reference/cli.md](reference/cli.md). A human correction uses the same
-`room join`, `read`, and `send` path and is not a separate evaluation.
-
-Go only when B recovers A's context, B's result is durable, and A or C can
-continue without hidden vendor state or manual relay. No-go if a shared file,
-normal chat, repository document, or one product's native transcript completes
-the same journey with less setup and equal recovery.
-
-A hand-run instance of this journey and the method that produced it are
-recorded under [Hand-run evidence](#hand-run-evidence).
-
-### P2 — Remote readiness
-
-Evaluation E7. **Status: shipped.** It runs in `make check` as
-`make target-remote`: the script starts a temporary PostgreSQL cluster, fronts
-the hosted service with TLS, and executes the journey below deterministically.
-The same profile was deployed to an internet host on 2026-09-10 (Render +
-Neon) and passed the live journey — see the hand-run evidence table.
-
-1. The service uses PostgreSQL and HTTPS.
-2. Each Agent has a stable identity and its own expiring credential.
-3. Agents still use ordinary `read` and `send`; only connection and identity
-   setup differ.
-4. Revoking one credential blocks that credential without changing prior
-   Events, the Room, or other Actors.
-5. Commands, Event shapes, ordering, read boundaries, retry behavior, and error
-   classes match the local profile.
-
-Remote readiness is a deployment gate, not another user story.
+S1–S3 are the completion standard of [product.md](product.md); S4 is the
+notification story. They need real, independent Agent products and cannot run
+in `make check`; the hand-run method is recorded under
+[Hand-run evidence](#hand-run-evidence). Each journey is open until it has
+run against the room-tree model and its evidence row exists.
 
 ## Stories
 
 | ID | Story | Status | Stage | Defined in |
 |---|---|---|---|---|
-| S1 | When work moves between people, processes, or Agent products, the receiver pulls the existing Room history, continues, and writes back so another participant can continue again without manual context relay | open | P1 | [product.md](product.md) |
+| S1 | One Agent completes a task end to end with zero human intervention, reading only its Room | open | acceptance | [product.md](product.md) |
+| S2 | Two Agents work as builder and reviewer; the reviewer reads only the implementation Room and returns pass or fail with evidence, and the executor never certifies its own work | open | acceptance | [product.md](product.md) |
+| S3 | A new process, optionally a new tool, a day later, reads only the Rooms and answers the goal, the prior work, whether acceptance is met, and what is next | open | acceptance | [product.md](product.md) |
+| S4 | A record append reaches an external waker through the notification envelope and starts the next worker with no human relay | open | acceptance | [product.md](product.md) |
 
 ## Evaluations
 
 | ID | Evaluation | Target | Script | Status |
 |---|---|---|---|---|
-| E1 | Foundation Room contract over the local SQLite room and the loopback HTTP service | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
-| E2 | Foundation replay across real processes and service restarts | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
-| E3 | The four-step cross-product CLI loop: A writes, B pulls, B writes, A or C pulls | `make target-handoff` | — | planned |
-| E7 | The same four-step loop on PostgreSQL behind TLS with per-Actor credentials, open reads, and revocation | `make target-remote` | [target-remote.sh](../scripts/target-remote.sh) | shipped |
+| E1 | Foundation room-tree contract through the shipped binary: init with parents, per-room dense sequences, concurrency, idempotency, tail, subtree, tree, missing signature, and the HTTP leg | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
+| E2 | Replay across real processes and service restarts with no stored read progress | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
+| E3 | The acceptance journeys S1–S3 with two real, independent Agent products | hand-run | — | planned |
+| E4 | The wake journey S4: envelope from `watch --json` to a herdr-started worker | hand-run | — | planned |
 
 ## Story → evaluation
 
 | Story | Evaluations |
 |---|---|
 | S1 | E1, E2, E3 |
+| S2 | E1, E3 |
+| S3 | E2, E3 |
+| S4 | E4 |
 
 ## Evaluation → story
 
 | Evaluation | Stories |
 |---|---|
-| E1 | S1 |
-| E2 | S1 |
-| E3 | S1 |
-
-E7 proves deployment readiness rather than a separate user outcome, so it is
-not part of the story mapping.
+| E1 | S1, S2 |
+| E2 | S1, S3 |
+| E3 | S1, S2, S3 |
+| E4 | S4 |
 
 ## Hand-run evidence
 
 Evidence that cannot run in `make check` is recorded here or it never ran.
 
-### Hand-running the E3 journey
+### Hand-running the acceptance journeys
 
-The cross-product claim of E3 needs two real, independent Agent products and
-cannot run in `make check`. The recorded runs follow this method:
+The acceptance claim needs real, independent Agent products. The recorded
+runs follow this method:
 
-1. The owner performs setup only — `room init`, one `room join` per Actor,
-   `server start` — and never carries Event content.
+1. Setup only: a human or an Agent at the root runs `room init` (and, for
+   S2, creates the child Rooms). No record content may appear in any prompt;
+   the prompts are the audit trail for the relay count.
 2. Each Agent product runs in its own directory and receives only the binary
-   path, the Room URL, its Actor identity, and the instruction to recover its
-   context from the Room with `read`. No Event content may appear in any
-   prompt; the prompts are the audit trail for the relay count.
-3. The journey includes a service restart and an explicit `--after` boundary.
-   The second participant's result must echo details that exist only in the
-   Room; that echo is the recovery proof.
-4. Record setup effort, manual relay count, recovery quality, and the repeated
-   handoff in the table below.
+   path, the workspace location, the room names, and its signature. Recovery
+   must come from reading the Rooms.
+3. S1 runs one Agent to completion with zero interventions. S2 has a second
+   Agent review while reading only the implementation Room; its verdict must
+   cite commands and output that exist only in the records. S3 starts a fresh
+   process a day later, optionally with a different tool, and asks the four
+   resume questions.
+4. Record setup effort, manual relay count, recovery quality, and the
+   verdict trail in the table below.
 
-A scripted stand-in for the second product collapses this proof into E1/E2
-and is not E3 evidence.
+A scripted stand-in for the second product collapses the proof into E1/E2
+and is not acceptance evidence.
 
 | Date | Evaluation | Cases | Outcome | Record |
 |---|---|---|---|---|
-| 2026-09-02 | Foundation rival | Incremental reads, per-participant boundaries, replay, activation, and concurrent append compared with a plain JSONL file | The file matched the foundation claims; the cross-product continuation story remains unproven | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
-| 2026-09-10 | Live E7 on the deployed hosted profile | Render web service `redacted.invalid` (docker, free instance, TLS at the edge) over the Neon PostgreSQL 18 project `tearoom-e7` (pooled DSN): owner created `room_26bf35af` via `room init --server`; admitted bob and agent-c and issued per-Actor credentials; planner appended e1; bob recovered it with a token-free open read and appended e2; agent-c read e2 from the e1 boundary; then the negative matrix — unauthenticated write refused, wrong-actor token refused, owner revoked bob's credential, the revoked write refused, and open reads showed history untouched (1..2) | Four steps closed over the public internet with zero manual relays; the revocation matrix held end to end on Neon PostgreSQL 18; room and credentials persist in the deployment database | Executable journey: [operations/serving.md](operations/serving.md); service health: `GET /healthz` |
-| 2026-09-10 | PostgreSQL validation (gated battery) | `TEAROOM_TEST_PG` against local PostgreSQL 16.15: the 14-case contract battery (dense concurrent append, concurrent idempotency, membership visibility, read boundaries, content compaction) plus credential issue/verify/revoke on the additive credentials table | All green; PostgreSQL is validated as the remote database adapter, and the battery reruns wherever `TEAROOM_TEST_PG` points | Executable: `go test ./internal/relational/ -run TestPostgreSQL` with the env set |
-| 2026-09-09 | E3 journey (hand-run) | ZCode as `agent-a` and headless Claude Code as `agent-b` in its own directory over loopback HTTP. Setup: `room init --store sqlite`, two joins, `server start`. A appended a work contract (e1); B recovered it with `read`, implemented and tested the work, and appended the result (e2) with its own idempotency key; the server was killed and restarted; A pulled e2 with `--after e1` and appended acceptance (e3); C read the full history | Four steps closed with zero manual Event relays; B echoed contract details that existed only in the Room; the dense 1..3 history survived the restart; setup was five commands and B ran unattended in one ~2-minute headless session | [method](#hand-running-the-e3-journey) |
-
-## Legacy surfaces at the P0 cutover
-
-The pre-cutover suites proved a rejected contract and were deleted. E1 and E2
-are the only shipped CLI-level proofs. The removed harness demo does not prove
-E3 because it used the old Event and cursor model. Old game, worktree, hosted,
-session, and smoke demos remain historical evidence in [log.md](log.md), not
-current evaluations.
+| 2026-11-07 | E4 wake chain feasibility (v1 file stand-in for the Room) | herdr 0.9.5 with codex 0.159.2 in an isolated session: (1) start an Agent that reads the room, builds and verifies a script, writes the conclusion back; (2) a second prompt continues from the prior record; (3) a brand-new workspace, a fresh Agent given only the room path answers goal, prior work, acceptance, next step; (4) an external append is detected by a polling script that drives `herdr agent prompt` and the Agent wakes, reads, and writes back (~18 s) | All four experiments passed; the wake chain — start, prompt, wait — is reliable, and a process with no history recovered the full state from the room alone. Preconditions recorded: each tool's one-time trust dialogs and login must be pre-cleared, and the local `claude` binary authenticates through the LLMBox wrapper | Design-note experiments 1–4; the waker contract is `tearoom watch --json` plus an external script |
+| 2026-09-10 | Live hosted journey (v1 contract) | Render web service `redacted.invalid` over Neon PostgreSQL 18: owner-created room, per-Actor credentials, the four-step continuation with token-free open reads, and the revocation matrix | Four steps closed over the public internet with zero manual relays under the v1 membership model; superseded by the 2026-11-07 convergence | [log.md](log.md) deployment record |
+| 2026-09-10 | PostgreSQL validation (gated battery) | `TEAROOM_TEST_PG` against local PostgreSQL 16.15: the conformance battery over the v1 schema plus credential control | All green on the v1 schema; the battery must be rerun against the format-3 tree schema | Executable: `go test ./internal/relational/ -run TestPostgreSQL` with the env set |
+| 2026-09-09 | Cross-product continuation (v1 contract) | ZCode as `agent-a` and headless Claude Code as `agent-b` over loopback HTTP with explicit joins: A appended a work contract; B recovered it with `read`, implemented and tested, appended the result; the server restarted; A pulled the result from an explicit boundary and accepted | Four steps closed with zero manual relays and survived a restart under the v1 model | Method above, adapted to the v1 join flow |
+| 2026-09-02 | Foundation rival (v1 contract) | Incremental reads, per-participant boundaries, replay, activation, and concurrent append compared with a plain JSONL file | The file matched the v1 foundation claims; the cross-product continuation story remained unproven | [lessons/rival-falsification.md](lessons/rival-falsification.md) |
 
 ## Pending evidence, not stories
 
 | Item | Evidence needed |
 |---|---|
-| Cheapest-rival comparison | Run the same E3 journey through a shared JSONL file, normal chat, repository document, and one vendor transcript |
-| — | *(none — cloud hosting of the hosted profile is live since 2026-09-10; see the hand-run evidence row above)* |
+| Cheapest-rival comparison | Run the same acceptance journeys through a shared JSONL file, normal chat, repository document, and one vendor transcript |
+| PostgreSQL battery on format 3 | Rerun `TEAROOM_TEST_PG` against the tree schema |

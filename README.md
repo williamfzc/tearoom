@@ -1,8 +1,8 @@
 # Tearoom
 
-A durable shared Room where one participant writes work, another person or
-Agent product pulls the same ordered history through the CLI, continues, and
-writes back for the next participant.
+A long-lived collaborative workspace where people and Agents write, continue,
+and deliver work inside Rooms. Rooms form a single-parent tree; whoever reads
+a Room can pick up the work — across Agents, tools, and process restarts.
 
 [`docs/product.md`](docs/product.md) is the authoritative product definition.
 Start with the [documentation route](docs/index.md). Implementation state
@@ -11,76 +11,61 @@ lives in [status.md](docs/architecture/status.md); proof lives in
 
 ## Minimum model
 
-- **Room** — the membership and history boundary.
-- **Actor** — a stable participant identity, independent of a process or Agent
-  session.
-- **Event** — one immutable contribution ordered within its Room.
+- **Room** — one span of context: a parent (or none) and one ordered record
+  stream.
+- **Record** — one stream entry: sequence, time, signature, content.
+  Append-only, never edited.
+- **Notification** — the envelope emitted when a record lands: which room,
+  which sequence, which signature. It stores nothing.
 
-Every Room member sees the complete Room history. Optional `to` addressing
-carried on an Event is public, not secrecy and not a command to start a
-process. Privacy requires a different Room with different membership.
+Signatures are unverified labels. There is no membership, no admission, and
+no credentials: the `.tearoom` directory is the trust domain.
 
 ## Quick start
 
 ```bash
-make build                 # builds ./bin/tearoom
+make build                     # builds ./bin/tearoom
 tearoom_bin="$PWD/bin/tearoom"
-room_dir="$(mktemp -d)"
-cd "$room_dir"
-export TEAROOM_ACTOR=planner
-"$tearoom_bin" room init
-"$tearoom_bin" room join developer
-"$tearoom_bin" send "review this"
-TEAROOM_ACTOR=developer "$tearoom_bin" read
+work_dir="$(mktemp -d)"
+cd "$work_dir"
+"$tearoom_bin" room init --name main-line
+"$tearoom_bin" room init --name implementation --parent main-line
+"$tearoom_bin" room init --name review --parent main-line
+TEAROOM_ACTOR=planner "$tearoom_bin" send --text "goal recorded" --room main-line
+TEAROOM_ACTOR=codex "$tearoom_bin" send --text "started" --room implementation
+TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
+"$tearoom_bin" tree
 ```
 
-- `room init` creates a Room and admits the creator; `room join <actor>` admits other
-  members explicitly. A Room is the `.tearoom` directory beside your work —
-  one SQLite database, no backend choices.
-- `send` prints the appended Event as JSON. Plain text is encoded as a JSON
-  string; `--json` passes raw JSON.
-- `read` prints JSONL, one Event per line. Reading is side-effect free: no
-  cursor is saved. `--after e<seq>` sets the caller's boundary; truncating and
-  polling belong to the caller.
-- `server start` serves the nearest Room over HTTP on `127.0.0.1:8787`
+- `room init --name <name> [--parent <room>]` creates a Room; the first one
+  creates the workspace. Rooms are addressed by name.
+- `send` appends one record and prints it as JSON. `--as` sets the
+  signature; plain text is encoded as a JSON string, `--json` passes raw
+  JSON.
+- `read` prints JSONL, one record per line. `--after e<seq>` sets your own
+  boundary, `--tail 5` limits each selected Room, `--subtree` reads the Room
+  and its descendants. Reading is side-effect free.
+- `tree` prints the skeleton: every root with its descendants.
+- `watch --json` prints one notification envelope per new record; an
+  external waker decides whether anyone is woken.
+- `server start` serves the workspace over HTTP on `127.0.0.1:8787`
   (loopback only); set `TEAROOM_SERVER` to point other processes at it.
 
-## Delivery beyond the process
+## Working the tree
 
-A Room works without an Agent runtime or wake service. When an addressed Agent
-is absent, an external operator or Agent product starts and configures it with
-the Room connection. The Agent then uses the same `read` and `send` commands
-to pull JSONL, continue, and write back. Remote deployment adds HTTPS and
-credentials, not a second collaboration interface. A wake control plane —
-daemon, ledger, launcher — was measured against a sixty-line external rival
-and adjudicated out of scope
-([lessons/rival-falsification.md](docs/lessons/rival-falsification.md)).
+The conventions are writing, not fields: an executor writes what it did,
+what is blocked, and what the next worker should do first; a reviewer works
+in its own Room and cites evidence; quoting a record is `room-name#seq` in
+plain text; closing work is a sentence. Waking the next worker is external —
+a script reads `tearoom watch --json` and drives a scheduler such as herdr.
 
 ## Build and verify
 
-Requires Go 1.22+ and a Unix-like OS.
-
 ```bash
-make check
+make check   # fmt vet test test-race target-room target-replay check-evals line-budget docs
 ```
 
-`make check` runs fmt, vet, the unit and race suites, the P0 evaluations
-(`target-room`, `target-replay`), the evaluation-set consistency check, and
-the docs-bundle check. See [docs/operations/building.md](docs/operations/building.md)
-for the macOS linker and module-proxy requirements of this machine.
-
-## Binary releases
-
-Source stays private while compiled binaries are public artifacts. Cloudflare
-R2 is the single public artifact source: pin an immutable version URL, download
-its `SHA256SUMS`, and verify SHA256 before installation. `latest.json` is
-only a mutable convenience pointer. Tagged releases run repository checks,
-deterministic package checks, and public readback. See the [release runbook](docs/operations/releasing.md)
-for supported-platform policy, R2 credential rotation, publication, and
-format-2 rollback. Release archives carry both `LICENSE` and generated
-`THIRD_PARTY_NOTICES`; a released binary can be reverse-engineered and contains
-no secrets by design.
-
-## License
-
-MIT
+See [operations/building.md](docs/operations/building.md) for the toolchain
+traps (macOS test linking, the module proxy) and
+[reference/agent-integration.md](docs/reference/agent-integration.md) for the
+Agent-facing integration path.

@@ -1,24 +1,25 @@
 ---
 type: index
 title: Reference
-description: The authoritative target CLI, HTTP, exit, and storage contracts.
+description: The authoritative CLI, HTTP, exit, and storage contracts.
 tags: [index, reference, contract]
-timestamp: 2026-08-30
+timestamp: 2026-11-07
 ---
 
 # Reference
 
-This directory is the target machine-facing contract. [product.md](../product.md)
-is the sole product fact source; [architecture/status.md](../architecture/status.md)
-is the implementation-gap source; and [../evaluations.md](../evaluations.md) is
-the proof source. Current implementation details do not belong in this tree.
+This directory is the machine-facing contract. [product.md](../product.md)
+is the sole product fact source;
+[architecture/status.md](../architecture/status.md) is the implementation-gap
+source; and [../evaluations.md](../evaluations.md) is the proof source.
+Current implementation details do not belong in this tree.
 
 | Document | Contract |
 |---|---|
-| [cli.md](cli.md) | The only Room command contract |
-| [http-api.md](http-api.md) | The only Room HTTP protocol |
-| [exit-codes.md](exit-codes.md) | Target machine-readable outcomes |
-| [storage-layout.md](storage-layout.md) | Target Room storage and operational-state boundary |
+| [cli.md](cli.md) | The only command contract |
+| [http-api.md](http-api.md) | The only HTTP protocol |
+| [exit-codes.md](exit-codes.md) | Machine-readable outcomes |
+| [storage-layout.md](storage-layout.md) | Workspace storage and the one-time format migration |
 | [agent-integration.md](agent-integration.md) | Minimal Agent integration and replay guide |
 
 Agents and Agent products should consume only these contracts. Human text

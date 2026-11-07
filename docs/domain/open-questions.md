@@ -1,61 +1,44 @@
 ---
 type: decision
 title: Open questions
-description: Decisions deliberately left unsettled after the Room, Actor, Event convergence.
+description: Decisions deliberately left unsettled after the room-tree convergence.
 tags: [domain, decision, open]
-timestamp: 2026-09-09
+timestamp: 2026-11-07
 ---
 
 # Open questions
 
 Each question needs usage evidence rather than a speculative abstraction.
 
-## Room placement
-
-Should one repository normally contain one Room, or should a Room live above several repositories and worktrees? Local discovery currently binds one Room to one ancestor directory. The cross-product HTTP mode is not directory-bound for clients.
-
-## Protocol ownership
-
-Which event conventions deserve reusable libraries? Handoff, task claiming,
-and approval can be expressed today, but the kernel should not own their rules
-without at least two independent callers.
-
-## Explicit read and attention state
-
-The kernel has no implicit Actor cursor, unread marker, or acknowledgement. Is
-an explicit consumer/subscription index needed for any real delivery journey,
-or is a caller-supplied `--after e<seq>` boundary sufficient? Measure token
-cost and recovery behaviour in busy Rooms before adding durable attention state.
-
-## Privacy composition
-
-When a protocol needs private information, is a separate Room sufficient, or
-does the application need an external authoritative secret store? The kernel
-will not reintroduce per-Event private visibility to answer this question.
-
-## Conditional append
-
-Which real protocol, if any, requires a conditional append against an explicit
-Room head or another boundary? Ordinary `send` must remain independent of read
-progress unless evidence justifies a separate capability.
-
-## Event envelope evidence
-
-Which protocol has evidence for `type` or `caused_by` as a shared envelope?
-Keep them above the minimum `seq`/`actor`/`at`/`to`/`content` shape until two
-independent callers require the same contract. Request-level append idempotency
-is a transport/Store retry contract, not an Event field.
-
-## Deployment identity details
-
-One authorization path across local and remote deployment, explicit Room
-ownership, and separate Agent credentials are settled directions. Local setup
-may bootstrap its owner; remote setup requires a login identity. Remaining
-choices include identity-provider adapters, token scopes, expiry defaults, and
-invitation flow. None of those choices
-may create a separate local or remote product. The first remote-facing slice is
-the same CLI `read` and `send` loop over an authenticated Room connection.
-
 ## Retention
 
-The Event log grows forever. Compaction, snapshots, and export require a rule that preserves replay and audit semantics without introducing editable history.
+The record streams grow forever. Compaction, snapshots, and export require a
+rule that preserves replay and audit semantics without introducing editable
+history. Measure real workspace growth before designing anything.
+
+## Serving beyond one machine
+
+The shipped profile is one workspace on one machine. If a multi-host or
+remote need returns, it must reuse the same `core.Store` contract and the
+same room tree — the v1 hosted control plane, credentials, and owner tokens
+were removed on 2026-11-07 and must not return in that shape. Reopen only
+with a concrete deployment whose trust model the signature-label design can
+honestly carry.
+
+## Room rename and move
+
+Names are the addresses everyone quotes (`room#seq`). Renaming or moving a
+Room would silently break quoted references; no evidence yet says the
+operation is needed often enough to design around that.
+
+## Presentation of multiple roots
+
+A workspace may hold several independent roots. The CLI prints a forest; how
+a human or Agent should navigate many concurrent roots is a reading-order
+question, not a data-model one.
+
+## Notification carriers
+
+`watch` prints to standard output, and that is the only shipped carrier. A
+socket, a file tail, or a push channel may be justified by a real waker that
+outgrows a script; until one exists, stdout stays the whole contract.

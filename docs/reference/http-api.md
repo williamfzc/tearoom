@@ -1,140 +1,94 @@
 ---
 type: reference
 title: HTTP API
-description: Authoritative HTTP protocol for the served Room.
+description: Authoritative HTTP protocol for the minimal local face of the room tree.
 resource: internal/transport/server.go
 tags: [reference, contract, http, api]
-timestamp: 2026-09-10
+timestamp: 2026-11-07
 ---
 
 # HTTP API
 
-This is the only Room HTTP contract. It keeps Room history visible to every
-member and leaves observation boundaries to callers. The service is served on
-the loopback interface only in P0. Implementation status belongs in
-[status.md](../architecture/status.md).
+This is the only Room HTTP contract. It serves the room tree of one workspace
+over plain JSON with no authentication paths — it is the loopback face of the
+same trust domain as the `.tearoom` directory. Implementation status belongs
+in [status.md](../architecture/status.md).
 
 ## Endpoints
 
-| Method | Path | Profile | Purpose |
-|---|---|---|---|
-| `GET` | `/api/room` | both | Read Room identity |
-| `GET` | `/api/actors` | both | List admitted Actors |
-| `POST` | `/api/actors` | exposed: owner | Explicitly join an Actor |
-| `GET` | `/api/events?after=42` | both | Read Events after a caller boundary |
-| `POST` | `/api/events` | exposed: credential | Append one Event |
-| `POST` | `/api/credentials` | exposed: owner | Issue one write credential |
-| `POST` | `/api/credentials/revoke` | exposed: owner | Revoke one credential |
-| `POST` | `/api/rooms` | hosted: owner | Create a Room on a hosted service |
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/rooms` | List every Room (name, parent, creation time) |
+| `GET` | `/api/events?room=<name>&after=<seq>` | Read one Room's records after an exclusive boundary |
+| `POST` | `/api/events` | Append one Record |
 
-The **local** profile is a loopback server over one `.tearoom` Room with
-self-asserted Actors. The **exposed** profile (a server constructed with
-credentials) keeps every `GET` open — the room URL is the read capability —
-and gates every mutation: writes require a bearer credential bound to its
-Actor, and joins plus credential management require the deployment owner
-token. The **hosted** routes run in front of many rooms behind `/r/<id>`. A
-hosted service without an owner token is refused at startup.
-
-- `GET /api/events` returns a plain JSON Event array — there is no Feed and no
-  cursor. `after` is the exclusive caller-owned boundary; the server never
-  saves or advances it. The read is pure and unbounded: a caller that truncates
-  or polls for new history owns that loop and its boundary. An empty array
-  is "nothing new", not an error.
-- `POST /api/actors` is explicit join under loopback/OS trust. The body is
-  `{"id":"<actor>"}`.
-- `POST /api/events` appends one Event. The body carries only `to` and
-  `content`; any other field — in particular the removed fields of the old
-  wire format — is rejected with 400.
+- `GET /api/events` returns a plain JSON Record array — there is no envelope
+  and no cursor. `after` is the exclusive caller-owned boundary; the server
+  never saves or advances it. An empty array is "nothing new", not an error.
+  An unknown room answers the unified error envelope with 404.
+- `POST /api/events` appends one Record. The body carries `room` and
+  `content`; any other field is rejected with 400.
 - Errors use the unified envelope `{"error":{"code":"...","message":"..."}}`.
-  `409` means an idempotency-key conflict and nothing else; the CLI maps it to
-  exit code 1.
+  `409` means an idempotency-key conflict and nothing else; the CLI maps it
+  to exit code 1.
 
 ## Headers
 
 | Header | Used by | Meaning |
 |---|---|---|
-| `X-Tearoom-Actor` | events routes | the read/send Actor; required |
-| `Idempotency-Key` | append | optional retry identity for the append |
-| `Authorization` | exposed mutations | `Bearer <token>`: a write credential on appends, the owner token on joins and credential routes |
+| `X-Tearoom-Author` | append | the signature label; optional, stored verbatim |
+| `Idempotency-Key` | append | optional retry identity, scoped per (room, signature, key) |
 
-In the exposed profile the credential is authoritative on appends: an
-`X-Tearoom-Actor` that disagrees with it fails with 403. Missing, unknown,
-expired, and revoked tokens answer 401 and never masquerade as an empty read.
-
-## Credentials (exposed profile)
-
-`POST /api/credentials` carries `{"actor":"bob","ttl_seconds":2592000}` and
-answers once with
-`{"id":"cred_...","actor":"bob","expires_at":"...","token":"tr_..."}` — the
-plaintext token appears exactly once and only its sha-256 hash is stored.
-`POST /api/credentials/revoke` carries `{"id":"cred_..."}` and invalidates
-that credential immediately without touching the Room, the Actor, or history.
-Both require the owner bearer.
-
-Hosted room creation `POST /api/rooms` carries `{"actor":"planner"}` (the
-creator to admit) and answers with
-`{"id":"room_...","created":"...","server":"<base>/r/room_..."}`.
+There is no `Authorization` header and no credential route: the loopback
+server has no authentication paths.
 
 ## Append body
 
 ```json
 {
-  "to": ["bob"],
+  "room": "implementation",
   "content": "review worktree A"
 }
 ```
 
 `content` is arbitrary JSON; plain text is sent as a JSON string by the CLI.
-The server assigns the Event's ordered position and time and returns the Event
-as one JSON object. `to` is public addressing metadata; it is not private
-visibility and does not itself request activation. An ordinary append requires
-no `type`, `caused_by`, expected cursor, or idempotency key.
+The server assigns the record's ordered position and time and returns the
+Record as one JSON object.
 
 ## Minimal curl journey
 
 Start the server in one terminal from a directory that already contains a
-Room:
+workspace:
 
 ```bash
 tearoom server start --address 127.0.0.1:8787
 ```
 
-In a second terminal, join an Actor and exchange one Event. The server carries
-the Actor identity in `X-Tearoom-Actor`; the join body is explicit and the
-append body contains only `to` and `content`:
+In a second terminal, append one record and read the stream back:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8787/api/actors \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"bob"}'
-
 curl -sS -X POST http://127.0.0.1:8787/api/events \
   -H 'Content-Type: application/json' \
-  -H 'X-Tearoom-Actor: planner' \
+  -H 'X-Tearoom-Author: codex' \
   -H 'Idempotency-Key: review-1' \
-  -d '{"to":["bob"],"content":{"request":"review"}}'
+  -d '{"room":"implementation","content":{"request":"review"}}'
 
-curl -sS 'http://127.0.0.1:8787/api/events?after=0' \
-  -H 'X-Tearoom-Actor: bob'
+curl -sS 'http://127.0.0.1:8787/api/events?room=implementation&after=0'
 ```
 
-The response to the last request is a JSON Event array.
+The response to the last request is a JSON Record array.
 
 ## Idempotency
 
-An append with `Idempotency-Key` is matched per `(room, actor, key)`. An equal
-retry (same compacted content and normalized `to`) returns the original Event;
-the same key with different content returns `409`. No key: every append
-creates a distinct Event. The key is never stored as an Event field.
+An append with `Idempotency-Key` is matched per (room, signature, key). An
+equal retry (same compacted content) returns the original Record; the same
+key with different content returns `409`. No key: every append creates a
+distinct Record. The key is never stored as a Record field.
 
-## Delivery and deployment boundary
+## Deployment boundary
 
-Starting an absent Agent is outside this API. Once an external operator or
-Agent product starts and configures it, the Agent reads and appends through
-these same Room endpoints. Process state must not become read state or alter
-Event visibility. There is no share, snapshot, or continuation endpoint.
-
-Remote identity and authorization are deferred. They extend this same service:
-local bootstrap and remote login resolve through one authorization path before
-these Room operations. Actor names are not secrets. No separate remote Room API,
-legacy request body, or endpoint alias is part of the contract.
+The server binds the loopback interface only and serves one workspace. There
+is no hosted multi-room service, no owner token, and no TLS profile: exposing
+this server beyond one trusted machine is a misdeployment. Starting an absent
+Agent is outside this API; an external waker reads notifications and starts
+the next worker, which then uses these same endpoints.

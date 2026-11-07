@@ -1,181 +1,140 @@
 ---
 type: reference
 title: CLI reference
-description: Authoritative shipped and target command contract for the tearoom binary.
+description: Authoritative command contract for the tearoom binary over the room tree.
 resource: internal/cli/cli.go
 tags: [reference, cli, contract]
-timestamp: 2026-09-10
+timestamp: 2026-11-07
 ---
 
 # CLI reference
 
 The CLI is Tearoom's top-level product interface. This page is its only command
-contract. Every surface is labelled **shipped** or **reserved** so future
-behavior can be designed without being mistaken for current behavior.
-Implementation gaps belong in [status.md](../architecture/status.md), and
-complete user journeys belong in [evaluations.md](../evaluations.md).
+contract. Implementation gaps belong in [status.md](../architecture/status.md),
+and complete user journeys belong in [evaluations.md](../evaluations.md).
 
-## Shipped command contract
+## Command contract
 
 ```text
-tearoom room init [--as <actor>] [--server <service-url>]
-tearoom room join <actor>
-tearoom room credential issue --actor <actor> --expires <duration>
-tearoom room credential revoke <credential-id>
-
-tearoom send <text> [--as <actor>] [--idempotency-key <key>]
-tearoom send --json <json> [--as <actor>] [--idempotency-key <key>]
-
-tearoom read [--as <actor>] [--after e<seq>]
-
+tearoom room init --name <name> [--parent <room>]
+tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>] [--idempotency-key <key>]
+tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
+tearoom tree
+tearoom watch [--room <room>] [--json]
 tearoom server start [--address 127.0.0.1:8787]
 tearoom skill
+tearoom --version
 ```
 
 ### Room lifecycle
 
-- `room init` atomically creates a Room and admits its creator. Local
-  (default) creation takes the Room identity from the directory that owns
-  `.tearoom`; the Room is one SQLite database, and there is no `--name` or
-  backend flag.
-- `room init --server <service-url>` creates the Room on a hosted service
-  instead. It carries the owner token (`TEAROOM_TOKEN`) and answers with the
-  room URL — `{"id":...,"created":...,"server":".../r/<room-id>"}` — that
-  `TEAROOM_SERVER` points at from then on. Room identifiers are minted by the
-  service.
-- `room join <actor>` admits the named Actor. The Actor is the positional
-  argument: this command does not use `--as` or `TEAROOM_ACTOR`. Repeating the
-  command for an admitted Actor succeeds and returns the existing Actor. On a
-  hosted service, joins are owner operations.
-- `room credential issue --actor <actor> --expires <duration>` mints one
-  write credential for an already-admitted Actor and prints the plaintext
-  token exactly once: `{"id":...,"actor":...,"expires_at":...,"token":"tr_..."}`.
-- `room credential revoke <credential-id>` invalidates that credential
-  immediately. Rotation is issue-new then revoke-old; it needs no separate
-  command.
-
-Issue and revoke are owner operations: the bearer in `TEAROOM_TOKEN` must be
-the deployment's owner token, and `TEAROOM_SERVER` must name the room.
-
-Successful lifecycle commands print one JSON object:
+- `room init --name <name>` creates a Room. Without `--parent` the Room is a
+  root; with `--parent <room>` it records that existing Room as its parent.
+  Room names are unique within the workspace.
+- The first `room init` in a directory creates the workspace (`.tearoom`);
+  later inits add Rooms to the same tree. There is no join, no admission, and
+  no credential step.
+- Success prints one JSON object:
 
 ```json
-{"id":"room-id","created":"2026-09-09T10:00:00Z"}
-{"id":"alice","joined":"2026-09-09T10:00:00Z"}
+{"name":"implementation","parent":"main-line","created":"2026-11-07T10:00:00Z"}
 ```
 
-The identifiers and timestamps above are examples, not fixed values.
+Identifiers and timestamps above are examples, not fixed values.
 
 ### Append and read
 
-- `send` appends one Event and prints it as one JSON object. Plain text becomes
-  a JSON string; `--json` accepts one valid JSON value.
-- `--idempotency-key` is optional. Repeating the same Actor, key, and content
-  returns the original Event. Reusing that key with different content fails.
-- `read` prints JSONL: one Event per line, with no envelope and no saved cursor.
-  An empty result prints nothing and succeeds. `--after e42` starts after that
-  exclusive boundary. The read is unbounded and pure: a caller that truncates
-  or polls for later Events owns that loop and its boundary.
-
-An Event has this output shape:
+- `send` appends one Record to the target Room and prints it as one JSON
+  object. Plain text becomes a JSON string; `--json` accepts one valid JSON
+  value. `--as` sets the signature — an unverified label; omitting it stores
+  an empty signature.
+- `--idempotency-key` is optional and scoped per (room, signature, key).
+  Repeating the same key with the same content returns the original Record;
+  reusing it with different content fails.
+- `read` prints JSONL, one Record per line, no envelope, no saved cursor. An
+  empty result prints nothing and exits 0.
+  - `--after e42` starts after that exclusive boundary.
+  - `--tail 5` prints only the last 5 records of each selected Room.
+  - `--subtree` selects the Room and all its descendants (depth-first by
+    name); each Record line carries its `room` field.
+- A Record has this output shape:
 
 ```json
-{"seq":43,"actor":"alice","at":"2026-09-09T10:01:00Z","content":{"plan":"review"}}
+{"room":"implementation","seq":43,"author":"codex","at":"2026-11-07T10:01:00Z","content":{"plan":"review"}}
 ```
 
-`content` is always valid JSON.
+### Room selection
 
-### Actor selection and credentials
+`send`, `read`, and `watch` target Rooms by name:
 
-`room init`, `send`, and `read` select the acting identity from `--as`, falling
-back to `TEAROOM_ACTOR`. They fail if neither is set. `room join` instead takes
-the Actor being admitted as its positional argument.
+- With `--room <name>` the named Room is used; an unknown name is an error.
+- Without `--room`, a workspace containing exactly one Room uses it; a
+  workspace with several Rooms refuses and names the rule. `watch` without
+  `--room` watches every Room in the workspace instead of refusing.
 
-`TEAROOM_TOKEN` carries the bearer for everything that authenticates: an
-Agent's write credential on `send`, or the owner token on joins and credential
-operations. In the local loopback profile no token exists — Actors are
-self-asserted inside one OS user's trust domain. In the exposed profile the
-credential is authoritative on writes: a present `X-Tearoom-Actor` that
-disagrees with it is a mismatch and fails.
+### Skeleton
 
-### Server profiles
+`tree` prints the workspace skeleton: every root with its descendants,
+depth-first by name. It derives the shape at read time and caches nothing.
 
-`server start` serves HTTP in one of two profiles of the same contract:
+```text
+main-line
+├── implementation
+│   └── login-page
+└── review
+```
 
-- **Local** (default): the nearest Room on the loopback interface only. No
-  credentials exist here, and everything on loopback belongs to one OS user —
-  the same trust domain as the `.tearoom` directory.
-- **Hosted**: `TEAROOM_DSN` names a deployment database (a `postgres://` URL
-  or a SQLite file) and `TEAROOM_OWNER_TOKEN` bootstraps the owner. The
-  service migrates the database on start, hosts many Rooms behind
-  `/r/<room-id>` URLs, may bind any interface, enforces credentials on
-  writes, and keeps reads open. Room creation, joins, and credential
-  operations are owner-only. TLS terminates in front of the service; plaintext
-  http binds are a misdeployment.
+### Notifications
 
-When `TEAROOM_SERVER` names a server or room URL, `room join`, `room
-credential`, `send`, and `read` use the [HTTP contract](http-api.md) instead
-of opening the nearest local Room. Plaintext http targets loopback only;
-remote URLs must be https.
+`watch` follows appends and prints one line per new Record. `--json` prints
+the notification envelope, one JSON object per line:
+
+```json
+{"room":"implementation","seq":7,"author":"codex","at":"2026-11-07T10:02:00Z"}
+```
+
+The envelope carries no content and requests nothing; an external waker
+decides what to start. `watch` runs until interrupted.
+
+### Server
+
+`server start` serves the nearest workspace over HTTP on the loopback
+interface only — it has no credentials, and everything on loopback belongs to
+one OS user, the same trust domain as the `.tearoom` directory. The HTTP
+contract is [http-api.md](http-api.md). When `TEAROOM_SERVER` names a server
+URL, `send`, `read`, and `watch` use it instead of the nearest local
+workspace; room selection still follows the rules above.
 
 ```bash
 # Local profile
 tearoom server start
 export TEAROOM_SERVER=http://127.0.0.1:8787
-tearoom send "ready" --as alice
-tearoom read --as alice
-
-# Hosted profile
-export TEAROOM_SERVER=https://tearoom.example/r/room-id
-export TEAROOM_ACTOR=bob
-export TEAROOM_TOKEN=tr_example
-tearoom read
-tearoom send "review complete"
+tearoom send --text "ready" --as codex
+tearoom read --tail 5
 ```
 
 ### Agent guide
 
-`tearoom skill` prints the orientation guide carried by the binary: the Room
-journey (setup, `send`, `read`), the environment conventions, and the rules
-that hold at every command — pure repeatable reads, caller-owned boundaries,
-membership visibility, and idempotent retries. It takes no flags, reads no
-Room, and works before any setup, so an Agent that discovers only the binary
-can onboard itself without a distributed skill file.
+`tearoom skill` prints the orientation guide carried by the binary: the room
+journey, the environment conventions, and the rules that hold at every
+command. It takes no flags and reads no Room.
 
-The guide teaches the journey, not the syntax: this page and per-command
-`--help` remain the only authority for flags and output shapes. When the
-guide and a command disagree, the command wins and the guide is a bug.
+## Signature selection
 
-## Reserved (not shipped)
-
-`tearoom auth login` is the reserved issuance ceremony for hosted owners
-(adjudicated 2026-09-10): until a deployment needs identities the operator
-channel cannot name, the owner token arrives through deployment configuration.
-Invoking it against the current binary fails.
-
-There is no share, export, snapshot, link, or continuation command. An
-operator gives each receiving Agent its Room URL, Actor identity, and
-credential through an external secure channel; the Agent pulls JSONL and
-writes back through the ordinary commands. A later person or Agent repeats
-`read` from its own boundary, and everyone continues in the same Room unless
-an operator explicitly creates another Room.
+`send` and `read` take `--as` for a one-off signature, falling back to
+`TEAROOM_ACTOR`. A missing signature is not an error: the record simply
+carries an empty author. Nothing validates the value.
 
 ## Failure contract
 
 All diagnostics go to standard error; successful machine-readable output goes
-to standard output. [exit-codes.md](exit-codes.md) is the only exit-code source.
-In particular, an empty `read` succeeds, and a missing local Room or unreachable
-configured server is an availability failure.
-
-Credential failures are ordinary request failures: a missing, unknown,
-expired, or revoked token, and an Actor mismatch, fail with exit 1 and never
-masquerade as an empty successful read. Room creation, join, and credential
-errors use the same request-failure class.
+to standard output. [exit-codes.md](exit-codes.md) is the only exit-code
+source. In particular, an empty `read` succeeds, and a missing workspace or
+unreachable configured server is an availability failure (exit 4), while an
+unknown room name or an idempotency conflict is a request failure (exit 1).
 
 ## Delivery boundary
 
-The CLI does not wake offline Actors, and no such service ships in this
-repository (adjudicated 2026-09-09). An external operator or Agent product
-starts and configures the receiving process, which invokes `read` and `send`.
-The Room connection, not Event content, is passed to that process. Neither
-`read` nor `send` acquires a hidden read cursor or scheduler responsibility.
+The CLI does not wake anyone. `watch` emits notifications; an external waker
+reads them and starts the next worker. No scheduler, launcher, or attention
+management ships in this repository.

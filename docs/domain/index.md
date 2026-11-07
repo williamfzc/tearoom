@@ -1,22 +1,22 @@
 ---
 type: index
 title: Domain
-description: Tearoom's three entities and the rules that govern them.
+description: Tearoom's three concepts and the rules that govern them.
 tags: [index, domain]
-timestamp: 2026-09-09
+timestamp: 2026-11-07
 ---
 
 # Domain
 
-The minimum vocabulary is Room, Actor, and Event. Room membership determines
-visibility; `to` addresses an Event without making it private. Application
-protocols may add envelopes and projections, but they do not automatically
-become kernel entities. [Product definition](../product.md) owns the product
-facts; [architecture/status.md](../architecture/status.md) owns implementation
-gaps; [evaluations.md](../evaluations.md) owns proof.
+The minimum vocabulary is Room, Record, and Notification. Rooms form a
+single-parent tree; each Room owns one ordered record stream; a Notification
+is the envelope emitted when a record lands. Signatures are unverified
+labels. Protocols and conventions live in the records people write, not in
+kernel entities. [Product definition](../product.md) owns the product facts;
+[architecture/status.md](../architecture/status.md) owns implementation gaps;
+[evaluations.md](../evaluations.md) owns proof.
 
 | Document | Concern |
 |---|---|
-| [concepts.md](concepts.md) | The three entities, the write/read contract, boundary behaviour, trust model, and the failures the Room prevents |
-| [harness-workflow.md](harness-workflow.md) | The single cross-product continuation story |
+| [concepts.md](concepts.md) | The three concepts, the write/read contract, boundary behaviour, and trust model |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |

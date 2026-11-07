@@ -16,11 +16,11 @@ make build          # bin/tearoom
 make cli            # the shipped binary, built fresh
 make test           # unit, HTTP, and independent-process concurrency tests
 make test-race      # race detector
-make target-room    # E1: the P0 Room contract over file, SQLite, and HTTP
-make target-replay  # E2: P0 replay across real processes, no read progress
+make target-room    # E1: the room-tree contract over SQLite and HTTP
+make target-replay  # E2: replay across real processes, no read progress
 make check-evals    # the evaluation set stays bidirectionally consistent
 make docs           # the docs bundle stays consistent (frontmatter, links)
-make check          # fmt vet test test-race target-room target-replay check-evals docs
+make check          # fmt vet test test-race target-room target-replay check-evals line-budget docs
 ```
 
 The [evaluation set](../evaluations.md) is the authority for what each suite

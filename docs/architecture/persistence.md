@@ -1,110 +1,89 @@
 ---
 type: architecture
 title: Persistence direction
-description: How one service stores the durable Room and Event history across local and remote deployment profiles.
-tags: [architecture, persistence, sqlite, postgresql, orm]
-timestamp: 2026-09-10
+description: How one workspace stores the room tree, per-room record streams, and the one-time format migration.
+tags: [architecture, persistence, sqlite, postgresql, migration]
+timestamp: 2026-11-07
 ---
 
 # Persistence direction
 
-The target contract remains `core.Store`: a durable Room with membership and
-one ordered immutable Event history. Database records and ORM APIs stay behind
-that boundary. SQLite is shipped; PostgreSQL validation is gated. They are
-database adapters for one service, not separate product implementations.
-Implementation status belongs in [status.md](status.md); this document defines
-only the persistence target and clean-break boundary.
+The contract is `core.Store`: a room tree where each Room owns one ordered
+immutable record stream. Database records and ORM APIs stay behind that
+boundary. SQLite is shipped; the same schema and transactions target
+PostgreSQL for the gated battery and future multi-host serving. Implementation
+status belongs in [status.md](status.md); this document defines only the
+persistence shape and the migration boundary.
 
 ## Deployment matrix
 
-| Deployment profile | Storage choice | Purpose |
+| Deployment profile | Storage | Purpose |
 |---|---|---|
-| Local | SQLite (the only local backend) | One-machine setup and durable local use |
-| Remote | PostgreSQL | Concurrent instances, backups, operations, and tenant growth |
+| Local | SQLite, one `.tearoom` workspace | One-machine setup; the only shipped profile |
+| Gated / future | PostgreSQL, the same schema | Concurrent instances, backups, and future serving |
 
-Use one relational schema owner and migration sequence where SQLite and
-PostgreSQL semantics genuinely agree. The same service and acceptance journeys
-must run against both. Backend-specific behavior must not leak into Room,
-Actor, Event, identity decisions, the CLI, or the HTTP contract.
+One relational schema owner and migration sequence serves both. Backend
+selection is never a user-facing flag.
 
 ## Ownership
 
-- `internal/core` owns Room, Actor, Event, Store, and invariant language.
-- `internal/relational` owns ORM models, migrations, queries, transactions,
-  and database-specific adaptation.
-- CLI and HTTP depend on `core.Store`, never on ORM or concrete database types.
-- Delivery state, if an external operator needs it, is not part of the
-  Room/Event kernel tables.
+- `internal/core` owns Room, Record, Notification, `Store`, and invariant
+  language.
+- `internal/relational` owns ORM models, migrations, queries, and
+  transactions.
+- `internal/store` owns the `.tearoom` layout and the format marker.
+- CLI and HTTP depend on `core.Store`, never on ORM or concrete database
+  types.
 
-The ORM is replaceable infrastructure. Its model types must not be exported as
-product entities. The shipped SQLite backend uses GORM with the pure-Go
-`glebarez/sqlite` dialector, keeping release binaries static (`CGO_ENABLED=0`).
+The ORM is replaceable infrastructure; its model types are storage rows, not
+domain types. The shipped backend uses GORM with the pure-Go
+`glebarez/sqlite` dialector, keeping release binaries static
+(`CGO_ENABLED=0`).
 
-## Target relational shape
+## Relational shape
 
-The minimum durable coordination data is:
+One workspace database holds the whole tree:
 
-- Rooms with identity, lifecycle metadata, membership, and an ordered head;
-- Actors admitted to a Room with stable identity;
-- Events with sequence, author, acceptance time, optional `to`, and content as
-  arbitrary valid JSON.
+- `rooms` — name (primary key), parent (nullable: null is a root), creation
+  time, and the dense sequence head;
+- `events` — room, sequence, author (a verbatim label), acceptance time, and
+  content as compact JSON text, keyed by (room, seq);
+- `append_idempotency` — the per-(room, signature, key) ledger recording the
+  fingerprint of the original request and the sequence it created; it is
+  never exposed as a record field;
+- `meta` — the format marker.
 
-Content is stored and transported as compact JSON; plain text is represented as
-a JSON string. `type`, `caused_by`, or other envelope fields may be protocol
-conventions later, but they are not required by the minimum model. Target
-service records for owner identities and Agent credentials remain outside
-coordination data; when implemented, they authorize access but do not change
-Event semantics. Local bootstrap and remote login will feed the same
-authorization path.
+Content is stored and transported as compact JSON; plain text is a JSON
+string. The child list of a Room is derived by querying `rooms` at read time
+and is never cached or denormalized. There are no actor, membership, or
+credential tables: identity checks do not exist in the kernel.
 
-Room membership is the visibility boundary. Every admitted member may read the
-complete Room history. `to` is public addressing metadata, not an Event-level
-secrecy filter. A private collaboration requires a separate Room and its own
-membership.
+## Append and read contract
 
-## Target append and read contract
+An append is serialized on the target Room's row and assigns the next dense
+sequence of that Room. It validates nothing about identity — the signature is
+stored as given — and inserts the immutable record and the new head
+all-or-none. Reading is a repeatable query from a caller-supplied exclusive
+boundary; it never advances stored state.
 
-An ordinary append is serialized per Room and assigns the next dense sequence.
-It validates the author and any addressed members, inserts the immutable Event,
-and commits the Room head with the Event. It does not derive a mandatory write
-precondition from a hidden or saved read cursor.
-
-Reading is a repeatable query with a caller-supplied boundary such as `after
-seq`; it does not silently advance Actor state. If reliable delivery progress
-becomes necessary, an explicitly named consumer identity owns
-that state outside the Actor's identity.
-
-Idempotent append is an optional append capability, not part of the minimum
-Event shape. An identical retry returns the original Event and reusing a key
-for different content is a conflict. The key is request metadata, not an Event
-field, and is independent of read progress.
-
-## Clean-break storage cutover
-
-The file and relational Stores change together after the new `core.Store`
-contract exists. The new release stores only the minimum Event shape and does
-not read or write the pre-adoption representation. There is no importer, dual
-decoder, shadow table, or old/new double write. Data worth retaining is exported
-before cutover; rollback restores the previous binary with its matching data
-snapshot.
-
-## Delivery persistence
-
-No activation ledger will be implemented in this repository (adjudicated
-2026-09-09); an external deliverer owns its own persistence. The boundary it
-must respect stands: delivery state is never Room history, Actor membership,
-read progress, or a claim that the Agent completed the collaboration. The
-Room/Event append path remains usable with no activation tables or runtime
-bindings; the refusal and its reopening condition are recorded in
-[../product.md](../product.md).
+Idempotent append is matched per (room, signature, key): an identical retry
+(compact content, same signature) returns the original record; the same key
+with different content conflicts. A signature may be empty; the fingerprint
+still distinguishes keys per signature.
 
 ## Migration discipline
 
-Schema changes are versioned migrations committed with the code that needs
-them. Migrations run before serving traffic and are tested against SQLite and
-PostgreSQL before a remote-capable release. The pre-cut file layout is retired,
-not imported: an old `.tearoom` directory is an incompatible store, and
-rollback uses the previous release with its data snapshot.
+Schema changes are versioned by the `meta` format marker. The current format
+is 3. Format 2 workspaces (the v1 single-room model) upgrade once, on open:
+
+- the single room row becomes a root Room named by its old identifier;
+- every record keeps its author verbatim; the recipient column is dropped;
+- the actors and credentials tables are dropped.
+
+There is no import, no dual decoder, and no old/new double path: after the
+one-time upgrade the old layout is never read again, and a database without
+the marker is refused, never read or upgraded. Rollback restores the previous
+release with its data snapshot.
 
 ## Related
 

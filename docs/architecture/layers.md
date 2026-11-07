@@ -1,125 +1,99 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: The post-cutover package boundaries for one service across local and remote deployment profiles.
+description: The package boundaries of the room-tree kernel — core, persistence, transport, and CLI.
 resource: internal/
-tags: [architecture, boundaries, layering, migration, clean-break]
-timestamp: 2026-09-10
+tags: [architecture, boundaries, layering, clean-break]
+timestamp: 2026-11-07
 ---
 
 # Layers and dependency direction
 
-The clean-break target has one foundation contract and no compatibility layer:
+The kernel has one foundation contract and no compatibility layer:
 
-| Layer | Package or owner | Owns after cutover |
+| Layer | Package or owner | Owns |
 |---|---|---|
-| Foundation | `internal/core` | Room, Actor, minimum Event, Store, and typed domain errors |
-| Persistence | `internal/store`, `internal/relational` | Durable membership and ordered immutable Event history |
-| Application | `internal/control` | Credential policy: issue, verify, revoke, and expiry for admitted actors |
-| Outside | `internal/transport` | The one current HTTP representation of the Store contract |
-| Outside | `internal/cli`, `cmd/tearoom` | `room`, `server`, `send`, `read`, output, and process entry |
+| Foundation | `internal/core` | Room, Record, Notification, the `Store` seam, and typed domain errors |
+| Persistence | `internal/store`, `internal/relational` | The `.tearoom` workspace layout and the durable room tree with per-room record streams |
+| Outside | `internal/transport` | The minimal local HTTP face of the `Store` contract |
+| Outside | `internal/cli`, `cmd/tearoom` | `room`, `send`, `read`, `tree`, `watch`, `server`, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it and delegates credential policy
-to `internal/control`; the CLI translates commands. Local bootstrap and remote
-issuance are outside adapters into that one policy. The kernel never imports a launcher, scheduler, Agent runtime, or
-deployment-specific control plane.
+implements `core.Store`; transport adapts it; the CLI translates commands. The
+kernel never imports a scheduler, launcher, or Agent runtime, and there is no
+control-plane package: credentials, admission, and the hosted multi-room
+service were removed with the v1 model on 2026-11-07 (see
+[../log.md](../log.md)).
 
-## Target foundation boundary
+## Foundation boundary
 
-`internal/core` must define only the shared collaboration truth:
+`internal/core` defines only the shared collaboration truth:
 
-- Room identity and lifecycle;
-- stable Actor identity and explicit membership/admission;
-- an Event containing `seq`, `actor`, `at`, optional `to`, and `content`;
-- ordered append and explicit-boundary read operations;
-- typed errors that describe the new contract.
+- Room identity: a name, an optional parent, and a creation time;
+- Record: `seq`, `author`, `at`, `content` — the author is an unverified
+  label, and there is no recipient field;
+- Notification: room, sequence, signature, time — derived, never stored;
+- the `Store` seam: create a room (optionally under a parent), list rooms,
+  read a room's stream from a boundary, append one record;
+- typed errors that describe that contract.
 
-Membership determines visibility. Every admitted member reads the complete Room
-history. `to` is public addressing or attention metadata, not secrecy and not a
-process-start request. Event address `e<seq>` is presentation derived from the
-Room sequence; it is not a second Event identity.
-
-The target foundation must not contain workflow, task, game, thread, lease,
-subscription, unread, or runtime entities. Idempotency may remain an explicit
-append request concern if the new Store contract adopts it; it must not become
-another Event field.
+The Store never checks identity: reading and writing require no admission,
+and no Store operation creates membership as a side effect. What one Room
+sees is bounded by the tree, not by permissions.
 
 ## Persistence boundary
 
-`internal/store` owns the `.tearoom` layout. The relational package owns ORM
-models, migrations, transactions, and database adaptation.
-Both implement the same new `core.Store` contract and store only the new Event
-shape. Neither package may:
+`internal/store` owns the `.tearoom` layout: one workspace directory holds
+the whole room tree in one SQLite database behind a format marker.
+`internal/relational` owns ORM models, migrations, transactions, and database
+adaptation (SQLite locally; the same schema targets PostgreSQL for tests and
+future serving). Neither package may:
 
-- filter Events by `to`;
-- create membership as a side effect of reading or sending;
-- compare an append with a hidden Actor cursor;
-- persist or interpret the old Event representation;
-- host delivery claims or process state.
+- filter records by author or recipients (there are no recipients);
+- validate or transform a signature beyond storing it verbatim;
+- cache a parent's child list or any derived tree shape;
+- host delivery claims, wake state, or process state.
 
-The pre-cutover implementations violated these target rules: they contained
-`Event.VisibleTo`, auto-registration, and expected-cursor append. Stages 1–2 of
-the cutover in [status.md](status.md) removed those behaviors rather than
-wrapping them.
-
-## Target application boundary
-
-The application layer will be shared by local and remote deployment. It resolves an
-identity, applies admission and capabilities, and then calls the Store; it does
-not rewrite Event semantics. Local setup may bootstrap an owner while remote
-setup uses login and scoped credentials, but both enter the same policy path.
-Membership remains explicit and is the visibility boundary. The current code
-has only the loopback trust shortcut; the shared policy and remote adapters are
-open work recorded in [status.md](status.md).
-
-Delivery to an absent Agent is not an application component of this
-repository (adjudicated 2026-09-09). An external operator or Agent product
-starts and configures the receiving process with its Room connection. The
-process then uses ordinary `read` and `send`. External process state must not
-attach to Actor read progress or become proof that an Event was understood or
-completed. Without a running receiver, `send` ends at durable append.
+One append transaction serializes on the target Room's row, so concurrent
+writers receive a dense per-room sequence while different Rooms never wait on
+each other. The one-time format-2 → format-3 migration is specified in
+[persistence.md](persistence.md).
 
 ## Outside boundaries
 
-`internal/transport` exposes only the new HTTP contract. It may use the target
-resource paths, but it must not preserve actor/cursor query semantics, the old
-append or response shape, stale-write wire errors, or deprecated wait behavior.
+`internal/transport` exposes the minimal local HTTP face: room list, record
+read, record append. It holds no authentication paths — the exposed profile,
+owner tokens, and credential routes died with the hosted service.
 
-`internal/cli` exposes only the target common commands:
+`internal/cli` exposes only the command surface:
 
 ```text
-tearoom room init|join|members
+tearoom room init --name <name> [--parent <room>]
+tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>]
+tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
+tearoom tree
+tearoom watch [--room <room>] [--json]
 tearoom server start
-tearoom send <content> [--to <member>]...
-tearoom read [--after e<seq>] [--limit <count>] [--wait <duration>]
+tearoom skill
 ```
 
 It owns formatting and invocation-local options, not shared invariants. The
-old `event` command group, session cursor files, `TEAROOM_HOME` cursor state,
-automatic registration, and old flags are deleted. No alias or parser branch
-may keep them alive.
+v1 commands `room join`, `room credential`, and the hosted `server` profile
+are deleted; no alias keeps them alive.
 
 ## Clean-break dependency checks
 
-After the cutover, the following must hold:
+1. `core` has no import path to persistence, transport, or CLI.
+2. Every Store implementation satisfies one interface; there is no parallel
+   old/new reader or writer.
+3. No Store operation validates identity or admits anyone.
+4. Transport has one route/body/error vocabulary with no authorization paths.
+5. CLI, scripts, tests, and docs use only the command and record vocabulary
+   above.
 
-1. `core` has no import path to persistence, transport, CLI, service policy, or
-   deployment adapters.
-2. Both Stores satisfy one new interface and have no old/new reader or writer.
-3. No Store operation silently admits an Actor: membership is explicit, and
-   one authorization path handles both local bootstrap identity and remote
-   credentials before Store access.
-4. Transport has one route/body/error vocabulary.
-5. CLI, skills, tests, demos, and docs use only the new command and Event
-   vocabulary.
-6. Switching SQLite for PostgreSQL, or local identity for remote login, does
-   not change Room visibility or append/read semantics.
-
-The migration is complete only when `make check`, `make docs`, and repository
-searches verify these boundaries. If a stage fails, rollback is a Git/deploy
-rollback to a matched old revision and data snapshot; adding a deprecated
-dependency or compatibility layer is not an allowed recovery.
+`make check`, `make docs`, and repository searches verify these boundaries.
+Rollback is a Git rollback to a matched revision and data snapshot; adding a
+deprecated dependency or compatibility layer is not an allowed recovery.
 
 ## Related
 
