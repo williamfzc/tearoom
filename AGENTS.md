@@ -6,6 +6,17 @@ Everything here is in English, because the work is in English.
 
 ---
 
+## Where the work lives
+
+This repository runs on its own Tearoom tree, committed to git.
+`make cli && bin/tearoom tree` shows the rooms; `bin/tearoom read --room main-line`
+carries the goal and the current state, so you never need a verbal handoff.
+Record meaningful work in the room you worked in — what changed, why, and the
+evidence — and make handoffs explicit about who is next. `.tearoom/` is project
+memory, not scratch state: append, never rewrite.
+
+---
+
 ## Before you act
 
 Add nothing that is not needed now.

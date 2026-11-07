@@ -2,15 +2,8 @@
 # would only create merge conflicts.
 bin/
 
-# Local Room state belongs to one checkout and must not enter version control.
-.tearoom/
-
-# The management UI's build outputs come from `npm run build`.
-web/dist/
-web/node_modules/
-
-# Wrangler's local state (login session, Pages metadata).
-.wrangler/
+# The workspace lock is runtime state: the flock target every process takes.
+# The rest of .tearoom is project memory and travels with git.
+.tearoom/lock
 
 .DS_Store
-.neon
