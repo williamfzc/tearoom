@@ -18,19 +18,21 @@ executable proof in [../evaluations.md](../evaluations.md).
 
 - `internal/core` defines `Room`, `Record`, `Notification`, and the `Store`
   seam (create room, list rooms, read stream, append record); the conformance
-  battery in `contract.go` runs against every Store implementation — SQLite
-  always, PostgreSQL when `TEAROOM_TEST_PG` is set, and the HTTP client from
-  the transport tests.
-- `internal/relational` implements the tree on SQLite (format-3 schema) with
-  per-room dense sequences, per-room idempotency ledgers, and the one-time
-  format-2 → format-3 migration (old rooms become roots; signatures kept).
-- `internal/store` owns the `.tearoom` workspace layout and the format gate.
+  battery in `contract.go` runs against every Store implementation — the
+  JSONL store always and the HTTP client from the transport tests.
+- `internal/store` implements the tree as JSONL files under `.tearoom`
+  (format 4): one directory and one append-only stream per Room, identity in
+  `room.json`, per-(author, key) retry ledgers, and a cross-process flock
+  around every append. The one-time format-2/3 → 4 migrations read the
+  retired SQLite layouts and rewrite the workspace as files.
 - `internal/transport` serves the minimal local HTTP face (room list, read,
   append) and the client that implements the same `Store` over it.
 - `internal/cli` exposes `room init --name/--parent`, `send`, `read`
   (`--after`, `--tail`, `--subtree`), `tree`, `watch` (`--json`), `server
   start` (loopback), and `skill`. Membership, credentials, and the hosted
   profile are deleted.
+- The repository carries its own workspace in `.tearoom/` and works inside
+  it: the project's goal and acceptance live in the root Room.
 
 ## Open work
 
@@ -44,14 +46,17 @@ executable proof in [../evaluations.md](../evaluations.md).
 
 Membership, admission, credentials, the hosted multi-room service, the remote
 readiness evaluation E7, and the Render/Neon deployment files were deleted.
-The rationale is in [../log.md](../log.md); the v1 code is frozen at tag
+The SQL backends (SQLite Store, the PostgreSQL adapter, and their gated
+battery) were removed the same day by the JSONL cutover; their validation
+runs are recorded in [../evaluations.md](../evaluations.md). The rationale
+for both moves is in [../log.md](../log.md); the v1 code is frozen at tag
 `v1-final` on branch `archive/v1`.
 
 ## Clean-break policy
 
 Releases carry no compatibility layer: no command aliases, no dual schemas,
-no old HTTP shapes. Storage upgrades are the one-time format-2 → format-3
-migration only. Rollback is an operator action on the Git revision and a data
+no old HTTP shapes. Storage upgrades are the one-time format-2/3 → format-4
+migrations only. Rollback is an operator action on the Git revision and a data
 snapshot — never an in-product compatibility mode.
 
 `make check` (fmt, vet, unit, race, E1/E2 target evaluations, evaluation

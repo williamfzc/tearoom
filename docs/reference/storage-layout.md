@@ -1,9 +1,9 @@
 ---
 type: reference
 title: Storage layout
-description: Authoritative on-disk workspace representation and the one-time format migration.
+description: Authoritative on-disk workspace representation — JSONL files that travel with git — and the one-time format migrations.
 resource: internal/store/open.go
-tags: [reference, storage, sqlite, migration]
+tags: [reference, storage, jsonl, git, migration]
 timestamp: 2026-11-07
 ---
 
@@ -11,68 +11,87 @@ timestamp: 2026-11-07
 
 ## Workspace state
 
-Every workspace is a `.tearoom` directory containing a format marker and one
-SQLite database holding the whole room tree:
+Every workspace is a `.tearoom` directory of plain files: one directory per
+Room, one JSONL stream per Room, and a format marker. Nothing else exists —
+no database, no binary state. The layout is chosen so the whole tree can be
+committed to git: appends are new lines, new Rooms are new directories, and
+history diffs cleanly.
 
 ```text
 .tearoom/
-  store.json      format marker: {"format":3,"backend":"sqlite"}
-  room.db         Rooms (with parents), Records, idempotency records
+  store.json                        format marker: {"format":4,"backend":"jsonl"}
+  lock                              flock target for cross-process serialization
+  rooms/
+    main-line/
+      room.json                     {"name":"main-line","created":"..."}
+      records.jsonl                 one Record per line, seq 1..n
+      idempotency.jsonl             one ledger line per (author, key) use
+    implementation/
+      room.json                     {"name":"implementation","parent":"main-line","created":"..."}
+      records.jsonl
 ```
 
-The marker is the format gate: `format: 3` with backend `sqlite` is the
-current layout, and `format: 2` is the v1 single-room layout, upgraded once
-on open (below). Any other layout — markerless, version 1, or a retired
-backend — is refused with an incompatible-store error; there is no import and
-no automatic upgrade beyond that one step. The database runs in WAL mode with
-a busy timeout, so concurrent processes append safely without any external
-lock file.
+The marker is the format gate: `format: 4` with backend `jsonl` is the
+current layout; formats 2 and 3 (the SQLite eras) upgrade once on open; any
+other layout — markerless (the v0 file layout), version 1, or a retired
+backend — is refused with an incompatible-store error.
 
-## Tables
+## The files
 
-- `rooms` — `name` (primary key), `parent` (nullable; null is a root),
-  `created_at`, and the dense sequence `head`.
-- `events` — `room_id`, `seq` (primary key pair), `author` (verbatim label),
-  `at`, `content` (compact JSON text).
-- `append_idempotency` — one row per (room, signature, key): the fingerprint
-  of the original request and the sequence it created. The key is never
-  exposed as a Record field.
-- `meta` — the format marker row.
+- `room.json` carries the Room's identity: its name, its parent (omitted for
+  a root — a parentless room is a root), and its creation time. Each Room
+  records only its own parent; the child list of any Room is derived by
+  reading the `rooms/` listing at query time and is never cached.
+- `records.jsonl` is the Room's stream: one JSON object per line, in sequence
+  order — `{"room":...,"seq":...,"author":...,"at":...,"content":...}` — the
+  same shape the CLI prints. Records are appended, never rewritten.
+- `idempotency.jsonl` is the Room's retry ledger: one line per
+  (author, key) use — `{"author":...,"key":...,"fingerprint":...,"seq":...}`.
+  An equal retry returns the original record; the same key with different
+  content conflicts. The key is never exposed as a record field.
 
-The record log is the durable collaboration truth. It contains no read
-cursor, no unread acknowledgement, no delivery state, and no runtime session
-state; those are caller-owned or external. A parent's child list is derived
-by querying `rooms` and is never cached.
+The directory is the Room's address; the name inside `room.json` and the
+`room` field on each record line exist so a moved or edited file fails
+closed instead of silently re-identifying. Room names are directory names:
+no `/`, no leading dot, and never `.` or `..`.
 
-## The one-time format-2 → format-3 migration
+## Serialization and durability
 
-A format-2 workspace stores the v1 model: one Room per workspace, admitted
-actors, and credentials. Opening it upgrades once:
+One `flock` on `.tearoom/lock` serializes writers across processes: an
+append holds the exclusive lock across room verification, idempotency
+resolution, sequence assignment, and the append itself, so concurrent
+writers receive one dense per-room sequence with no loss or duplication.
+Reads take the shared lock and are pure: no cursor is stored, and repeated
+reads return identical history. The Windows gap stands: concurrent use is
+unsupported where no cross-process lock exists.
 
-- the single room row becomes a root Room named by its old identifier (its
-  parent is null — a parentless room is a root);
-- every record keeps its author verbatim; the recipient column is dropped;
-- the `actors` and `credentials` tables are dropped;
-- the marker is rewritten to format 3.
+## The one-time migrations
 
-There is no compatibility layer: after the upgrade the old layout is never
-read again, and databases without the marker are refused, never read,
-migrated, or reused.
+- **Format 2 → 4** (the v1 single-room SQLite model): the room becomes a
+  root named by its old identifier, records keep their author verbatim, the
+  recipient column and the actor and credential tables are dropped.
+- **Format 3 → 4** (the SQLite room tree): the tree and its records export
+  verbatim.
 
-## Admission-free invariants
+Both run once, on open: the SQLite database is read, the JSONL layout is
+written, the database file is deleted, and the marker is rewritten. There is
+no compatibility layer after it, and databases without the marker are
+refused, never read or reused. Rollback restores the previous release with
+its data snapshot.
 
-- Reading or sending never creates Rooms; only `room init` does.
-- An append validates nothing about identity, obtains the next dense
-  sequence of the target Room under the database's atomic write boundary, and
-  writes one immutable Record. Records are never rewritten through the Store
-  API.
-- An append with an idempotency key is matched per (room, signature, key): an
-  equal fingerprint returns the original Record; a different one conflicts.
+## Git and clones
+
+The layout is ordinary text: a workspace can be committed, diffed, and
+merged like any other file in the repository. One boundary follows: dense
+sequence numbers are guaranteed within one checkout — concurrent writers on
+one machine serialize through the lock; two clones that both append and
+merge will need a human or Agent to reconcile the streams, exactly as with
+any other merged text.
 
 ## Portability
 
-The storage engine is the pure-Go `glebarez/sqlite` driver, so release
-binaries stay static (`CGO_ENABLED=0`) and SQLite's own locking serializes
-concurrent writers on every platform. PostgreSQL runs the same schema through
-the same migrations for the gated battery and future serving; see
-[persistence.md](../architecture/persistence.md).
+The storage engine is plain files, so release binaries stay static
+(`CGO_ENABLED=0`) on every platform. The legacy SQLite reader used only by
+the one-time migrations is pure Go. See
+[persistence.md](../architecture/persistence.md) for the persistence
+discipline behind this layout.

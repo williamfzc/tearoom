@@ -16,7 +16,7 @@ make build          # bin/tearoom
 make cli            # the shipped binary, built fresh
 make test           # unit, HTTP, and independent-process concurrency tests
 make test-race      # race detector
-make target-room    # E1: the room-tree contract over SQLite and HTTP
+make target-room    # E1: the room-tree contract over the JSONL store and HTTP
 make target-replay  # E2: replay across real processes, no read progress
 make check-evals    # the evaluation set stays bidirectionally consistent
 make docs           # the docs bundle stays consistent (frontmatter, links)
@@ -43,16 +43,3 @@ timeouts). The Makefile exports `GOPROXY ?= https://goproxy.cn,direct` so every
 `make GOPROXY=https://proxy.golang.org` where the default mirror is not
 desired. Standalone `go` commands need the same setting, e.g.
 `GOPROXY=https://goproxy.cn,direct go build ./...`.
-
-## PostgreSQL validation
-
-The relational Store battery runs against PostgreSQL only when
-`TEAROOM_TEST_PG` (a `postgres://` DSN) is set:
-
-```bash
-TEAROOM_TEST_PG=postgres://... go test -ldflags=-linkmode=external -count=1 ./internal/relational
-```
-
-Without the DSN the battery records an explicit skip; SQLite always runs the
-same conformance battery. PostgreSQL validation is required before claiming the
-shared service is ready for the remote deployment profile.

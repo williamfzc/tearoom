@@ -19,15 +19,14 @@ If a statement must be true of the Room rather than of one interface, enforce it
 
 The current Store owns:
 
-- Room membership and addressed-member validation;
-- authenticated Actor attribution;
+- room-parent validation (a child records an existing parent, and only once);
 - sequence assignment;
 - append-only persistence;
 - idempotency-key uniqueness when the capability is used.
 
-All members read the same Room history, so the target Store has no directed
-visibility filter. Read boundaries belong to callers, and ordinary append has
-no implicit cursor-freshness rule.
+Signatures are labels: the Store validates no identity and filters no record.
+Read boundaries belong to callers, and ordinary append has no
+implicit cursor-freshness rule.
 
 The HTTP server delegates to this boundary, so a raw HTTP caller and the CLI receive the same result.
 

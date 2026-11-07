@@ -19,7 +19,10 @@ lives in [status.md](docs/architecture/status.md); proof lives in
   which sequence, which signature. It stores nothing.
 
 Signatures are unverified labels. There is no membership, no admission, and
-no credentials: the `.tearoom` directory is the trust domain.
+no credentials: the `.tearoom` directory is the trust domain. Storage is
+plain files — one JSONL stream per Room — so the tree can be committed to
+git and the memory travels with the checkout. This repository does exactly
+that: its own development lives in its `.tearoom/` tree.
 
 ## Quick start
 

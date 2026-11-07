@@ -8,6 +8,38 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-07 — Store the room tree as JSONL files, and let the project live in its own tree
+
+The SQLite backend lived for one day and one purpose: prove the tree
+contract on a transactional store. It did, and then the storage requirement
+changed shape — the memory must be able to travel with git. One workspace is
+now one `.tearoom` directory of plain files: `rooms/<name>/room.json`
+(identity and the single parent link, omitted for a root),
+`records.jsonl` (the stream, one JSON record per line, the same shape the
+CLI prints), and `idempotency.jsonl` (the per-(author, key) retry ledger),
+under a `store.json` marker at format 4. Appends serialize through one
+flock on `.tearoom/lock` across room verification, idempotency resolution,
+sequence assignment, and the append — the v0 file Store's proven pattern,
+now carrying the tree. Reads take the shared lock and stay pure.
+
+The boundary that follows is stated in the storage layout: sequence
+guarantees hold within one checkout. Two clones that both append reconcile
+like any other merged text.
+
+`internal/relational`, the PostgreSQL adapter, and the gated battery were
+removed with the SQL era (their green runs are recorded in
+[evaluations.md](evaluations.md)); gorm and pgx left go.mod, and the
+pure-Go SQLite driver survives only inside the one-time format-2/3 → 4
+migrations, which read the retired databases once, write the JSONL layout,
+delete the database, and rewrite the marker.
+
+The same decision turns the tool on itself: the repository carries its own
+workspace in `.tearoom/` — root Room for goal and acceptance, children for
+implementation and review — committed to git, and AGENTS.md now points
+contributors at the tree before they work. The `.gitignore` rule that
+banished `.tearoom/` from version control was written for the old model and
+is gone with it.
+
 ## 2026-11-07 — Converge the kernel: one room tree, one record stream, one signature
 
 Retired the v1 model — Room + Actor + membership + credentials + hosted

@@ -117,12 +117,11 @@ ships in the kernel.
 
 ## Persistence direction
 
-One workspace is one `.tearoom` directory holding the whole room tree in one
-SQLite database. PostgreSQL remains the same relational schema through the
-same Store boundary for tests and future multi-host serving; it is a database
-adapter, not a product variant. Records, signatures, and the tree survive
-process restarts and tool changes because they live in the workspace.
-Details: [architecture/persistence.md](architecture/persistence.md).
+One workspace is one `.tearoom` directory of plain files: one JSONL record
+stream per Room, one identity file per Room, one format marker. The layout
+is an ordinary git citizen — appends are new lines, new Rooms are new
+directories — so the tree's memory can travel with the repository that holds
+the work. Details: [architecture/persistence.md](architecture/persistence.md).
 
 ## Completion standard
 

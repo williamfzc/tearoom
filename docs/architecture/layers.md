@@ -14,7 +14,7 @@ The kernel has one foundation contract and no compatibility layer:
 | Layer | Package or owner | Owns |
 |---|---|---|
 | Foundation | `internal/core` | Room, Record, Notification, the `Store` seam, and typed domain errors |
-| Persistence | `internal/store`, `internal/relational` | The `.tearoom` workspace layout and the durable room tree with per-room record streams |
+| Persistence | `internal/store` | The `.tearoom` JSONL layout, the JSONL Store implementation, the cross-process lock, and the one-time migrations from the retired SQLite formats |
 | Outside | `internal/transport` | The minimal local HTTP face of the `Store` contract |
 | Outside | `internal/cli`, `cmd/tearoom` | `room`, `send`, `read`, `tree`, `watch`, `server`, output, and process entry |
 
@@ -44,20 +44,18 @@ sees is bounded by the tree, not by permissions.
 ## Persistence boundary
 
 `internal/store` owns the `.tearoom` layout: one workspace directory holds
-the whole room tree in one SQLite database behind a format marker.
-`internal/relational` owns ORM models, migrations, transactions, and database
-adaptation (SQLite locally; the same schema targets PostgreSQL for tests and
-future serving). Neither package may:
+the whole room tree as JSONL files behind a format marker, and the JSONL
+Store implements `core.Store` under a cross-process flock. It may not:
 
 - filter records by author or recipients (there are no recipients);
 - validate or transform a signature beyond storing it verbatim;
 - cache a parent's child list or any derived tree shape;
 - host delivery claims, wake state, or process state.
 
-One append transaction serializes on the target Room's row, so concurrent
-writers receive a dense per-room sequence while different Rooms never wait on
-each other. The one-time format-2 → format-3 migration is specified in
-[persistence.md](persistence.md).
+One append holds the exclusive lock across room verification, idempotency
+resolution, sequence assignment, and the append, so concurrent writers
+receive a dense per-room sequence. The one-time format-2/3 → format-4
+migrations are specified in [persistence.md](persistence.md).
 
 ## Outside boundaries
 
