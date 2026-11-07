@@ -1,7 +1,7 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: The package boundaries of the room-tree kernel — core, persistence, transport, and CLI.
+description: The package boundaries of the room-tree kernel and its planned herdr-core collaboration integration.
 resource: internal/
 tags: [architecture, boundaries, layering, clean-break]
 timestamp: 2026-11-07
@@ -20,10 +20,9 @@ The kernel has one foundation contract and no compatibility layer:
 
 Dependencies point inward. `core` imports no project package. Persistence
 implements `core.Store`; transport adapts it; the CLI translates commands. The
-kernel never imports a scheduler, launcher, or Agent runtime, and there is no
-control-plane package: credentials, admission, and the hosted multi-room
-service were removed with the v1 model on 2026-11-07 (see
-[../log.md](../log.md)).
+kernel never imports a scheduler, launcher, or Agent runtime. Credentials,
+admission, and the hosted multi-room service were removed with the v1 model on
+2026-11-07 (see [../log.md](../log.md)).
 
 ## Foundation boundary
 
@@ -31,7 +30,8 @@ service were removed with the v1 model on 2026-11-07 (see
 
 - Room identity: a name, an optional parent, and a creation time;
 - Record: `seq`, `author`, `at`, `content` — the author is an unverified
-  label, and there is no recipient field;
+  label, and message addressing remains in content/convention rather than a
+  recipient field;
 - Notification: room, sequence, signature, time — derived, never stored;
 - the `Store` seam: create a room (optionally under a parent), list rooms,
   read a room's stream from a boundary, append one record;
@@ -47,7 +47,7 @@ sees is bounded by the tree, not by permissions.
 the whole room tree as JSONL files behind a format marker, and the JSONL
 Store implements `core.Store` under a cross-process flock. It may not:
 
-- filter records by author or recipients (there are no recipients);
+- filter records by author or message addressing;
 - validate or transform a signature beyond storing it verbatim;
 - cache a parent's child list or any derived tree shape;
 - host delivery claims, wake state, or process state.
@@ -63,7 +63,7 @@ migrations are specified in [persistence.md](persistence.md).
 read, record append. It holds no authentication paths — the exposed profile,
 owner tokens, and credential routes died with the hosted service.
 
-`internal/cli` exposes only the command surface:
+`internal/cli` exposes the currently shipped command surface:
 
 ```text
 tearoom room init --name <name> [--parent <room>]
@@ -79,6 +79,28 @@ It owns formatting and invocation-local options, not shared invariants. The
 v1 commands `room join`, `room credential`, and the hosted `server` profile
 are deleted; no alias keeps them alive.
 
+## Collaboration runtime boundary
+
+`herdr-core` (`hc`) is the intended runtime foundation for Agent terminals,
+prompt delivery, parent-child execution, and lifecycle events. It has no
+native Tearoom board or role-routing policy. A planned integration outside the
+kernel defines reusable roles (command, working directory, and role
+instructions), configures collaborators when creating a Room, and binds each
+Room's role instance to its own hc panel. All those roles share the Room's one
+record stream; reusing a role definition in another Room creates a separate
+panel instance. `@role` routes through hc to that Room-scoped panel. Different
+Rooms coordinate through a shared ancestor Room; build and review use separate
+Agent instances and roles in the same Room.
+
+The integration also exposes the configured collaborators to the CLI and
+reconciles Room records with hc snapshots/events after interruption. The
+collaborator roster is discovery and routing data, not admission; it does not
+affect who can read or write a local Room. hc template text is an initial
+instruction, not a native system prompt. Panel-failure handling and reliable
+recovery are not existing hc guarantees. The proposed delivery contract is in
+[collaboration.md](collaboration.md); exact config and CLI syntax remain open.
+The integration may depend on `core` and `transport`; neither may depend on it.
+
 ## Clean-break dependency checks
 
 1. `core` has no import path to persistence, transport, or CLI.
@@ -88,6 +110,8 @@ are deleted; no alias keeps them alive.
 4. Transport has one route/body/error vocabulary with no authorization paths.
 5. CLI, scripts, tests, and docs use only the command and record vocabulary
    above.
+6. The planned hc integration stays outside the kernel and does not add
+   recipient, membership, or process-state fields to core Records.
 
 `make check`, `make docs`, and repository searches verify these boundaries.
 Rollback is a Git rollback to a matched revision and data snapshot; adding a

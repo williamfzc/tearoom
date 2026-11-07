@@ -18,8 +18,8 @@ lives in [status.md](docs/architecture/status.md); proof lives in
 - **Notification** — the envelope emitted when a record lands: which room,
   which sequence, which signature. It stores nothing.
 
-Signatures are unverified labels. There is no membership, no admission, and
-no credentials: the `.tearoom` directory is the trust domain. Storage is
+Signatures are unverified labels. The current CLI has no collaborator roster,
+admission, or credentials: the `.tearoom` directory is the trust domain. Storage is
 plain files — one JSONL stream per Room — so the tree can be committed to
 git and the memory travels with the checkout. This repository does exactly
 that: its own development lives in its `.tearoom/` tree.
@@ -56,11 +56,10 @@ TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
 
 ## Working the tree
 
-The conventions are writing, not fields: an executor writes what it did,
-what is blocked, and what the next worker should do first; a reviewer works
-in its own Room and cites evidence; quoting a record is `room-name#seq` in
-plain text; closing work is a sentence. Waking the next worker is external —
-a script reads `tearoom watch --json` and drives a scheduler such as herdr.
+The executor writes what it did, what is blocked, and what the next worker
+should do first; a different reviewer cites evidence. Record references use
+`room-name#seq` in plain text. The intended same-Room role and hc integration
+is described in [product.md](docs/product.md); it is not yet implemented.
 
 ## Build and verify
 

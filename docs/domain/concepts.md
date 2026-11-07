@@ -1,7 +1,7 @@
 ---
 type: domain
 title: Domain concepts
-description: The three concepts — Room, Record, Notification — their write/read contract, boundary behaviour, and trust model.
+description: The three concepts — Room, Record, Notification — and how shared Room conversation relates to runtime collaboration.
 resource: docs/product.md
 tags: [domain, concepts, invariants]
 timestamp: 2026-11-07
@@ -26,6 +26,16 @@ reading at query time. Rooms are peers — a root is just the Room without a
 parent, and a "project" is an informal name a person gives to some subtree.
 Rooms are identified by name within their workspace.
 
+A Room is also a shared conversation: broadcast and addressed messages are
+visible in the same Room history. Addressing guides runtime delivery; it is not
+privacy or permission. See [the product contract](../product.md) for the
+current boundary and [open questions](open-questions.md) for unresolved
+delivery semantics.
+
+A Room can configure several collaboration roles over this one stream. Role
+definitions can be reused, while each Room gets its own runtime instances and
+hc panels. Roles are runtime configuration, not a fourth kernel concept.
+
 ### Record
 
 A Record is one immutable entry in a Room's stream:
@@ -43,9 +53,10 @@ parent's head. Append-only: accepted records are never edited.
 ### Notification
 
 A Notification is the envelope emitted when a record lands: which room, which
-sequence, which signature, when. It stores nothing, addresses no one, and
-requests nothing. It only says "there is something new". Deciding whether to
-wake anyone, whom, and how belongs entirely outside Tearoom.
+sequence, which signature, when. It stores nothing and carries no recipient.
+The collaboration runtime uses the Room record and its addressing convention
+to route messages to role panels. `hc` is the intended Agent runtime; it does
+not itself define Tearoom's Room-to-role configuration or routing policy.
 
 ## Write and read contract
 
@@ -78,7 +89,10 @@ independent of read progress.
 | A child Room is created | It records its parent once; the parent's data is never written to |
 | The child list is needed | Derived by reading the workspace at query time; never cached |
 | Reader supplies a boundary | Read repeats from the caller's explicit boundary |
-| A worker is absent | The Room preserves the history; an external waker decides whether to start anyone |
+| A role is addressed | The runtime routes the shared Room message to that Room's panel for the role |
+| Two roles review work | They use the same Room stream; the reviewing role differs from the executing role |
+| Work crosses Rooms | The roles coordinate through a shared ancestor Room |
+| A role panel fails | The Room preserves history; recovery behavior is not yet defined |
 
 **Platform rule:** the storage backend must provide a real cross-process
 serialization primitive or reject concurrent operation on that platform.
@@ -110,17 +124,19 @@ terminals and tools:
 | Context scattered across sessions nobody can reassemble | One stream per Room, ordered and durable |
 | The human relays context between Agents | Each Agent reads the Rooms it needs and continues |
 | Ambiguous scope — who owns what | One parent per Room; the tree names the ranges |
-| Executor certifies its own work | Policy: verification happens in another Room, from evidence |
+| Executor certifies its own work | A different Agent instance reviews in the same Room, from evidence |
 | Duplicate effects from retries | Idempotent append capability |
 
 ## What the model does not promise
 
-No membership or admission, no unread state or acknowledgements, no
-subscriptions, no scheduled wake-ups in the kernel, no per-record privacy
-inside one Room, no exactly-once external execution. A protocol may wrap
-`content` with conventions; those are not kernel fields. The design rule: the
-cheapest observation must stay useful — a feature that forces every reader to
-read more or run a process must prove the extra cost necessary.
+No permission-based membership, admission, or required join; configured Room
+roles are only a coordination roster. There is no unread state or acknowledgements, no
+kernel-owned subscriptions, no scheduled wake-ups in the kernel, no per-record
+privacy inside one Room, no exactly-once external execution. Address syntax,
+broadcast wake policy, and collaborator roster details remain runtime
+protocol concerns, not new kernel concepts. The design rule: the cheapest
+observation must stay useful — a feature that forces every reader to read more
+or run a process must prove the extra cost necessary.
 
 ## Related
 

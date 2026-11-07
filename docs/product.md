@@ -1,7 +1,7 @@
 ---
 type: product
 title: Product definition
-description: Authoritative definition of Tearoom's three concepts, the room tree, policy boundaries, and the completion standard.
+description: Authoritative definition of Tearoom's room conversation, record stream, notification boundary, and completion standard.
 tags: [product, scope, authority]
 timestamp: 2026-11-07
 ---
@@ -29,15 +29,17 @@ and process restarts.**
 | **Record** | One entry in that stream: sequence number, time, signature, content. Append-only; never edited. |
 | **Notification** | The envelope emitted when a record lands: which room, which sequence, which signature. It stores nothing. |
 
-Three orthogonal axes: Room scopes the range, Record carries the content,
-Notification carries the propagation. There is no fourth concept. A task,
-handoff, verdict, approval, or status is a sentence inside a record or a
-convention over records — never a field.
+Three orthogonal axes: Room scopes the conversation, Record carries its
+content, and Notification announces an append. A task, handoff, verdict,
+approval, or status remains content or a convention over records — never a
+kernel field. The Room is the shared conversation: readers of a Room see its
+same ordered history.
 
 Words that were merged away: unit/topic/channel are Rooms; parent pointers,
 trees, roots, and subtrees are one stored field plus a shape derived at read
 time; "current state" is the last N records; closure, archive, and reopen are
-sentences people write; verification uses another ordinary Room; "work" and
+sentences people write; verification uses a different Agent instance and role
+in the same Room; "work" and
 "project" are informal names for a subtree. Only Room, Record, and Notification
 remain.
 
@@ -67,53 +69,89 @@ Everything else proceeds by reading Rooms.
   uncertain retry returns the original record instead of a duplicate.
 - **Durable by default.** Context lives in the workspace, not in any session,
   process, or tool transcript.
+- **One conversation per Room.** Every collaborator role configured for a Room
+  reads and writes the same ordered record stream; roles do not get private
+  streams within that Room.
 
-## Policy, not concepts
+## Conversation and runtime policy
 
-These are conventions people and Agents follow; the tools neither represent
-nor enforce them:
+These rules shape conversation and dispatch. Roles and role instances belong to
+the collaboration runtime; they do not add kernel concepts or an authorization
+boundary:
 
-- A participant writes only to its own Room.
+- A Room may configure multiple collaborator roles. Each role has a reusable
+  definition (including its command, working directory, and role instructions)
+  and a Room-scoped runtime instance bound to an hc panel. Reusing a definition
+  in another Room creates a separate instance there.
+- Room messages are shared by all configured roles. A message may be a
+  broadcast or address one or more roles with `@`; addressing asks the runtime
+  to route the message through hc and does not hide the record from other
+  readers or grant access. Recipients remain outside the kernel Record and
+  recipient-free Notification fields.
+- The CLI exposes the collaborators configured for a Room so an Agent can
+  inspect roles and decide whom to involve. This roster is coordination
+  information, not admission: it neither authorizes reads/writes nor validates
+  a record signature.
 - Quoting writes `room-name#seq` as plain text; tools do not parse it.
 - Closure writes a sentence; reopening writes a sentence. There is no status
   field and no state machine.
-- The executor never verifies its own work; verification is done by another
-  Agent in another ordinary Room, from evidence only.
+- The executor never verifies its own work; a different Agent instance using
+  a reviewer role reviews the implementation in the same Room and records its
+  evidence-based verdict in that shared stream.
+- Roles working in different Rooms coordinate through a shared ancestor Room.
+  Cross-Room handoffs and decisions are recorded there; the Room tree remains
+  the scope and history boundary.
 - Handoffs write three things: what was done, what is blocked, and what the
   next person should do first.
-- Which notification wakes whom, and how, is decided entirely outside Tearoom
-  (for example by an external scheduler watching `tearoom watch`).
+- Which notification wakes whom, and how, is decided by the collaboration
+  runtime. Whether a broadcast starts every configured role remains runtime
+  policy; an `@role` is routed to that role's Room-scoped panel.
 
 ## Command surface
 
-The [CLI reference](reference/cli.md) is the sole command contract. The
-surface is: `room init` (with `--parent`), `send`, `read` (a room, a subtree,
-a tail), `tree`, and `watch`. A minimal local HTTP face serves the same
-contract; see [the HTTP API](reference/http-api.md).
+The CLI must configure collaborators when creating a Room and show the
+configured collaborators so an Agent can decide whom to involve. The exact
+command and output contract remain to be designed. The [CLI reference](reference/cli.md)
+documents the shipped surface: `room init` (with `--parent`), `send`, `read` (a
+room, a subtree, a tail), `tree`, and `watch`. A minimal local HTTP face serves
+the current contract; see [the HTTP API](reference/http-api.md).
 
-## Notification and waking
+## Notification and collaboration runtime
 
-An append emits a notification: which room, which sequence, which signature,
-when. Tearoom does not decide whether anyone is woken, who, or how — it only
-says "there is something new". The `watch` command prints these envelopes; an
-external waker (for example a script driving [herdr](https://github.com/williamfzc))
-reads the handoff records and starts the next worker. No attention management
-ships in the kernel.
+An append emits a recipient-free notification: which room, which sequence,
+which signature, and when. Tearoom does not decide whether anyone is woken or
+how. The collaboration runtime reads the Room, consults its available
+collaborators, and routes broadcasts or addressed messages. The intended
+runtime foundation is [herdr-core](https://github.com/herdrdev/herdr-core)
+(`hc`), which runs Agent terminals, delivers prompts, and reports lifecycle
+events. `hc` has no native board or Tearoom scheduler: the Room-to-runtime
+association and routing policy are Tearoom integration responsibilities.
+Each Room's configured roles bind to separate hc panels while sharing that
+Room's message history. Role definitions can be reused across Rooms, while
+their panels and runtime instances are Room-scoped. A role definition includes
+the command, working directory, and role instructions. The hc template
+instruction is an initial prompt, not a native system prompt or a stronger
+control boundary. After interruption, the runtime must reconcile Room records
+with hc state before retrying delivery. Room history does not prove whether a
+prompt was delivered or a role finished its turn. Panel failure and reliable
+recovery behavior are not existing hc guarantees and remain to be designed.
 
 ## What it refuses
 
-- No membership, admission, credentials, joins, or an actor registry. Reading
-  and writing require no permission ceremony inside the trust domain of the
-  workspace directory.
-- No @-addressing, no per-record recipients, no visibility filtering.
+- No permission-based membership, admission, credentials, or join ceremony.
+  Room collaborator roles are a coordination roster only; anyone within the
+  workspace trust domain may read and write without being added to it.
+- No per-record visibility filtering. Addressed messages do not make Room
+  records private.
 - No multi-parent Rooms, merges, sibling links, leaf cross-links, a global
   index, or a child-list cache.
 - No status, closure, or handoff fields; no state machine.
 - No hosted control plane, owner tokens, or per-Actor bearer credentials.
   Serving beyond one trusted machine is a future need and would reuse the
   same Store contract.
-- No workflow engine, scheduler, or launcher in the kernel; no attention
-  management; no hidden compatibility model beside the three concepts.
+- No workflow engine, scheduler, or launcher in the Tearoom kernel; no hidden
+  compatibility model beside the three concepts. Collaboration routing sits
+  outside the kernel and uses the recipient-free notification as its trigger.
 
 ## Persistence direction
 
@@ -129,16 +167,20 @@ The product is proven only when these three journeys hold with real Agents:
 
 1. **Solo delivery.** One Agent completes a task end to end with zero human
    intervention, reading only its Room.
-2. **Build and review.** Two Agents work as builder and reviewer; the reviewer
-   reads only the implementation Room and returns pass or fail with evidence;
-   the executor cannot certify its own work.
+2. **Build and review.** Separate Agent instances use builder and reviewer
+   roles in the same Room; the reviewer evaluates the shared record history
+   and returns pass or fail with evidence. The executor cannot certify its own
+   work.
 3. **Resume across a day.** A new process, optionally a new tool, reads only
    the Rooms and answers: what is the goal, what did the previous worker do,
    does it meet acceptance, and what is next.
 
-Notification additionally requires a record append to reach an external waker
-that starts the next worker with no human relay. Proof status belongs only in
-[evaluations.md](evaluations.md).
+Notification additionally requires addressed Room messages to reach the
+intended role through the `hc`-based runtime without a human relay. Reliable
+recovery and panel-failure behavior remain to be designed and proven. User
+stories and proof status belong in
+[domain/user-stories.md](domain/user-stories.md) and
+[evaluations.md](evaluations.md), respectively.
 
 ## Clean-break policy
 

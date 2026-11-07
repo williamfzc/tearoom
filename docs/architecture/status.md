@@ -36,10 +36,15 @@ executable proof in [../evaluations.md](../evaluations.md).
 
 ## Open work
 
+The group-chat and hc integration design in [../product.md](../product.md)
+is a new direction, not a description of the shipped CLI or runtime. The
+current waker uses a different herdr CLI and does not implement it.
+
 | Item | State |
 |---|---|
 | Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | Hand-run method recorded in [../evaluations.md](../evaluations.md); not yet executed against the room-tree model |
 | Wake journey S4 | `watch --json` ships; the external waker script drives herdr (`agent prompt … --wait`). Running it unattended requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host |
+| Group collaboration | Reusable roles, Room collaborator configuration, role-to-panel bindings, addressing, hc integration, and delivery recovery are not implemented or validated |
 | Two-week real-work validation | The model's own acceptance bar: run the tree as the working context for two weeks of real work |
 
 ## Removed with the v1 model (2026-11-07)

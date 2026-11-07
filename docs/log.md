@@ -8,6 +8,38 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-08 — Propose a recoverable hc delivery boundary
+
+Recorded the local role-to-panel and directed delivery proposal in
+[architecture/collaboration.md](architecture/collaboration.md). Room history
+remains the source of messages; hc provides terminal execution, while a local
+integration scans and reconciles delivery. The design refuses to treat a
+terminal send as task completion or promise exactly-once execution. Encoding,
+agent readiness and interrupted delivery still need real validation.
+
+## 2026-11-08 — Put collaborators together in their Room
+
+A Room is the shared working conversation, not a role-specific lane. Its
+configured collaborators may include implementers and independent reviewers;
+they exchange records and directed mentions in that Room. Reusable role
+definitions are separate from Room participation, and each Room-role binding
+has its own hc panel. Coordination between distinct Rooms takes place in a
+common ancestor Room. This supersedes the earlier requirement that review occur in a
+separate Room, while retaining review by a different Agent. The product
+contract and outstanding runtime details live in [product.md](product.md) and
+[domain/open-questions.md](domain/open-questions.md).
+
+## 2026-11-07 — Design Room collaboration as group chat
+
+The product direction now includes discoverable Room collaborators, broadcast
+and directed messages, and hc as the Agent runtime and notification delivery
+infrastructure. This supersedes the earlier refusal of @-addressing; it does
+not restore admission or turn a signature into verified identity. A logical
+Room collaboration surface is distinct from durable Room history. Delivery,
+wake defaults, routing and recovery remain design questions, not shipped
+capabilities. The canonical direction and proof obligations are linked from
+[product.md](product.md) and [evaluations.md](evaluations.md).
+
 ## 2026-11-07 — Store the room tree as JSONL files, and let the project live in its own tree
 
 The SQLite backend lived for one day and one purpose: prove the tree

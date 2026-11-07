@@ -1,7 +1,7 @@
 ---
 type: index
 title: Domain
-description: Tearoom's three concepts and the rules that govern them.
+description: Tearoom's concepts, collaboration stories, and open design questions.
 tags: [index, domain]
 timestamp: 2026-11-07
 ---
@@ -19,4 +19,5 @@ kernel entities. [Product definition](../product.md) owns the product facts;
 | Document | Concern |
 |---|---|
 | [concepts.md](concepts.md) | The three concepts, the write/read contract, boundary behaviour, and trust model |
+| [user-stories.md](user-stories.md) | User journeys and acceptance criteria for Room collaboration and hc delivery |
 | [open-questions.md](open-questions.md) | Decisions deliberately left unsettled |

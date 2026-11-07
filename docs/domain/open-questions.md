@@ -1,7 +1,7 @@
 ---
 type: decision
 title: Open questions
-description: Decisions deliberately left unsettled after the room-tree convergence.
+description: Runtime design questions left open after adopting shared Room conversation and hc-based collaboration.
 tags: [domain, decision, open]
 timestamp: 2026-11-07
 ---
@@ -37,8 +37,29 @@ A workspace may hold several independent roots. The CLI prints a forest; how
 a human or Agent should navigate many concurrent roots is a reading-order
 question, not a data-model one.
 
-## Notification carriers
+## Room board and collaborator discovery
 
-`watch` prints to standard output, and that is the only shipped carrier. A
-socket, a file tail, or a push channel may be justified by a real waker that
-outgrows a script; until one exists, stdout stays the whole contract.
+The proposed Room-role binding is in
+[collaboration.md](../architecture/collaboration.md). The configuration file,
+CLI syntax, and precise availability reporting remain to be validated.
+
+## Broadcast and addressed delivery
+
+The proposed defaults and explicit targeting are in
+[collaboration.md](../architecture/collaboration.md). Validate broadcast and
+`@all` behavior, input escaping, and structured content encoding with real
+agents before treating them as a shipped CLI contract.
+
+## Delivery recovery
+
+The proposed reconciliation boundary is in
+[collaboration.md](../architecture/collaboration.md). Validate the durable
+store, agent-specific readiness, and ambiguous spawn or send outcomes with
+interruption tests. hc does not guarantee task completion or recovery.
+
+## Notification transport
+
+The current `watch` command polls and prints recipient-free envelopes but does
+not replay missed notifications. The integration must scan Room records as
+specified in [collaboration.md](../architecture/collaboration.md); the choice
+of notification carrier remains open until the integration is exercised.

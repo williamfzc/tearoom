@@ -12,10 +12,10 @@ This is the proof registry for [product.md](product.md). A story is `open`
 while any mapped evaluation is planned and `proven` only when every mapped
 evaluation ships. Evaluation status is `planned` or `shipped`.
 
-The product is proven by three acceptance journeys — solo delivery,
-build-and-review, and resume across a day — plus the wake journey through the
-notification envelope. Storage, concurrency, and restart behavior are
-requirements and test conditions rather than additional stories.
+The acceptance journeys are defined in [domain/user-stories.md](domain/user-stories.md).
+Storage, concurrency, and restart behavior are requirements and test
+conditions rather than additional stories. The hc-backed collaboration
+journeys remain unproven.
 
 ## Staged proof
 
@@ -38,20 +38,26 @@ That requires the acceptance journeys.
 
 ### The acceptance journeys
 
-S1–S3 are the completion standard of [product.md](product.md); S4 is the
-notification story. They need real, independent Agent products and cannot run
-in `make check`; the hand-run method is recorded under
-[Hand-run evidence](#hand-run-evidence). Each journey is open until it has
-run against the room-tree model and its evidence row exists.
+The stories need real Agent runs and cannot run in `make check`; the hand-run
+method is recorded under [Hand-run evidence](#hand-run-evidence). Each journey
+is open until it has run against the Room message model and its evidence row
+exists. No current evidence proves the new hc-backed collaboration journeys.
 
 ## Stories
 
 | ID | Story | Status | Stage | Defined in |
 |---|---|---|---|---|
-| S1 | One Agent completes a task end to end with zero human intervention, reading only its Room | open | acceptance | [product.md](product.md) |
-| S2 | Two Agents work as builder and reviewer; the reviewer reads only the implementation Room and returns pass or fail with evidence, and the executor never certifies its own work | open | acceptance | [product.md](product.md) |
-| S3 | A new process, optionally a new tool, a day later, reads only the Rooms and answers the goal, the prior work, whether acceptance is met, and what is next | open | acceptance | [product.md](product.md) |
-| S4 | A record append reaches an external waker through the notification envelope and starts the next worker with no human relay | open | acceptance | [product.md](product.md) |
+| S1 | One Agent completes one task | open | acceptance | [user-stories.md](domain/user-stories.md#s1-one-agent-completes-one-task) |
+| S2 | Builder and independent reviewer share a project Room | open | acceptance | [user-stories.md](domain/user-stories.md#s2-builder-and-reviewer-share-a-project-room) |
+| S3 | A new process resumes work later from Room history | open | acceptance | [user-stories.md](domain/user-stories.md#s3-a-new-process-resumes-later) |
+| S4 | A mention reaches its intended collaborator through hc | open | acceptance | [user-stories.md](domain/user-stories.md#s4-a-message-reaches-its-intended-collaborator) |
+| S5 | An Agent discovers collaborators and chooses whom to mention | open | acceptance | [user-stories.md](domain/user-stories.md#s5-an-agent-discovers-who-can-help) |
+| S6 | Shared Room conversation supports broadcast visibility and targeted wakes | open | acceptance | [user-stories.md](domain/user-stories.md#s6-a-room-behaves-like-a-group-conversation) |
+| S7 | Builder and reviewer use mentions for review and revision in one Room | open | acceptance | [user-stories.md](domain/user-stories.md#s7-review-and-revision-continue-in-one-room) |
+| S8 | Pending delivery recovers after runtime interruption | open | acceptance | [user-stories.md](domain/user-stories.md#s8-pending-work-survives-runtime-interruption) |
+| S9 | Agents in separate Rooms coordinate through their common parent Room | open | acceptance | [user-stories.md](domain/user-stories.md#s9-separate-rooms-coordinate-through-their-common-parent) |
+| S10 | Reusable role definitions can be configured in Rooms with separate hc panels | open | acceptance | [user-stories.md](domain/user-stories.md#s10-reuse-role-definitions-across-rooms) |
+| S11 | An Agent chooses a configured role and suitable Agent type | open | acceptance | [user-stories.md](domain/user-stories.md#s11-choose-a-collaborator-by-role-and-agent-type) |
 
 ## Evaluations
 
@@ -59,17 +65,28 @@ run against the room-tree model and its evidence row exists.
 |---|---|---|---|---|
 | E1 | Foundation room-tree contract through the shipped binary: init with parents, per-room dense sequences, concurrency, idempotency, tail, subtree, tree, missing signature, and the HTTP leg | `make target-room` | [target-room.sh](../scripts/target-room.sh) | shipped |
 | E2 | Replay across real processes and service restarts with no stored read progress | `make target-replay` | [target-replay.sh](../scripts/target-replay.sh) | shipped |
-| E3 | The acceptance journeys S1–S3 with two real, independent Agent products | hand-run | — | planned |
-| E4 | The wake journey S4: envelope from `watch --json` to a herdr-started worker | hand-run | — | planned |
+| E3 | The original journeys S1–S3 with real, independent Agent products | hand-run | — | planned |
+| E4 | Room message delivery and explicit mention through hc, including a worker started when the target Agent is not already running | hand-run | — | planned |
+| E5 | Reuse role definitions across Rooms, configure roles, inspect role-to-agent assignments, and keep each Room-role on its own hc panel | hand-run | — | planned |
+| E6 | End-to-end builder/reviewer collaboration in one Room and branch coordination through a common parent Room | hand-run | — | planned |
+| E7 | Recovery after stopping the runtime at delivery and execution boundaries; reconcile uncertain work before retrying | hand-run | — | planned |
+| E8 | Agent discovery across multiple Agent types and explicit selection of a configured Room role | hand-run | — | planned |
 
 ## Story → evaluation
 
 | Story | Evaluations |
 |---|---|
 | S1 | E1, E2, E3 |
-| S2 | E1, E3 |
+| S2 | E1, E3, E4, E6 |
 | S3 | E2, E3 |
 | S4 | E4 |
+| S5 | E5, E8 |
+| S6 | E4 |
+| S7 | E4, E6 |
+| S8 | E7 |
+| S9 | E6 |
+| S10 | E5 |
+| S11 | E5, E8 |
 
 ## Evaluation → story
 
@@ -78,7 +95,11 @@ run against the room-tree model and its evidence row exists.
 | E1 | S1, S2 |
 | E2 | S1, S3 |
 | E3 | S1, S2, S3 |
-| E4 | S4 |
+| E4 | S2, S4, S6, S7 |
+| E5 | S5, S10, S11 |
+| E6 | S2, S7, S9 |
+| E7 | S8 |
+| E8 | S5, S11 |
 
 ## Hand-run evidence
 
@@ -89,19 +110,37 @@ Evidence that cannot run in `make check` is recorded here or it never ran.
 The acceptance claim needs real, independent Agent products. The recorded
 runs follow this method:
 
-1. Setup only: a human or an Agent at the root runs `room init` (and, for
-   S2, creates the child Rooms). No record content may appear in any prompt;
-   the prompts are the audit trail for the relay count.
-2. Each Agent product runs in its own directory and receives only the binary
-   path, the workspace location, the room names, and its signature. Recovery
-   must come from reading the Rooms.
-3. S1 runs one Agent to completion with zero interventions. S2 has a second
-   Agent review while reading only the implementation Room; its verdict must
-   cite commands and output that exist only in the records. S3 starts a fresh
+1. Setup only: a human or an Agent initializes the project Room and any child
+   Rooms needed for S9. Configure the chosen reusable roles and their Agent
+   types through the intended CLI. Each Room-role must have its own hc panel.
+   Do not place record content in an Agent's launch prompt; prompts are the
+   audit trail for the relay count.
+2. Start the builder and reviewer as distinct roles in the same project Room.
+   The reviewer reads the shared Room history, is explicitly mentioned, and
+   writes its verdict and evidence in that same Room. A requested revision is
+   addressed to the builder there. For S9, use two child Rooms and their common
+   parent as the shared coordination Room; do not write directly across
+   sibling Rooms.
+3. For S10 and S11, reuse a role definition in more than one Room, configure
+   multiple Agent types, then ask an Agent to inspect the configured roles and
+   select a target. Verify each Room-role uses an independent hc panel.
+4. S1 runs one Agent to completion with zero interventions. S3 starts a fresh
    process a day later, optionally with a different tool, and asks the four
-   resume questions.
-4. Record setup effort, manual relay count, recovery quality, and the
-   verdict trail in the table below.
+   resume questions. S4, S6, and S8 exercise online and offline mentions,
+   broadcasts, and runtime interruption/reconciliation.
+5. Record setup effort, human relay count, Room and panel mapping, delivery
+   observations, recovery quality, and verdict evidence in the table below.
+
+A scripted stand-in for an Agent or runtime is not acceptance evidence. For
+S4–S11, record the Room messages, configured role list, role-to-Agent-type
+mapping, hc panel identities and lifecycle events, prompts, and final Room
+records needed to reconstruct routing and recovery. Include a run where a
+target is offline and a run where the runtime restarts with work pending. The
+proposed broadcast policy is that ordinary messages remain visible but do not
+start every offline Agent; explicit mentions reach the named role. Role
+configuration is routing context, not a permission or identity-verification
+boundary. The 2026-11-07 file-based wake feasibility row below is background
+only and does not prove this hc-backed design.
 
 A scripted stand-in for the second product collapses the proof into E1/E2
 and is not acceptance evidence.
