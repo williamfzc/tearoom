@@ -1,13 +1,12 @@
-// Persistence records for the relational Store: the durable shape of a Room,
-// its Actors, its Events, the per-request idempotency ledger, and the format
-// marker. These are storage rows, not domain types; the canonical vocabulary
-// remains core.Store.
+// Persistence records for the relational Store: the durable shape of the
+// room tree, its per-room record streams, the per-request idempotency
+// ledger, and the format marker. These are storage rows, not domain types;
+// the canonical vocabulary remains core.Store.
 package relational
 
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -16,45 +15,37 @@ import (
 // Table names are the relational shape of record, not GORM's pluralized model
 // names.
 func (RoomRow) TableName() string        { return "rooms" }
-func (ActorRow) TableName() string       { return "actors" }
 func (EventRow) TableName() string       { return "events" }
 func (IdempotencyRow) TableName() string { return "append_idempotency" }
 func (MetaRow) TableName() string        { return "meta" }
-func (CredentialRow) TableName() string  { return "credentials" }
 
-// RoomRow is the durable Room identity and its dense sequence head. The head
-// is only ever advanced by an append transaction that holds the row lock.
+// RoomRow is one node of the room tree: its name, its parent (null is a
+// root), and the dense sequence head of its stream. The head is only ever
+// advanced by an append transaction that holds the row lock.
 type RoomRow struct {
-	ID        string    `gorm:"primaryKey;size:64"`
+	Name      string    `gorm:"primaryKey;size:255"`
+	Parent    *string   `gorm:"size:255;index"`
 	CreatedAt time.Time `gorm:"not null"`
 	Head      uint64    `gorm:"not null"`
 }
 
-// ActorRow is one explicitly admitted participant of a Room.
-type ActorRow struct {
-	RoomID   string    `gorm:"primaryKey;size:64"`
-	ID       string    `gorm:"primaryKey;size:255"`
-	JoinedAt time.Time `gorm:"not null"`
-}
-
-// EventRow is one immutable contribution. To holds the canonical JSON array
-// form of core.NormalizeTo; Content holds compacted JSON text.
+// EventRow is one immutable record of one room's stream. Author holds the
+// signature verbatim; Content holds compacted JSON text.
 type EventRow struct {
-	RoomID  string    `gorm:"primaryKey;size:64"`
+	RoomID  string    `gorm:"column:room_id;primaryKey;size:255"`
 	Seq     uint64    `gorm:"primaryKey"`
-	Actor   string    `gorm:"not null"`
+	Author  string    `gorm:"not null"`
 	At      time.Time `gorm:"not null"`
-	To      string    `gorm:"not null"`
 	Content string    `gorm:"not null"`
 }
 
-// IdempotencyRow records one (room, actor, key) idempotency ledger entry: the
-// fingerprint of the original request and the sequence of the Event it
-// created, which answers retries with the original Event. It is never exposed
-// as an Event field.
+// IdempotencyRow records one (room, author, key) ledger entry: the
+// fingerprint of the original request and the sequence of the record it
+// created, which answers retries with the original record. It is never
+// exposed as a Record field.
 type IdempotencyRow struct {
-	RoomID      string `gorm:"primaryKey;size:64"`
-	Actor       string `gorm:"primaryKey;size:255"`
+	RoomID      string `gorm:"primaryKey;size:255"`
+	Author      string `gorm:"primaryKey;size:255"`
 	Key         string `gorm:"primaryKey;size:255"`
 	Fingerprint []byte `gorm:"not null"`
 	EventSeq    uint64 `gorm:"not null"`
@@ -67,68 +58,21 @@ type MetaRow struct {
 	Value string `gorm:"not null"`
 }
 
-// CredentialRow is one write credential for an admitted Actor of a Room: an
-// opaque token exists only as its sha-256 hash, and revocation and expiry are
-// checked on every verification. Service records like this authorize access
-// but never change Event semantics. RevokedAt is nil for a live credential.
-type CredentialRow struct {
-	ID        string    `gorm:"primaryKey;size:64"`
-	RoomID    string    `gorm:"primaryKey;size:64;index"`
-	Actor     string    `gorm:"not null;size:255"`
-	TokenHash string    `gorm:"not null;size:64;uniqueIndex"`
-	ExpiresAt time.Time `gorm:"not null"`
-	RevokedAt *time.Time
-	CreatedAt time.Time `gorm:"not null"`
-}
-
-// coreEvent converts a stored row back into the domain Event. The To column
-// is JSON we wrote ourselves, so malformed JSON or non-member identities are
-// storage corruption and fail closed.
-func (r EventRow) coreEvent(members map[string]struct{}) (core.Event, error) {
-	if r.Seq == 0 || strings.TrimSpace(r.Actor) == "" || r.Actor != strings.TrimSpace(r.Actor) || r.At.IsZero() {
-		return core.Event{}, fmt.Errorf("invalid stored event %d", r.Seq)
-	}
-	if !isMember(members, r.Actor) {
-		return core.Event{}, fmt.Errorf("invalid stored event %d: actor %q is not an admitted member", r.Seq, r.Actor)
-	}
-	var to []string
-	if err := json.Unmarshal([]byte(r.To), &to); err != nil {
-		return core.Event{}, fmt.Errorf("decode stored event %d recipients: %w", r.Seq, err)
-	}
-	if normalized := core.NormalizeTo(to); !equalStrings(to, normalized) {
-		return core.Event{}, fmt.Errorf("stored event %d recipients are not normalized", r.Seq)
-	}
-	for _, recipient := range to {
-		if !isMember(members, recipient) {
-			return core.Event{}, fmt.Errorf("invalid stored event %d: recipient %q is not an admitted member", r.Seq, recipient)
-		}
+// coreRecord converts a stored row back into the domain Record. Malformed
+// content or a foreign room id is storage corruption and fails closed.
+func (r EventRow) coreRecord(room string) (core.Record, error) {
+	if r.Seq == 0 || r.RoomID != room || r.At.IsZero() {
+		return core.Record{}, fmt.Errorf("invalid stored record %d of %q", r.Seq, room)
 	}
 	content, err := core.CompactJSON(json.RawMessage(r.Content))
 	if err != nil || string(content) != r.Content {
-		return core.Event{}, fmt.Errorf("stored event %d content is not compact valid JSON", r.Seq)
+		return core.Record{}, fmt.Errorf("stored record %d of %q content is not compact valid JSON", r.Seq, room)
 	}
-	return core.Event{
+	return core.Record{
+		Room:    room,
 		Seq:     r.Seq,
-		Actor:   r.Actor,
+		Author:  r.Author,
 		At:      r.At,
-		To:      to,
 		Content: content,
 	}, nil
-}
-
-func isMember(members map[string]struct{}, actorID string) bool {
-	_, ok := members[actorID]
-	return ok
-}
-
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

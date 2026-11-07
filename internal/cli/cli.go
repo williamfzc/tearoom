@@ -1,6 +1,6 @@
-// Package cli exposes Tearoom as the room and event command surface: explicit
-// admission, pure caller-owned reads, and JSON output. It owns no session
-// state; every shared invariant lives in core.Store.
+// Package cli exposes Tearoom as the room-tree command surface: named rooms
+// in one workspace, append-only records, pure reads, and notification lines.
+// It owns no session state; every shared invariant lives in core.Store.
 package cli
 
 import (
@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/williamfzc/tearoom/internal/core"
@@ -26,37 +25,37 @@ const (
 	ExitStore = 4
 )
 
-const rootHelp = `tearoom — a durable room for agents
+const rootHelp = `tearoom — a durable room tree for agents
 
 Usage:
   tearoom <command> [flags]
 
 Commands:
-  room      init and join the nearest room
-  send      append one event
-  read      read events after an explicit boundary
-  server    serve a room, or a shared database of rooms, over HTTP
+  room      create rooms in the workspace tree
+  send      append one record to a room
+  read      read records: a room, a subtree, a tail
+  tree      print the skeleton: parents and children
+  watch     print a notification line per new record
+  server    serve the workspace over local HTTP
   skill     print the agent guide: the journey and the rules
 
 Options:
   --version show build and store format information
 
 Environment:
-  TEAROOM_ACTOR    stable actor identity
-  TEAROOM_SERVER   shared server or room URL; omit for the nearest local room
-  TEAROOM_TOKEN    bearer credential for writes and owner operations
-  TEAROOM_CA_FILE  extra TLS root for private or self-signed deployments
+  TEAROOM_ACTOR    default signature for --as
+  TEAROOM_SERVER   local server URL; omit for the nearest workspace
 
 Use "tearoom <command> --help" for more information.
 `
 
-const serverHelp = `Run a shared room service.
+const serverHelp = `Run the local room service.
 
 Usage:
   tearoom server <command> [flags]
 
 Commands:
-  start   serve the nearest room over HTTP
+  start   serve the nearest workspace over loopback HTTP
 `
 
 type App struct {
@@ -88,6 +87,10 @@ func (a *App) Run(args []string) int {
 		err = a.runSend(args[1:])
 	case "read":
 		err = a.runRead(args[1:])
+	case "tree":
+		err = a.runTree(args[1:])
+	case "watch":
+		err = a.runWatch(args[1:])
 	case "server":
 		err = a.runServer(args[1:])
 	case "skill":
@@ -108,161 +111,131 @@ func (a *App) Run(args []string) int {
 	}
 }
 
-const sendHelp = `Append one event to the nearest room.
+const sendHelp = `Append one record to a room.
 
 Plain text is encoded as a JSON string; --json passes the raw JSON content.
-The appended event is printed as one JSON object.
+The appended record is printed as one JSON object.
 
 Usage:
-  tearoom send <text> [flags]
-  tearoom send --json <json> [flags]
+  tearoom send [--room <room>] <text> [flags]
+  tearoom send [--room <room>] --text <text> [flags]
+  tearoom send [--room <room>] --json <json> [flags]
 
 Flags:
-  --as string             actor identity; defaults to TEAROOM_ACTOR
-  --json string           raw JSON content instead of positional text
-  --idempotency-key string  retry identity; an equal retry returns the original event
-  -h, --help              show help
+  --room string             target room; defaults to the only room of the workspace
+  --as string               signature label; defaults to TEAROOM_ACTOR, may be empty
+  --text string             the record text
+  --json string             raw JSON content instead of text
+  --idempotency-key string  retry identity; an equal retry returns the original record
+  -h, --help                show help
 `
 
 func (a *App) runSend(args []string) error {
 	flags := newFlags("send", a.Out, sendHelp)
+	roomFlag := flags.String("room", "", "")
 	as := flags.String("as", "", "")
+	text := flags.String("text", "", "")
 	raw := flags.String("json", "", "")
 	key := flags.String("idempotency-key", "", "")
 	if err := parse(flags, args); err != nil {
 		return err
 	}
-	text := strings.Join(flags.Args(), " ")
+	positionals := strings.Join(flags.Args(), " ")
 	var content json.RawMessage
 	switch {
-	case *raw != "" && text != "":
-		return errors.New("provide exactly one of positional text or --json")
+	case countSet(*raw, *text, positionals) > 1:
+		return errors.New("provide exactly one of positional text, --text, or --json")
 	case *raw != "":
 		content = json.RawMessage(*raw)
-	case text != "":
-		encoded, err := json.Marshal(text)
+	case *text != "":
+		encoded, err := json.Marshal(*text)
+		if err != nil {
+			return err
+		}
+		content = encoded
+	case positionals != "":
+		encoded, err := json.Marshal(positionals)
 		if err != nil {
 			return err
 		}
 		content = encoded
 	default:
-		return errors.New("provide positional text or --json content")
-	}
-	actor, err := actorID(*as)
-	if err != nil {
-		return err
+		return errors.New("provide positional text, --text, or --json content")
 	}
 	st, err := a.openStore()
 	if err != nil {
 		return err
 	}
-	event, err := st.Append(context.Background(), actor, core.AppendRequest{
+	ctx := a.context()
+	room, err := a.resolveRoom(ctx, st, *roomFlag)
+	if err != nil {
+		return err
+	}
+	record, err := st.Append(ctx, room, signature(*as), core.AppendRequest{
 		Content:        content,
 		IdempotencyKey: *key,
 	})
 	if err != nil {
 		return err
 	}
-	return json.NewEncoder(a.Out).Encode(event)
+	return json.NewEncoder(a.Out).Encode(record)
 }
 
-const readHelp = `Read events from the nearest room, one JSON object per line.
-
-An empty result prints nothing and exits 0. The read is pure: nothing in the
-Room changes; truncation or polling for later events belongs to the caller.
-
-Usage:
-  tearoom read [--as <actor>] [--after e42]
-
-Flags:
-  --as string        actor identity; defaults to TEAROOM_ACTOR
-  --after string     exclusive boundary, the presentation address e<seq>
-  -h, --help         show help
-`
-
-func (a *App) runRead(args []string) error {
-	flags := newFlags("read", a.Out, readHelp)
-	as := flags.String("as", "", "")
-	after := flags.String("after", "", "")
-	if err := parseNoArgs(flags, args); err != nil {
-		return err
+func (a *App) resolveRoom(ctx context.Context, st core.Store, flagValue string) (string, error) {
+	name := strings.TrimSpace(flagValue)
+	if name != "" {
+		return name, nil
 	}
-	boundary, err := parseBoundary(*after)
+	rooms, err := st.Rooms(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
-	actor, err := actorID(*as)
-	if err != nil {
-		return err
+	if len(rooms) == 1 {
+		return rooms[0].Name, nil
 	}
-	st, err := a.openStore()
-	if err != nil {
-		return err
+	if len(rooms) == 0 {
+		return "", core.ErrNoRoom
 	}
-	ctx := a.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	events, err := st.Read(ctx, actor, boundary)
-	if err != nil {
-		return err
-	}
-	encoder := json.NewEncoder(a.Out)
-	for _, event := range events {
-		if err := encoder.Encode(event); err != nil {
-			return err
-		}
-	}
-	return nil
+	return "", fmt.Errorf("this workspace has %d rooms; pass --room (see 'tearoom tree')", len(rooms))
 }
 
 // openStore targets TEAROOM_SERVER when set and otherwise opens the nearest
-// local room. room init never runs through this path: room creation is local.
+// local workspace. Room creation never runs through this path: rooms are
+// created locally.
 func (a *App) openStore() (core.Store, error) {
 	if server := strings.TrimRight(strings.TrimSpace(os.Getenv("TEAROOM_SERVER")), "/"); server != "" {
 		if err := transport.RequireSafeURL(server); err != nil {
 			return nil, err
 		}
-		client := transport.NewClient(server, strings.TrimSpace(os.Getenv("TEAROOM_TOKEN")))
-		if ca := strings.TrimSpace(os.Getenv("TEAROOM_CA_FILE")); ca != "" {
-			if err := client.UseCAFile(ca); err != nil {
-				return nil, err
-			}
-		}
-		return client, nil
+		return transport.NewClient(server), nil
 	}
 	return store.Open(a.Dir)
 }
 
-// parseBoundary accepts only the presentation address e<seq>.
-func parseBoundary(value string) (uint64, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return 0, nil
+func (a *App) context() context.Context {
+	if a.Context != nil {
+		return a.Context
 	}
-	if !strings.HasPrefix(value, "e") {
-		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
-	}
-	seqText := strings.TrimPrefix(value, "e")
-	if seqText == "" {
-		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
-	}
-	seq, err := strconv.ParseUint(seqText, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid --after %q: use the presentation address e<seq>", value)
-	}
-	return seq, nil
+	return context.Background()
 }
 
-func actorID(flagValue string) (string, error) {
+func countSet(values ...string) int {
+	count := 0
+	for _, value := range values {
+		if value != "" {
+			count++
+		}
+	}
+	return count
+}
+
+// parseBoundary accepts only the presentation address e<seq>.
+func signature(flagValue string) string {
 	value := strings.TrimSpace(flagValue)
 	if value == "" {
 		value = strings.TrimSpace(os.Getenv("TEAROOM_ACTOR"))
 	}
-	if value == "" {
-		return "", errors.New("actor identity is required: set TEAROOM_ACTOR or pass --as")
-	}
-	return value, nil
+	return value
 }
 
 func isHelp(value string) bool { return value == "-h" || value == "--help" }

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Evaluation: E2 — P0 replay across real processes, no server-owned read progress
+# Evaluation: E2 — replay across real processes, no server-owned read progress
 #
-# Proves: different real processes act as the same Actor identity; a later
-# process replays from an explicit eN boundary after the writer exited; no
-# session or cursor files exist anywhere (the client config directory stays
-# empty); every invocation picks its own boundary; Room history is consistent
-# across process and server restarts.
+# Proves: different real processes act on the same workspace; a later process
+# replays from an explicit eN boundary after the writer exited; no session or
+# cursor files exist anywhere (the client config directory stays empty); every
+# invocation picks its own boundary; workspace history is consistent across
+# process and server restarts.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -27,7 +27,7 @@ check() {
 in_dir() { local dir="$1"; shift; ( cd "$dir" && "$@" ); }
 expect() { local name="$1"; shift; local rc=0; in_dir "$@" || rc=$?; check "$name" "$rc"; }
 
-# seqs_of reads JSONL on stdin and prints the event sequence numbers.
+# seqs_of reads JSONL on stdin and prints the record sequence numbers.
 seqs_of() {
   python3 -c '
 import json, sys
@@ -37,35 +37,35 @@ print(" ".join(str(s) for s in seqs))
 }
 
 echo
-echo "E2: one actor identity across real processes"
+echo "E2: one workspace across real processes"
 room="$WORK/room"
 mkdir -p "$room"
 
-# Process 1: create the room and append three events as alice, then exit.
-expect "process 1: room init admits alice" "$room" "$BIN" room init --as alice
-expect "process 1: alice sends event one" "$room" "$BIN" send "first" --as alice
-expect "process 1: alice sends event two" "$room" "$BIN" send --json '{"plan":2}' --as alice
-expect "process 1: alice sends event three" "$room" "$BIN" send "third" --as alice
+# Process 1: create the workspace and append three records, then exit.
+expect "process 1: room init creates the workspace" "$room" "$BIN" room init --name main-line
+expect "process 1: records event one" "$room" "$BIN" send "first" --as alice
+expect "process 1: records event two" "$room" "$BIN" send --json '{"plan":2}' --as alice
+expect "process 1: records event three" "$room" "$BIN" send "third" --as alice
 
 # Process 2: a brand-new invocation replays from the explicit e1 boundary.
-replay="$(in_dir "$room" "$BIN" read --after e1 --as alice)"
+replay="$(in_dir "$room" "$BIN" read --after e1)"
 rc=0
 printf '%s\n' "$replay" | python3 -c '
 import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-seqs = [e["seq"] for e in events]
-sys.exit(0 if seqs == [2, 3] and all(e["actor"] == "alice" for e in events) else 1)
+records = [json.loads(ln) for ln in sys.stdin if ln.strip()]
+seqs = [r["seq"] for r in records]
+sys.exit(0 if seqs == [2, 3] and all(r["author"] == "alice" for r in records) else 1)
 ' || rc=$?
-check "process 2 replays events 2 and 3 from the e1 boundary" "$rc"
+check "process 2 replays records 2 and 3 from the e1 boundary" "$rc"
 
-# Process 3: the same Actor appends a fourth event and reads everything.
-expect "process 3: alice appends event four" "$room" "$BIN" send "fourth" --as alice
-full="$(in_dir "$room" "$BIN" read --as alice)"
+# Process 3: the same signature appends a fourth record and reads everything.
+expect "process 3: alice appends record four" "$room" "$BIN" send "fourth" --as alice
+full="$(in_dir "$room" "$BIN" read)"
 rc=0
 printf '%s\n' "$full" | python3 -c '
 import json, sys
-events = [json.loads(ln) for ln in sys.stdin if ln.strip()]
-seqs = [e["seq"] for e in events]
+records = [json.loads(ln) for ln in sys.stdin if ln.strip()]
+seqs = [r["seq"] for r in records]
 sys.exit(0 if seqs == [1, 2, 3, 4] else 1)
 ' || rc=$?
 check "process 3 reads the complete dense history 1..4" "$rc"
@@ -75,9 +75,9 @@ echo "E2: no session or cursor files"
 leftovers="$(find "$HOME" -type f | head -5)"
 check "the client config directory holds no session files" "$([ -z "$leftovers" ] && echo 0 || echo 1)"
 # Every invocation owns its boundary: reading from e1 twice returns the same
-# events and leaves the room untouched for the next caller.
-one="$(in_dir "$room" "$BIN" read --after e1 --as alice | seqs_of)"
-two="$(in_dir "$room" "$BIN" read --after e1 --as alice | seqs_of)"
+# records and leaves the workspace untouched for the next caller.
+one="$(in_dir "$room" "$BIN" read --after e1 | seqs_of)"
+two="$(in_dir "$room" "$BIN" read --after e1 | seqs_of)"
 check "independent invocations replay the same boundary (e1 -> 2 3 4)" \
   "$([ "$one" = "$two" ] && [ "$one" = "2 3 4" ] && echo 0 || echo 1)"
 
@@ -89,7 +89,7 @@ start_server() {
   ( cd "$room" && exec "$BIN" server start --address "127.0.0.1:$PORT" ) >"$WORK/server.log" 2>&1 &
   SRV_PID=$!
   for _ in $(seq 1 100); do
-    if TEAROOM_SERVER="$URL" "$BIN" read --as alice >/dev/null 2>&1; then return 0; fi
+    if TEAROOM_SERVER="$URL" "$BIN" read >/dev/null 2>&1; then return 0; fi
     sleep 0.1
   done
   return 1
@@ -100,15 +100,15 @@ stop_server() {
 }
 
 start_server
-srv_first="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read --as alice | seqs_of)"
+srv_first="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read | seqs_of)"
 stop_server
 start_server
-srv_second="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read --as alice | seqs_of)"
+srv_second="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read | seqs_of)"
 check "server restart serves the same history" "$([ "$srv_first" = "$srv_second" ] && [ "$srv_first" = "1 2 3 4" ] && echo 0 || echo 1)"
 stop_server
 
 expect "process 4: alice appends after the restarts" "$room" "$BIN" send "after restart" --as alice
-final="$(in_dir "$room" "$BIN" read --as alice | seqs_of)"
+final="$(in_dir "$room" "$BIN" read | seqs_of)"
 check "history stays consistent after restarts: 1..5" \
   "$(printf '%s' "$final" | grep -q '^1 2 3 4 5$' && echo 0 || echo 1)"
 

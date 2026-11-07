@@ -1,6 +1,7 @@
-// The store package owns the .tearoom layout. SQLite is the only room
-// backend; the marker file makes the layout format explicit instead of
-// guessing from what files exist.
+// The store package owns the .tearoom workspace layout. SQLite is the only
+// room backend; one workspace database holds the whole room tree, and the
+// marker file makes the layout format explicit instead of guessing from what
+// files exist.
 package store
 
 import (
@@ -9,47 +10,45 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/williamfzc/tearoom/internal/core"
 	"github.com/williamfzc/tearoom/internal/relational"
 )
 
-// Dir is the room directory name discovered upward from the working directory.
+// Dir is the workspace directory name discovered upward from the working
+// directory.
 const Dir = ".tearoom"
 
-// formatVersion is the only store.json layout version accepted. Any other
-// layout — markerless, version 1, or a retired backend — is rejected as
-// incompatible; there is no import or automatic upgrade.
-const formatVersion = 2
+// formatVersion is the store.json layout version this release writes. A
+// format-2 workspace (the v1 single-room model) still opens: it upgrades
+// once to format 3 on first touch, and the marker file is rewritten. Any
+// other layout — markerless, version 1, or a retired backend — is rejected as
+// incompatible; there is no other import or automatic upgrade.
+const formatVersion = 3
 
-// FormatVersion reports the store layout version accepted by this release.
+// FormatVersion reports the store layout version written by this release.
 // It is exposed for diagnostics so callers do not duplicate this invariant.
 func FormatVersion() int { return formatVersion }
 
 const markerName = "store.json"
 
-// marker declares the layout format of a room. The backend field is
+// marker declares the layout format of a workspace. The backend field is
 // historical: "sqlite" is the only value this release accepts.
 type marker struct {
 	Format  int    `json:"format"`
 	Backend string `json:"backend"`
 }
 
-// Init creates a Room and explicitly admits creator as one atomic operation.
-// The room is assembled in a private sibling directory and exposed only after
-// the schema and the creator membership are durable.
-func Init(dir, creator string) (core.Store, error) {
-	creator = strings.TrimSpace(creator)
-	if creator == "" {
-		return nil, errors.New("creator actor is required")
-	}
+// Init creates a workspace: one .tearoom directory holding an empty room
+// tree. The workspace is assembled in a private sibling directory and exposed
+// only after the schema and marker are durable.
+func Init(dir string) (core.Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	root := filepath.Join(dir, Dir)
 	if _, err := os.Stat(root); err == nil {
-		return nil, fmt.Errorf("room already exists at %s", root)
+		return nil, fmt.Errorf("workspace already exists at %s", root)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -62,7 +61,7 @@ func Init(dir, creator string) (core.Store, error) {
 		return nil, err
 	}
 
-	st, err := relational.Init(tmp, creator)
+	st, err := relational.Init(tmp)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +81,10 @@ func Init(dir, creator string) (core.Store, error) {
 	return relational.Open(root)
 }
 
-// Open finds the nearest room and opens it. Only format-2 sqlite markers are
-// accepted; any older layout is rejected with a clear incompatible error.
+// Open finds the nearest workspace and opens it. Format-3 sqlite markers are
+// the current layout; a format-2 marker is the v1 layout and is upgraded once
+// (its single room becomes a root, signatures are kept) with the marker file
+// rewritten. Any other layout is refused with a clear incompatible error.
 func Open(start string) (core.Store, error) {
 	root, err := Find(start)
 	if err != nil {
@@ -93,15 +94,29 @@ func Open(start string) (core.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if m.Format != formatVersion {
-		return nil, fmt.Errorf("incompatible store format %d at %s: format %d required, no automatic upgrade", m.Format, root, formatVersion)
-	}
 	if m.Backend != "sqlite" {
 		return nil, fmt.Errorf("incompatible store at %s: backend %q is retired; sqlite required, no automatic upgrade", root, m.Backend)
 	}
-	// relational.Open applies the database-level format gate: a database
-	// without the format-2 marker is refused, never read or upgraded.
-	return relational.Open(root)
+	switch m.Format {
+	case formatVersion:
+	case 2:
+		// The relational layer performs the one-time upgrade; after it
+		// succeeds the marker file is rewritten so the next open sees the
+		// current format directly.
+	default:
+		return nil, fmt.Errorf("incompatible store format %d at %s: format %d required, no automatic upgrade", m.Format, root, formatVersion)
+	}
+	st, err := relational.Open(root)
+	if err != nil {
+		return nil, err
+	}
+	if m.Format == 2 {
+		if err := writeMarker(root, marker{Format: formatVersion, Backend: "sqlite"}); err != nil {
+			_ = st.Close()
+			return nil, err
+		}
+	}
+	return st, nil
 }
 
 // Find walks upward from start and returns the nearest .tearoom directory.

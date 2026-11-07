@@ -11,7 +11,7 @@ import (
 
 func TestLocalStoreContract(t *testing.T) {
 	core.StoreContract(t, func(t *testing.T) core.Store {
-		st, err := store.Init(t.TempDir(), "planner")
+		st, err := store.Init(t.TempDir())
 		if err != nil {
 			t.Fatal(err)
 		}

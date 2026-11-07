@@ -1,5 +1,6 @@
-// server.go runs the HTTP profiles: the local loopback server over the
-// nearest Room, and the hosted server over a shared deployment database.
+// server.go runs the local HTTP profile: the loopback server over the
+// nearest workspace. There is no hosted profile; exposing the server beyond
+// one trusted machine is a misdeployment.
 package cli
 
 import (
@@ -8,13 +9,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/williamfzc/tearoom/internal/core"
-	"github.com/williamfzc/tearoom/internal/hosted"
-	"github.com/williamfzc/tearoom/internal/relational"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
 )
@@ -31,15 +29,11 @@ func (a *App) runServer(args []string) error {
 }
 
 func (a *App) serverStart(args []string) error {
-	const help = `Serve a Room over HTTP.
+	const help = `Serve the nearest workspace over HTTP.
 
-Local profile: serves the nearest Room and binds the loopback interface
-only, because the local profile has no credentials.
-
-Hosted profile: set TEAROOM_DSN to a deployment database (postgres://... or
-a SQLite file) and TEAROOM_OWNER_TOKEN to the deployment secret. The hosted
-service hosts many rooms behind /r/<id> URLs, may bind any interface, and
-enforces credentials on writes while reads stay open.
+The local profile binds the loopback interface only: it has no credentials,
+and everything on the loopback interface belongs to one OS user — the same
+trust domain as the .tearoom directory.
 
 Usage:
   tearoom server start [flags]
@@ -53,15 +47,12 @@ Flags:
 	if err := parseNoArgs(flags, args); err != nil {
 		return err
 	}
-	if dsn := os.Getenv("TEAROOM_DSN"); dsn != "" {
-		return a.serveHosted(*address, dsn)
-	}
 	if err := requireLoopback(*address); err != nil {
 		return err
 	}
 	st, err := store.Open(a.Dir)
 	if err != nil {
-		return fmt.Errorf("open room under %s: %w", a.Dir, err)
+		return fmt.Errorf("open workspace under %s: %w", a.Dir, err)
 	}
 	defer closeStore(st)
 	root := a.Dir
@@ -72,33 +63,10 @@ Flags:
 	return a.serve(*address, transport.NewServer(st).Handler())
 }
 
-// serveHosted runs the hosted profile: one database, many rooms, credentials
-// enforced. The owner token is mandatory because an exposed service without
-// credentials is refused by design.
-func (a *App) serveHosted(address, dsn string) error {
-	owner := os.Getenv("TEAROOM_OWNER_TOKEN")
-	if owner == "" {
-		return errors.New("hosted mode requires TEAROOM_OWNER_TOKEN")
-	}
-	db, err := relational.OpenDatabase(dsn)
-	if err != nil {
-		return fmt.Errorf("open deployment database: %w", err)
-	}
-	h, err := hosted.New(db, owner, nil)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.Err, "tearoom hosting a shared database on %s\n", address)
-	return a.serve(address, h.Handler())
-}
-
 // serve runs one HTTP server until the process context is cancelled.
 func (a *App) serve(address string, handler http.Handler) error {
 	server := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
-	ctx := a.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := a.context()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
 	select {
@@ -135,7 +103,7 @@ func requireLoopback(address string) error {
 		return fmt.Errorf("invalid listen address %q: %w", address, err)
 	}
 	if host == "" {
-		return fmt.Errorf("refusing listen address %q: P0 serves loopback only; use 127.0.0.1:8787", address)
+		return fmt.Errorf("refusing listen address %q: the local profile serves loopback only; use 127.0.0.1:8787", address)
 	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
@@ -143,5 +111,5 @@ func requireLoopback(address string) error {
 	if strings.EqualFold(host, "localhost") {
 		return nil
 	}
-	return fmt.Errorf("refusing listen address %q: P0 serves loopback only; use 127.0.0.1:8787", address)
+	return fmt.Errorf("refusing listen address %q: the local profile serves loopback only; use 127.0.0.1:8787", address)
 }

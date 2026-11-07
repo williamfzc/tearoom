@@ -13,116 +13,161 @@ import (
 )
 
 // StoreContract runs the conformance battery every Store implementation must
-// pass: admission, dense ordered append, membership visibility, public To
-// addressing, caller-owned read boundaries, and per-request idempotency.
-// newStore returns a fresh initialized room for each subtest. Store
-// implementations run this battery from their own test suites.
+// pass: the single-parent tree, dense per-room append, pure caller-owned
+// reads, and per-request idempotency. newStore returns a fresh empty
+// workspace for each subtest. Store implementations run this battery from
+// their own test suites.
 func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 	t.Helper()
 	ctx := context.Background()
 
-	t.Run("Room", func(t *testing.T) {
+	t.Run("CreateRoom", func(t *testing.T) {
 		st := newStore(t)
-		room, err := st.Room(ctx)
+		room, err := st.CreateRoom(ctx, "main-line", "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if room == nil || room.ID == "" {
-			t.Fatalf("room identity missing: %+v", room)
+		if room == nil || room.Name != "main-line" {
+			t.Fatalf("created room = %+v", room)
+		}
+		if room.Parent != "" {
+			t.Fatalf("root room records a parent: %+v", room)
 		}
 		if room.Created.IsZero() {
 			t.Fatalf("room creation time missing: %+v", room)
 		}
-	})
-
-	t.Run("AdmitActor", func(t *testing.T) {
-		st := newStore(t)
-		actor, err := st.AdmitActor(ctx, "planner")
+		rooms, err := st.Rooms(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if actor.ID != "planner" || actor.Joined.IsZero() {
-			t.Fatalf("admitted actor = %+v", actor)
+		if len(rooms) != 1 || rooms[0].Name != "main-line" {
+			t.Fatalf("rooms = %+v, want exactly main-line", rooms)
 		}
-		again, err := st.AdmitActor(ctx, "planner")
+		// Names are the addresses: a duplicate is a conflict, and a child of
+		// a missing room is refused.
+		if _, err := st.CreateRoom(ctx, "main-line", ""); !errors.Is(err, ErrConflict) {
+			t.Fatalf("duplicate room error = %v, want %v", err, ErrConflict)
+		}
+		if _, err := st.CreateRoom(ctx, "orphan", "missing"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unknown parent error = %v, want %v", err, ErrNotFound)
+		}
+		if _, err := st.CreateRoom(ctx, "  ", ""); err == nil {
+			t.Fatal("blank room name accepted")
+		}
+	})
+
+	t.Run("ChildRecordsParent", func(t *testing.T) {
+		st := newStore(t)
+		if _, err := st.CreateRoom(ctx, "root", ""); err != nil {
+			t.Fatal(err)
+		}
+		child, err := st.CreateRoom(ctx, "implementation", "root")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if again.ID != actor.ID || !again.Joined.Equal(actor.Joined) {
-			t.Fatalf("re-joining changed the actor: %+v then %+v", actor, again)
+		if child.Parent != "root" {
+			t.Fatalf("child = %+v, want parent root", child)
 		}
-		actors, err := st.Actors(ctx)
+		// The parent records nothing about the child: the child list is
+		// derived from the rooms listing, never stored on the parent.
+		rooms, err := st.Rooms(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(actors) != 1 || actors[0].ID != "planner" {
-			t.Fatalf("actors = %+v, want exactly planner", actors)
+		if len(rooms) != 2 {
+			t.Fatalf("rooms = %+v, want root and implementation", rooms)
+		}
+		var children []string
+		for _, room := range rooms {
+			if room.Parent == "root" {
+				children = append(children, room.Name)
+			}
+		}
+		if len(children) != 1 || children[0] != "implementation" {
+			t.Fatalf("derived children of root = %v", children)
 		}
 	})
 
-	t.Run("UnjoinedActorRejected", func(t *testing.T) {
+	t.Run("IndependentRoots", func(t *testing.T) {
 		st := newStore(t)
-		if _, err := st.Read(ctx, "stranger", 0); !errors.Is(err, ErrUnknownActor) {
-			t.Fatalf("unjoined read error = %v, want %v", err, ErrUnknownActor)
+		if _, err := st.CreateRoom(ctx, "one", ""); err != nil {
+			t.Fatal(err)
 		}
-		if _, err := st.Append(ctx, "stranger", AppendRequest{Content: json.RawMessage(`"hi"`)}); !errors.Is(err, ErrUnknownActor) {
-			t.Fatalf("unjoined append error = %v, want %v", err, ErrUnknownActor)
+		if _, err := st.CreateRoom(ctx, "two", ""); err != nil {
+			t.Fatal(err)
+		}
+		rooms, err := st.Rooms(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rooms) != 2 {
+			t.Fatalf("rooms = %+v, want two roots", rooms)
+		}
+		for _, room := range rooms {
+			if room.Parent != "" {
+				t.Fatalf("root %q records a parent: %+v", room.Name, room)
+			}
 		}
 	})
 
-	t.Run("UnjoinedRecipientRejected", func(t *testing.T) {
+	t.Run("DenseSequencePerRoom", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "sender")
-		if _, err := st.Append(ctx, "sender", AppendRequest{
-			To: []string{"missing"}, Content: json.RawMessage(`"hi"`),
-		}); !errors.Is(err, ErrUnknownActor) {
-			t.Fatalf("unknown recipient error = %v, want %v", err, ErrUnknownActor)
+		if _, err := st.CreateRoom(ctx, "root", ""); err != nil {
+			t.Fatal(err)
 		}
-		if events := readAll(t, st, "sender", 0); len(events) != 0 {
-			t.Fatalf("unknown recipient appended events: %+v", events)
+		if _, err := st.CreateRoom(ctx, "child", "root"); err != nil {
+			t.Fatal(err)
 		}
-	})
-
-	t.Run("DenseSequence", func(t *testing.T) {
-		st := newStore(t)
-		admit(t, st, "a", "b")
 		for i := 1; i <= 3; i++ {
-			event, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage(`"e"`)})
+			// The first append carries no prior read: ordinary appends never
+			// depend on read progress.
+			record, err := st.Append(ctx, "root", "a", AppendRequest{Content: json.RawMessage(`"e"`)})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if event.Seq != uint64(i) {
-				t.Fatalf("seq = %d, want %d", event.Seq, i)
+			if record.Seq != uint64(i) {
+				t.Fatalf("root seq = %d, want %d", record.Seq, i)
+			}
+			if record.Room != "root" || record.At.IsZero() {
+				t.Fatalf("record does not carry its room and acceptance time: %+v", record)
 			}
 		}
-		events := readAll(t, st, "b", 0)
-		if len(events) != 3 {
-			t.Fatalf("events = %d, want 3", len(events))
+		// A child's stream starts at 1 regardless of the parent's head: the
+		// streams of different rooms are independent.
+		first, err := st.Append(ctx, "child", "b", AppendRequest{Content: json.RawMessage(`"c"`)})
+		if err != nil {
+			t.Fatal(err)
 		}
-		for i, event := range events {
-			if event.Seq != uint64(i+1) {
-				t.Fatalf("history not dense: event %d has seq %d", i, event.Seq)
+		if first.Seq != 1 {
+			t.Fatalf("child seq = %d, want 1", first.Seq)
+		}
+		records := readAll(t, st, "root", 0)
+		if len(records) != 3 {
+			t.Fatalf("root history = %d records, want 3", len(records))
+		}
+		for i, record := range records {
+			if record.Seq != uint64(i+1) {
+				t.Fatalf("history not dense: record %d has seq %d", i, record.Seq)
 			}
 		}
 	})
 
 	t.Run("ConcurrentAppendDense", func(t *testing.T) {
 		st := newStore(t)
-		const writers = 8
-		ids := make([]string, writers)
-		for i := range ids {
-			ids[i] = fmt.Sprintf("w%d", i)
+		if _, err := st.CreateRoom(ctx, "busy", ""); err != nil {
+			t.Fatal(err)
 		}
-		admit(t, st, ids...)
+		const writers = 8
 		var group sync.WaitGroup
 		results := make(chan error, writers)
-		for _, id := range ids {
+		for i := 0; i < writers; i++ {
 			group.Add(1)
-			go func(id string) {
+			go func(i int) {
 				defer group.Done()
-				_, err := st.Append(ctx, id, AppendRequest{Content: json.RawMessage(fmt.Sprintf(`"from %s"`, id))})
+				_, err := st.Append(ctx, "busy", fmt.Sprintf("w%d", i),
+					AppendRequest{Content: json.RawMessage(fmt.Sprintf(`"from w%d"`, i))})
 				results <- err
-			}(id)
+			}(i)
 		}
 		group.Wait()
 		close(results)
@@ -131,163 +176,159 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 				t.Fatalf("concurrent append: %v", err)
 			}
 		}
-		events := readAll(t, st, ids[0], 0)
-		if len(events) != writers {
-			t.Fatalf("events = %d, want %d", len(events), writers)
+		records := readAll(t, st, "busy", 0)
+		if len(records) != writers {
+			t.Fatalf("records = %d, want %d", len(records), writers)
 		}
-		for i, event := range events {
-			if event.Seq != uint64(i+1) {
-				t.Fatalf("concurrent sequence not dense: event %d has seq %d", i, event.Seq)
+		for i, record := range records {
+			if record.Seq != uint64(i+1) {
+				t.Fatalf("concurrent sequence not dense: record %d has seq %d", i, record.Seq)
 			}
-		}
-	})
-
-	t.Run("MembershipVisibility", func(t *testing.T) {
-		st := newStore(t)
-		admit(t, st, "planner", "bob", "carol")
-		if _, err := st.Append(ctx, "planner", AppendRequest{To: []string{"bob"}, Content: json.RawMessage(`{"plan":1}`)}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := st.Append(ctx, "bob", AppendRequest{Content: json.RawMessage(`"ok"`)}); err != nil {
-			t.Fatal(err)
-		}
-		for _, member := range []string{"planner", "bob", "carol"} {
-			events := readAll(t, st, member, 0)
-			if len(events) != 2 {
-				t.Fatalf("%s sees %d events, want 2: %+v", member, len(events), events)
-			}
-		}
-		// To is public addressing: an event addressed to bob is visible to carol.
-		carol := readAll(t, st, "carol", 0)
-		if !bytes.Equal(carol[0].Content, json.RawMessage(`{"plan":1}`)) {
-			t.Fatalf("carol missed the event addressed to bob: %+v", carol)
 		}
 	})
 
 	t.Run("ReadBoundary", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "a")
+		if _, err := st.CreateRoom(ctx, "room", ""); err != nil {
+			t.Fatal(err)
+		}
 		for i := 1; i <= 5; i++ {
-			if _, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage(fmt.Sprintf(`"m%d"`, i))}); err != nil {
+			if _, err := st.Append(ctx, "room", "a", AppendRequest{Content: json.RawMessage(fmt.Sprintf(`"m%d"`, i))}); err != nil {
 				t.Fatal(err)
 			}
 		}
-		after2 := readAll(t, st, "a", 2)
+		after2 := readAll(t, st, "room", 2)
 		if len(after2) != 3 || after2[0].Seq != 3 || after2[2].Seq != 5 {
 			t.Fatalf("read after 2 = %+v, want seqs 3..5", after2)
 		}
 		// Repeated reads are side-effect-free and return identical history.
-		again := readAll(t, st, "a", 2)
+		again := readAll(t, st, "room", 2)
 		if len(again) != 3 || again[0].Seq != 3 {
 			t.Fatalf("repeated read changed results: %+v", again)
 		}
 		// The boundary is caller-owned: a later full read still sees everything.
-		all := readAll(t, st, "a", 0)
+		all := readAll(t, st, "room", 0)
 		if len(all) != 5 {
-			t.Fatalf("full read after bounded reads = %d events", len(all))
+			t.Fatalf("full read after bounded reads = %d records", len(all))
 		}
 		// Past the end is empty, not an error.
-		if tail := readAll(t, st, "a", 5); len(tail) != 0 {
+		if tail := readAll(t, st, "room", 5); len(tail) != 0 {
 			t.Fatalf("read past the end = %+v", tail)
+		}
+		// An unknown room is a not-found error, never a silent empty read.
+		if _, err := st.Read(ctx, "missing", 0); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unknown room error = %v, want %v", err, ErrNotFound)
 		}
 	})
 
-	t.Run("AppendWithoutPriorRead", func(t *testing.T) {
+	t.Run("MissingAuthorAllowed", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "a")
-		if _, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage(`"first"`)}); err != nil {
-			t.Fatalf("ordinary append depends on a prior read: %v", err)
+		if _, err := st.CreateRoom(ctx, "room", ""); err != nil {
+			t.Fatal(err)
+		}
+		record, err := st.Append(ctx, "room", "", AppendRequest{Content: json.RawMessage(`"anon"`)})
+		if err != nil {
+			t.Fatalf("append without a signature: %v", err)
+		}
+		if record.Author != "" {
+			t.Fatalf("author = %q, want the empty signature", record.Author)
+		}
+		// A signature is a label: whitespace is trimmed, never validated.
+		labeled, err := st.Append(ctx, "room", "  codex  ", AppendRequest{Content: json.RawMessage(`"signed"`)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if labeled.Author != "codex" {
+			t.Fatalf("author = %q, want codex", labeled.Author)
 		}
 	})
 
 	t.Run("Idempotency", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "a", "b")
-
-		// No key: every append creates a distinct event.
-		if _, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage(`{"n":1}`)}); err != nil {
+		if _, err := st.CreateRoom(ctx, "one", ""); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage(`{"n":1}`)}); err != nil {
+		if _, err := st.CreateRoom(ctx, "two", ""); err != nil {
 			t.Fatal(err)
 		}
-		events := readAll(t, st, "a", 0)
-		if len(events) != 2 || events[0].Seq == events[1].Seq {
-			t.Fatalf("no-key appends collapsed into %+v", events)
+
+		// No key: every append creates a distinct record.
+		if _, err := st.Append(ctx, "one", "a", AppendRequest{Content: json.RawMessage(`{"n":1}`)}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Append(ctx, "one", "a", AppendRequest{Content: json.RawMessage(`{"n":1}`)}); err != nil {
+			t.Fatal(err)
+		}
+		records := readAll(t, st, "one", 0)
+		if len(records) != 2 || records[0].Seq == records[1].Seq {
+			t.Fatalf("no-key appends collapsed into %+v", records)
 		}
 
-		// Same key + same fingerprint: return the original event. Whitespace
+		// Same key + same fingerprint: return the original record. Whitespace
 		// in content must not change the fingerprint.
-		first, err := st.Append(ctx, "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":1}`)})
+		first, err := st.Append(ctx, "one", "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":1}`)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		retry, err := st.Append(ctx, "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage("{\n  \"plan\" : 1 \n}")})
+		retry, err := st.Append(ctx, "one", "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage("{\n  \"plan\" : 1 \n}")})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if retry.Seq != first.Seq || !retry.At.Equal(first.At) || !bytes.Equal(retry.Content, first.Content) {
-			t.Fatalf("idempotent retry did not return the original event: first=%+v retry=%+v", first, retry)
+			t.Fatalf("idempotent retry did not return the original record: first=%+v retry=%+v", first, retry)
 		}
-		if len(readAll(t, st, "a", 0)) != 3 {
-			t.Fatal("idempotent retry created a new event")
-		}
-
-		// Same key + same content with a different To ordering: same fingerprint.
-		addr, err := st.Append(ctx, "a", AppendRequest{IdempotencyKey: "k2", To: []string{"b"}, Content: json.RawMessage(`"hi"`)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		retryAddr, err := st.Append(ctx, "a", AppendRequest{IdempotencyKey: "k2", To: []string{"b"}, Content: json.RawMessage(`"hi"`)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if retryAddr.Seq != addr.Seq || !bytes.Equal(retryAddr.Content, addr.Content) {
-			t.Fatalf("addressed retry did not return the original event: %+v vs %+v", addr, retryAddr)
+		if len(readAll(t, st, "one", 0)) != 3 {
+			t.Fatal("idempotent retry created a new record")
 		}
 
-		// Same key + different fingerprint: conflict.
-		if _, err := st.Append(ctx, "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); !errors.Is(err, ErrConflict) {
+		// Same key + different content: conflict.
+		if _, err := st.Append(ctx, "one", "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); !errors.Is(err, ErrConflict) {
 			t.Fatalf("key reuse with different content error = %v, want %v", err, ErrConflict)
 		}
 
-		// The key is scoped per (room, actor, key): another actor may reuse it.
-		if _, err := st.Append(ctx, "b", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); err != nil {
-			t.Fatalf("key reuse by another actor: %v", err)
+		// The key is scoped per (room, signature, key): another signature in
+		// the same room, and the same signature in another room, may reuse it.
+		if _, err := st.Append(ctx, "one", "b", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":2}`)}); err != nil {
+			t.Fatalf("key reuse by another signature: %v", err)
+		}
+		if _, err := st.Append(ctx, "two", "a", AppendRequest{IdempotencyKey: "k1", Content: json.RawMessage(`{"plan":3}`)}); err != nil {
+			t.Fatalf("key reuse in another room: %v", err)
 		}
 	})
 
 	t.Run("ConcurrentIdempotency", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "a")
+		if _, err := st.CreateRoom(ctx, "room", ""); err != nil {
+			t.Fatal(err)
+		}
 		const attempts = 8
 		var group sync.WaitGroup
-		results := make(chan *Event, attempts)
+		results := make(chan *Record, attempts)
 		errorsCh := make(chan error, attempts)
 		for i := 0; i < attempts; i++ {
 			group.Add(1)
 			go func() {
 				defer group.Done()
-				event, err := st.Append(ctx, "a", AppendRequest{
+				record, err := st.Append(ctx, "room", "a", AppendRequest{
 					IdempotencyKey: "concurrent-key",
 					Content:        json.RawMessage(`{"same":true}`),
 				})
-				results <- event
+				results <- record
 				errorsCh <- err
 			}()
 		}
 		group.Wait()
 		close(results)
 		close(errorsCh)
-		var first *Event
-		for event := range results {
-			if event == nil {
-				t.Fatal("concurrent idempotent append returned nil event")
+		var first *Record
+		for record := range results {
+			if record == nil {
+				t.Fatal("concurrent idempotent append returned nil record")
 			}
 			if first == nil {
-				first = event
-			} else if event.Seq != first.Seq {
-				t.Fatalf("concurrent idempotent sequences = %d and %d", first.Seq, event.Seq)
+				first = record
+			} else if record.Seq != first.Seq {
+				t.Fatalf("concurrent idempotent sequences = %d and %d", first.Seq, record.Seq)
 			}
 		}
 		for err := range errorsCh {
@@ -295,86 +336,35 @@ func StoreContract(t *testing.T, newStore func(t *testing.T) Store) {
 				t.Fatalf("concurrent idempotent append: %v", err)
 			}
 		}
-		if events := readAll(t, st, "a", 0); len(events) != 1 {
-			t.Fatalf("concurrent idempotent append created %d events", len(events))
+		if records := readAll(t, st, "room", 0); len(records) != 1 {
+			t.Fatalf("concurrent idempotent append created %d records", len(records))
 		}
 	})
 
 	t.Run("ContentCompacted", func(t *testing.T) {
 		st := newStore(t)
-		admit(t, st, "a")
-		event, err := st.Append(ctx, "a", AppendRequest{Content: json.RawMessage("{\n  \"a\" : 1,\n  \"b\": [ 1, 2 ]\n}")})
+		if _, err := st.CreateRoom(ctx, "room", ""); err != nil {
+			t.Fatal(err)
+		}
+		record, err := st.Append(ctx, "room", "a", AppendRequest{Content: json.RawMessage("{\n  \"a\" : 1,\n  \"b\": [ 1, 2 ]\n}")})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !bytes.Equal(event.Content, json.RawMessage(`{"a":1,"b":[1,2]}`)) {
-			t.Fatalf("content not compacted for storage: %s", event.Content)
+		if !bytes.Equal(record.Content, json.RawMessage(`{"a":1,"b":[1,2]}`)) {
+			t.Fatalf("content not compacted for storage: %s", record.Content)
 		}
-		seen := readAll(t, st, "a", 0)
-		if !bytes.Equal(seen[0].Content, event.Content) {
-			t.Fatalf("stored content differs: %s vs %s", seen[0].Content, event.Content)
-		}
-	})
-
-	t.Run("ToNormalized", func(t *testing.T) {
-		st := newStore(t)
-		admit(t, st, "a", "bob", "carol")
-		event, err := st.Append(ctx, "a", AppendRequest{To: []string{"carol", "bob", "bob", "carol"}, Content: json.RawMessage(`"m"`)})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if want := []string{"bob", "carol"}; !equalStrings(event.To, want) {
-			t.Fatalf("to = %v, want %v", event.To, want)
-		}
-	})
-
-	t.Run("ToKeepsLiteralCommaIdentity", func(t *testing.T) {
-		st := newStore(t)
-		admit(t, st, "sender", "a,b")
-		event, err := st.Append(ctx, "sender", AppendRequest{
-			To: []string{" a,b ", "a,b"}, IdempotencyKey: "comma-key", Content: json.RawMessage(`"m"`),
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if want := []string{"a,b"}; !equalStrings(event.To, want) {
-			t.Fatalf("to = %v, want literal comma identity %v", event.To, want)
-		}
-		retry, err := st.Append(ctx, "sender", AppendRequest{
-			To: []string{"a,b"}, IdempotencyKey: "comma-key", Content: json.RawMessage(`"m"`),
-		})
-		if err != nil || retry.Seq != event.Seq {
-			t.Fatalf("literal comma identity retry = %+v, %v; want original seq %d", retry, err, event.Seq)
+		seen := readAll(t, st, "room", 0)
+		if !bytes.Equal(seen[0].Content, record.Content) {
+			t.Fatalf("stored content differs: %s vs %s", seen[0].Content, record.Content)
 		}
 	})
 }
 
-func equalStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func admit(t *testing.T, st Store, ids ...string) {
+func readAll(t *testing.T, st Store, room string, after uint64) []Record {
 	t.Helper()
-	for _, id := range ids {
-		if _, err := st.AdmitActor(context.Background(), id); err != nil {
-			t.Fatalf("admit %s: %v", id, err)
-		}
-	}
-}
-
-func readAll(t *testing.T, st Store, actor string, after uint64) []Event {
-	t.Helper()
-	events, err := st.Read(context.Background(), actor, after)
+	records, err := st.Read(context.Background(), room, after)
 	if err != nil {
-		t.Fatalf("read %s: %v", actor, err)
+		t.Fatalf("read %s: %v", room, err)
 	}
-	return events
+	return records
 }

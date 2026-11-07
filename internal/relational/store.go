@@ -1,14 +1,13 @@
 // Package relational implements core.Store over a SQL database. SQLite is the
 // local file backend; the same schema and transaction contract targets
-// PostgreSQL for the gated battery and future hosted operation. One append
-// transaction serializes on the Room row, so concurrent appends receive a
-// dense sequence on both backends.
+// PostgreSQL for the gated battery and future multi-host serving. One append
+// transaction serializes on the target Room's row, so concurrent appends to
+// one room receive a dense sequence on both backends while different rooms
+// never wait on each other.
 package relational
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -25,27 +24,20 @@ import (
 // serializes concurrent SQLite writers instead of failing them.
 const dsnPragmas = "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)"
 
-// Store implements core.Store over one Room in a SQL database. roomID is the
-// tenant key: many Stores may share one *gorm.DB as long as their room ids
-// differ.
+// Store implements core.Store over one workspace database holding the whole
+// room tree. Many Stores may share one *gorm.DB; rooms are keyed by name.
 type Store struct {
-	root   string
-	db     *gorm.DB
-	roomID string
-	now    func() time.Time
+	root string
+	db   *gorm.DB
+	now  func() time.Time
 }
 
-// Init creates a fresh format-2 Room database and explicitly admits creator in
-// one transaction. Callers should expose the containing Room only after this
-// method returns successfully.
-func Init(root, creator string) (*Store, error) {
-	creator = strings.TrimSpace(creator)
-	if creator == "" {
-		return nil, errors.New("creator actor is required")
-	}
+// Init creates a fresh workspace database. The workspace starts with no
+// rooms; the first room is created through CreateRoom.
+func Init(root string) (*Store, error) {
 	path := filepath.Join(root, "room.db")
 	if _, err := os.Stat(path); err == nil {
-		return nil, fmt.Errorf("room database already exists at %s", path)
+		return nil, fmt.Errorf("workspace database already exists at %s", path)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -53,25 +45,18 @@ func Init(root, creator string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	s := &Store{root: root, db: db, now: time.Now}
 	if err := Migrate(db); err != nil {
-		return nil, err
-	}
-	s := &Store{root: root, db: db, roomID: roomIDFor(root), now: time.Now}
-	room := core.Room{ID: s.roomID, Created: s.now().UTC()}
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&RoomRow{ID: room.ID, CreatedAt: room.Created, Head: 0}).Error; err != nil {
-			return err
-		}
-		return tx.Create(&ActorRow{RoomID: room.ID, ID: creator, JoinedAt: room.Created}).Error
-	}); err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
 }
 
-// Open opens the format-2 Room database under root. A missing database is no
-// room; a database without the format marker predates the cutover and is
-// refused — there is no import or automatic upgrade.
+// Open opens the workspace database under root, running the format gate and
+// the one-time format-2 upgrade on the way in. A missing database is no
+// workspace; a database with tables but no marker is refused — there is no
+// import beyond the one documented migration step.
 func Open(root string) (*Store, error) {
 	path := filepath.Join(root, "room.db")
 	if _, err := os.Stat(path); err != nil {
@@ -84,11 +69,9 @@ func Open(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Store{root: root, db: db, roomID: roomIDFor(root), now: time.Now}
-	if err := s.gate(context.Background()); err != nil {
-		return nil, err
-	}
-	if _, err := s.Room(context.Background()); err != nil {
+	s := &Store{root: root, db: db, now: time.Now}
+	if err := Migrate(db); err != nil {
+		_ = s.Close()
 		return nil, err
 	}
 	return s, nil
@@ -98,27 +81,18 @@ func openSQLite(path string) (*gorm.DB, error) {
 	return gorm.Open(sqlite.Open("file:"+path+dsnPragmas), &gorm.Config{})
 }
 
-// roomIDFor derives the Room identity of a .tearoom root from the directory
-// that owns it, exactly like the file backend, so both backends answer the
-// same identity for one workspace.
-func roomIDFor(root string) string {
-	return filepath.Base(filepath.Dir(root))
-}
-
-// New wraps an existing database connection for one Room. roomID is the
-// tenant key: many Stores may share one *gorm.DB as long as their room ids
-// differ. The caller is responsible for schema creation (Migrate) and the
-// Room row; the PostgreSQL battery and future hosted operation use this.
-func New(db *gorm.DB, roomID string) (*Store, error) {
-	s := &Store{db: db, roomID: roomID, now: time.Now}
+// New wraps an existing database connection. The caller is responsible for
+// schema creation (Migrate); this constructor only refuses a database whose
+// marker is not the current format. The PostgreSQL battery uses this.
+func New(db *gorm.DB) (*Store, error) {
+	s := &Store{db: db, now: time.Now}
 	if err := s.gate(context.Background()); err != nil {
 		return nil, err
 	}
 	return s, nil
 }
 
-// Close releases the underlying database connection. It is used by the
-// atomic local initializer before publishing a temporary database directory.
+// Close releases the underlying database connection.
 func (s *Store) Close() error {
 	db, err := s.db.DB()
 	if err != nil {
@@ -127,189 +101,167 @@ func (s *Store) Close() error {
 	return db.Close()
 }
 
-// Room returns the Room identity this database holds.
-func (s *Store) Room(ctx context.Context) (*core.Room, error) {
-	var row RoomRow
-	if err := s.db.WithContext(ctx).Where("id = ?", s.roomID).Limit(1).Find(&row).Error; err != nil {
-		return nil, err
-	}
-	if row.ID == "" {
-		return nil, core.ErrNoRoom
-	}
-	return &core.Room{ID: row.ID, Created: row.CreatedAt}, nil
-}
+// Root returns the .tearoom directory backing this store.
+func (s *Store) Root() string { return s.root }
 
-// AdmitActor explicitly admits an actor; joining an already-admitted actor
-// returns the existing one unchanged. Admission serializes on the Room row so
-// two concurrent joins of the same actor cannot double-insert.
-func (s *Store) AdmitActor(ctx context.Context, actorID string) (*core.Actor, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errors.New("actor id is required")
+// CreateRoom creates one node of the tree. The name must be unused; the
+// parent, when given, must already exist. The parent link is written once,
+// here — nothing ever writes into another room afterwards.
+func (s *Store) CreateRoom(ctx context.Context, name, parent string) (*core.Room, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, errors.New("room name is required")
 	}
-	var admitted *core.Actor
+	parent = strings.TrimSpace(parent)
+	created := s.now().UTC()
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("UPDATE rooms SET head = head WHERE id = ?", s.roomID).Error; err != nil {
+		if parent != "" {
+			var prow RoomRow
+			if err := tx.Where("name = ?", parent).Limit(1).Find(&prow).Error; err != nil {
+				return err
+			}
+			if prow.Name == "" {
+				return fmt.Errorf("parent room %q: %w", parent, core.ErrNotFound)
+			}
+		}
+		var existing RoomRow
+		if err := tx.Where("name = ?", name).Limit(1).Find(&existing).Error; err != nil {
 			return err
 		}
-		var row ActorRow
-		if err := tx.Where("room_id = ? AND id = ?", s.roomID, actorID).Limit(1).Find(&row).Error; err != nil {
-			return err
+		if existing.Name != "" {
+			return fmt.Errorf("room %q already exists: %w", name, core.ErrConflict)
 		}
-		if row.ID != "" {
-			admitted = &core.Actor{ID: row.ID, Joined: row.JoinedAt}
-			return nil
+		row := RoomRow{Name: name, CreatedAt: created, Head: 0}
+		if parent != "" {
+			row.Parent = &parent
 		}
-		actor := &core.Actor{ID: actorID, Joined: s.now().UTC()}
-		if err := tx.Create(&ActorRow{RoomID: s.roomID, ID: actor.ID, JoinedAt: actor.Joined}).Error; err != nil {
-			return err
-		}
-		admitted = actor
-		return nil
+		return tx.Create(&row).Error
 	})
 	if err != nil {
 		return nil, err
 	}
-	return admitted, nil
+	return &core.Room{Name: name, Parent: parent, Created: created}, nil
 }
 
-// Actors lists every admitted actor.
-func (s *Store) Actors(ctx context.Context) ([]core.Actor, error) {
-	var rows []ActorRow
-	if err := s.db.WithContext(ctx).Where("room_id = ?", s.roomID).Order("id").Find(&rows).Error; err != nil {
+// Rooms lists every Room of the tree. The child list of any room is derived
+// from this listing at read time and is never cached.
+func (s *Store) Rooms(ctx context.Context) ([]core.Room, error) {
+	var rows []RoomRow
+	if err := s.db.WithContext(ctx).Model(&RoomRow{}).Order("name").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	actors := make([]core.Actor, 0, len(rows))
+	rooms := make([]core.Room, 0, len(rows))
 	for _, row := range rows {
-		actors = append(actors, core.Actor{ID: row.ID, Joined: row.JoinedAt})
+		rooms = append(rooms, core.Room{Name: row.Name, Parent: deref(row.Parent), Created: row.CreatedAt})
 	}
-	return actors, nil
+	return rooms, nil
 }
 
-// Read returns the events after the caller-owned exclusive boundary for an
-// admitted actor. Repeated reads are side-effect-free; no cursor is persisted.
-func (s *Store) Read(ctx context.Context, actorID string, after uint64) ([]core.Event, error) {
-	actorID = strings.TrimSpace(actorID)
-	members, err := s.actorSet(ctx)
-	if err != nil {
+// Read returns the records of one room after the caller-owned exclusive
+// boundary. Repeated reads are side-effect-free; no cursor is persisted.
+func (s *Store) Read(ctx context.Context, room string, after uint64) ([]core.Record, error) {
+	room = strings.TrimSpace(room)
+	if _, err := s.headRow(ctx, room); err != nil {
 		return nil, err
-	}
-	if !isMember(members, actorID) {
-		return nil, fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
 	}
 	var rows []EventRow
 	if err := s.db.WithContext(ctx).
-		Where("room_id = ? AND seq > ?", s.roomID, after).
+		Where("room_id = ? AND seq > ?", room, after).
 		Order("seq").
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	events := make([]core.Event, 0, len(rows))
+	records := make([]core.Record, 0, len(rows))
 	for _, row := range rows {
-		event, err := row.coreEvent(members)
+		record, err := row.coreRecord(room)
 		if err != nil {
 			return nil, err
 		}
-		events = append(events, event)
+		records = append(records, record)
 	}
-	return events, nil
+	return records, nil
 }
 
-// Append accepts one contribution and assigns the next dense room sequence.
-// One transaction serializes every append on the Room row — the first write
-// takes the SQLite database write lock or the PostgreSQL row lock — then
-// validates admission, resolves the idempotency key, reads the head, and
-// inserts the immutable Event, the ledger row, and the new head all-or-none.
-func (s *Store) Append(ctx context.Context, actorID string, request core.AppendRequest) (*core.Event, error) {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return nil, errors.New("actor id is required")
-	}
+// Append accepts one contribution and assigns the next dense sequence of the
+// target room. One transaction serializes every append on that room's row —
+// the first write takes the SQLite database write lock or the PostgreSQL row
+// lock — then resolves the idempotency key, reads the head, and inserts the
+// immutable record, the ledger row, and the new head all-or-none. The author
+// is stored verbatim after whitespace trimming; an empty author is valid.
+func (s *Store) Append(ctx context.Context, room, author string, request core.AppendRequest) (*core.Record, error) {
+	room = strings.TrimSpace(room)
+	author = strings.TrimSpace(author)
 	content, err := core.CompactJSON(request.Content)
 	if err != nil {
 		return nil, fmt.Errorf("invalid content: %w", err)
 	}
-	to := core.NormalizeTo(request.To)
 	key := strings.TrimSpace(request.IdempotencyKey)
-	fingerprint := core.Fingerprint(actorID, to, content)
-	toJSON, err := json.Marshal(to)
-	if err != nil {
-		return nil, fmt.Errorf("encode to: %w", err)
-	}
+	fingerprint := core.Fingerprint(author, content)
 
-	var appended *core.Event
+	var appended *core.Record
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// 1. Serialize appends on the Room row before any read, so the head
-		// each writer observes reflects every committed append.
-		if err := tx.Exec("UPDATE rooms SET head = head WHERE id = ?", s.roomID).Error; err != nil {
-			return err
+		// 1. Serialize appends on the room row before any read, so the head
+		// each writer observes reflects every committed append. The update
+		// also answers room existence in the same atomic step.
+		lock := tx.Exec("UPDATE rooms SET head = head WHERE name = ?", room)
+		if lock.Error != nil {
+			return lock.Error
+		}
+		if lock.RowsAffected == 0 {
+			return fmt.Errorf("room %q: %w", room, core.ErrNotFound)
 		}
 
-		// 2. Admission.
-		members, err := s.actorSetTx(tx)
-		if err != nil {
-			return err
-		}
-		if !isMember(members, actorID) {
-			return fmt.Errorf("%w: %s", core.ErrUnknownActor, actorID)
-		}
-		for _, recipient := range to {
-			if !isMember(members, recipient) {
-				return fmt.Errorf("recipient %q: %w", recipient, core.ErrUnknownActor)
-			}
-		}
-
-		// 3. Resolve an existing idempotency key: an equal fingerprint
-		// returns the original Event, a different one conflicts.
+		// 2. Resolve an existing idempotency key: an equal fingerprint
+		// returns the original record, a different one conflicts.
 		if key != "" {
 			var idem IdempotencyRow
-			if err := tx.Where("room_id = ? AND actor = ? AND key = ?", s.roomID, actorID, key).
+			if err := tx.Where("room_id = ? AND author = ? AND key = ?", room, author, key).
 				Limit(1).Find(&idem).Error; err != nil {
 				return err
 			}
 			if idem.Key != "" {
-				if !bytes.Equal(idem.Fingerprint, fingerprint) {
-					return fmt.Errorf("%w: idempotency key %q already describes another event", core.ErrConflict, key)
+				if !bytesEqual(idem.Fingerprint, fingerprint) {
+					return fmt.Errorf("%w: idempotency key %q already describes another record", core.ErrConflict, key)
 				}
 				var original EventRow
-				if err := tx.Where("room_id = ? AND seq = ?", s.roomID, idem.EventSeq).
+				if err := tx.Where("room_id = ? AND seq = ?", room, idem.EventSeq).
 					Limit(1).Find(&original).Error; err != nil {
 					return err
 				}
 				if original.Seq == 0 {
-					return fmt.Errorf("idempotency key %q lost its original event", key)
+					return fmt.Errorf("idempotency key %q lost its original record", key)
 				}
-				event, err := original.coreEvent(members)
+				record, err := original.coreRecord(room)
 				if err != nil {
 					return err
 				}
-				appended = &event
+				appended = &record
 				return nil
 			}
 		}
 
-		// 4-6. Assign the next dense sequence and insert the immutable Event,
-		// the ledger row, and the new head in the same transaction.
-		var room RoomRow
-		if err := tx.Where("id = ?", s.roomID).First(&room).Error; err != nil {
+		// 3-5. Assign the next dense sequence and insert the immutable
+		// record, the ledger row, and the new head in the same transaction.
+		var roomRow RoomRow
+		if err := tx.Where("name = ?", room).First(&roomRow).Error; err != nil {
 			return err
 		}
-		seq := room.Head + 1
-		event := &core.Event{Seq: seq, Actor: actorID, At: s.now().UTC(), To: to, Content: content}
-		row := EventRow{RoomID: s.roomID, Seq: seq, Actor: actorID, At: event.At, To: string(toJSON), Content: string(content)}
+		seq := roomRow.Head + 1
+		record := &core.Record{Room: room, Seq: seq, Author: author, At: s.now().UTC(), Content: content}
+		row := EventRow{RoomID: room, Seq: seq, Author: author, At: record.At, Content: string(content)}
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
 		if key != "" {
-			ledger := IdempotencyRow{RoomID: s.roomID, Actor: actorID, Key: key, Fingerprint: fingerprint, EventSeq: seq}
+			ledger := IdempotencyRow{RoomID: room, Author: author, Key: key, Fingerprint: fingerprint, EventSeq: seq}
 			if err := tx.Create(&ledger).Error; err != nil {
 				return err
 			}
 		}
-		if err := tx.Model(&RoomRow{}).Where("id = ?", s.roomID).Update("head", seq).Error; err != nil {
+		if err := tx.Model(&RoomRow{}).Where("name = ?", room).Update("head", seq).Error; err != nil {
 			return err
 		}
-		appended = event
+		appended = record
 		return nil
 	})
 	if err != nil {
@@ -318,35 +270,35 @@ func (s *Store) Append(ctx context.Context, actorID string, request core.AppendR
 	return appended, nil
 }
 
-func (s *Store) requireActor(ctx context.Context, id string) error {
-	return s.requireActorTx(s.db.WithContext(ctx), id)
+// headRow returns the room row for name or a not-found error.
+func (s *Store) headRow(ctx context.Context, room string) (RoomRow, error) {
+	var row RoomRow
+	if err := s.db.WithContext(ctx).Where("name = ?", room).Limit(1).Find(&row).Error; err != nil {
+		return RoomRow{}, err
+	}
+	if row.Name == "" {
+		return RoomRow{}, fmt.Errorf("room %q: %w", room, core.ErrNotFound)
+	}
+	return row, nil
 }
 
-func (s *Store) actorSet(ctx context.Context) (map[string]struct{}, error) {
-	return s.actorSetTx(s.db.WithContext(ctx))
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
-func (s *Store) actorSetTx(tx *gorm.DB) (map[string]struct{}, error) {
-	var rows []ActorRow
-	if err := tx.Where("room_id = ?", s.roomID).Find(&rows).Error; err != nil {
-		return nil, err
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
 	}
-	members := make(map[string]struct{}, len(rows))
-	for _, row := range rows {
-		members[row.ID] = struct{}{}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
 	}
-	return members, nil
-}
-
-func (s *Store) requireActorTx(tx *gorm.DB, id string) error {
-	var count int64
-	if err := tx.Model(&ActorRow{}).Where("room_id = ? AND id = ?", s.roomID, id).Count(&count).Error; err != nil {
-		return err
-	}
-	if count == 0 {
-		return fmt.Errorf("%w: %s", core.ErrUnknownActor, id)
-	}
-	return nil
+	return true
 }
 
 var _ core.Store = (*Store)(nil)

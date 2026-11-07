@@ -1,4 +1,4 @@
-// skill.go renders the agent orientation guide: the Room journey and the
+// skill.go renders the agent orientation guide: the room-tree journey and the
 // rules that hold at every command, carried by the binary so no skill file
 // has to be distributed. Exact syntax stays with per-command help and the
 // CLI contract; this text only teaches the journey.
@@ -12,37 +12,42 @@ import (
 // works before any setup: it reads no Room and takes no flags.
 const skillText = `tearoom agent guide
 
-Tearoom is a durable shared Room. One participant appends work; another
-pulls the same ordered history, continues it, and appends the result for
-the next participant. A human is just another Actor, and the CLI is the
-whole interface.
+Tearoom is a durable room tree. Every room is one span of context with one
+ordered, append-only record stream; rooms link through single parents, and
+whoever reads a room can pick up the work — across agents, tools, and
+process restarts. A signature is an unverified label. The CLI is the whole
+interface.
 
 The journey:
-  1. An Actor appends work        tearoom send "status"  or  --json <json>
-  2. Another Actor pulls it       tearoom read [--after e<N>]
-  3. That Actor continues         tearoom send --json '{"result": ...}'
-  4. Anyone repeats 2 and 3 from their own boundary.
+  1. Record the goal            tearoom room init --name main-line
+                                tearoom send --text "the goal and acceptance"
+  2. Split into children        tearoom room init --name implementation --parent main-line
+  3. Work inside one room       tearoom send --text "..." --room implementation
+  4. Hand off in writing        what was done, what is blocked, what the next
+                                worker should do first
+  5. The next worker reads      tearoom read --room implementation --tail 20
+                                and continues. Verify in another room, never
+                                in the one that did the work.
 
-Setup, once, in the project directory:
-  tearoom room init --as <actor>      create the Room here, admit the creator
-  tearoom room join <actor>           admit each further participant
-  tearoom server start                optional: serve the Room on 127.0.0.1:8787
-
-Every Actor, every session:
-  export TEAROOM_ACTOR=<your actor>             a stable identity, chosen once
-  export TEAROOM_SERVER=http://127.0.0.1:8787   omit to use the nearest local Room
-  tearoom read [--after e<N>]
-  tearoom send <text>  |  tearoom send --json <json>
+Every agent, every session:
+  export TEAROOM_ACTOR=<signature>              a plain label, chosen once
+  tearoom tree                                  the skeleton: parents and children
+  tearoom read --room <room> [--after e<N>] [--tail 5] [--subtree]
+  tearoom send --text <text> | --json <json> [--room <room>]
 
 Rules that hold everywhere:
-- Events form one dense, ordered, durable history. The Store assigns each
-  position; callers never pick one.
+- Records form one dense, ordered, durable stream per room. The Store
+  assigns each position; callers never pick one.
 - Reads are pure and repeatable. Keep your own boundary in --after; Tearoom
-  stores no cursor, unread marker, or acknowledgement for you.
-- Every member sees every Event; no event is ever hidden from a member.
+  stores no cursor or acknowledgement for you.
+- The signature is never verified. Quoting a record is room-name#seq in
+  plain text; tools do not parse it.
 - An empty read is success: no output, exit 0.
 - If a send may have gone through, retry with the same --idempotency-key and
-  you get the original Event back instead of a duplicate.
+  you get the original record back instead of a duplicate.
+- Notifications say only "there is something new": tearoom watch --json
+  prints one envelope per new record. Deciding who wakes and how belongs to
+  an external waker.
 
 Exact flags live with each command: run tearoom <command> --help.
 `
@@ -50,7 +55,7 @@ Exact flags live with each command: run tearoom <command> --help.
 // runSkill prints the agent guide. It owns no Room state and takes no flags,
 // so an Agent can call it before any setup to learn the surface.
 func (a *App) runSkill(args []string) error {
-	const help = `Print the agent guide: the Room journey and the rules that hold
+	const help = `Print the agent guide: the room-tree journey and the rules that hold
 at every command.
 
 Usage:

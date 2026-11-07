@@ -20,7 +20,7 @@ TEST_ENV := CGO_ENABLED=1
 TEST_FLAGS := -ldflags=-linkmode=external
 endif
 
-.PHONY: all build cli test test-race target-room target-replay target-remote check-evals line-budget docs fmt vet clean check package package-check release-check release-upload
+.PHONY: all build cli test test-race target-room target-replay check-evals line-budget docs fmt vet clean check package package-check release-check release-upload
 
 all: build
 
@@ -47,24 +47,18 @@ check-evals:
 line-budget:
 	@./scripts/check-line-budget.sh
 
-# E1: the P0 Room contract through the shipped binary — explicit join over the
-# file, SQLite, and HTTP backends, dense concurrent append, complete member
-# history, pure reads, and idempotency.
+# E1: the room-tree contract through the shipped binary — named rooms under
+# parents, per-room dense sequences, concurrent append, idempotent retries,
+# tails, subtrees, the skeleton, missing signatures, and the loopback HTTP
+# leg.
 target-room: cli
 	@./scripts/target-room.sh
 
-# E2: P0 replay across real processes without server-owned read progress —
+# E2: replay across real processes without server-owned read progress —
 # explicit eN boundaries, no session/cursor files, and consistent history
 # across restarts.
 target-replay: cli
 	@./scripts/target-replay.sh
-
-# E7: remote readiness — the hosted profile over a real PostgreSQL database
-# behind TLS: the four-step journey with per-Actor credentials, open reads,
-# owner operations, and immediate revocation. Skips where no PostgreSQL
-# exists; the gated battery covers the store contract there.
-target-remote: cli
-	@./scripts/target-remote.sh
 
 fmt:
 	$(GO) fmt ./...
@@ -77,7 +71,7 @@ vet:
 docs:
 	@./scripts/check-docs.sh
 
-check: fmt vet test test-race target-room target-replay target-remote check-evals line-budget docs
+check: fmt vet test test-race target-room target-replay check-evals line-budget docs
 
 # Release packaging is executable locally; the workflow only supplies the tag
 # and R2 credentials. package-check builds all four targets and validates the

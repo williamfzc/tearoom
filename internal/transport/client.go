@@ -1,14 +1,13 @@
 // Package transport carries the core.Store contract over HTTP.
-// The client speaks the wire protocol the server enforces: the Actor on the
-// events routes arrives in X-Tearoom-Actor, idempotency in Idempotency-Key,
-// and errors come back as the unified {"error":{...}} envelope.
+// The client speaks the wire protocol the server enforces: the signature on
+// the append route arrives in X-Tearoom-Author, idempotency in
+// Idempotency-Key, and errors come back as the unified {"error":{...}}
+// envelope.
 package transport
 
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,7 +15,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -27,42 +25,37 @@ import (
 // decode converts one wire error entry back into the store error it describes.
 func (w wireError) decode() error {
 	switch w.Code {
-	case "unknown_actor":
-		return fmt.Errorf("%w: %s", core.ErrUnknownActor, w.Message)
-	case "conflict":
-		return fmt.Errorf("%w: %s", core.ErrConflict, w.Message)
-	case "no_room":
-		return core.ErrNoRoom
 	case "not_found":
 		return fmt.Errorf("%w: %s", core.ErrNotFound, w.Message)
+	case "no_room":
+		return core.ErrNoRoom
+	case "conflict":
+		return fmt.Errorf("%w: %s", core.ErrConflict, w.Message)
 	default:
 		return errors.New(w.Message)
 	}
 }
 
-// Client implements core.Store against a remote Tearoom server. Local and
-// remote callers therefore share exactly one domain contract. Token, when
-// set, rides the Authorization header on every request: a write credential
-// for agents, the owner token for owner operations.
+// Client implements core.Store against a local Tearoom server. Local and
+// HTTP callers therefore share exactly one domain contract.
 type Client struct {
-	Base  string
-	HTTP  *http.Client
-	Token string
+	Base string
+	HTTP *http.Client
 }
 
 // RequireSafeURL enforces the transport boundary: plaintext http is a
-// loopback-only affair, because tokens ride the write path over https.
-// The URL may carry a room prefix of the form /r/<id> and nothing else.
+// loopback-only affair, and the URL is a bare server URL — no paths, no
+// query, no credentials.
 func RequireSafeURL(raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("TEAROOM_SERVER must be an http(s) URL")
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("TEAROOM_SERVER must be a bare server or room URL")
+		return fmt.Errorf("TEAROOM_SERVER must be a bare server URL")
 	}
-	if parsed.Path != "" && parsed.Path != "/" && !roomPrefix(parsed.Path) {
-		return fmt.Errorf("TEAROOM_SERVER may only carry a room prefix like /r/<id>, got %q", parsed.Path)
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("TEAROOM_SERVER must be a bare server URL, got path %q", parsed.Path)
 	}
 	host := parsed.Hostname()
 	if parsed.Scheme == "https" {
@@ -77,45 +70,11 @@ func RequireSafeURL(raw string) error {
 	return fmt.Errorf("plaintext http targets loopback only, got %q", host)
 }
 
-func roomPrefix(path string) bool {
-	rest, ok := strings.CutPrefix(path, "/r/")
-	if !ok || rest == "" {
-		return false
-	}
-	return !strings.Contains(rest, "/")
-}
-
-func NewClient(base, token string) *Client {
-	return &Client{Base: base, HTTP: &http.Client{Timeout: 30 * time.Second}, Token: token}
-}
-
-// UseCAFile trusts, in addition to the system roots, the PEM certificates in
-// path. Deployments whose TLS front terminates with a private or self-signed
-// CA point TEAROOM_CA_FILE at it.
-func (c *Client) UseCAFile(path string) error {
-	pem, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	pool, err := x509.SystemCertPool()
-	if err != nil {
-		pool = x509.NewCertPool()
-	}
-	if !pool.AppendCertsFromPEM(pem) {
-		return fmt.Errorf("no certificates found in %q", path)
-	}
-	if c.HTTP == nil {
-		c.HTTP = &http.Client{Timeout: 30 * time.Second}
-	}
-	c.HTTP.Transport = &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}}
-	return nil
+func NewClient(base string) *Client {
+	return &Client{Base: strings.TrimRight(base, "/"), HTTP: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (c *Client) do(ctx context.Context, method, path string, headers map[string]string, body, out any) error {
-	return c.doWith(c.HTTP, ctx, method, path, headers, body, out)
-}
-
-func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, path string, headers map[string]string, body, out any) error {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -136,10 +95,7 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 			request.Header.Set(name, value)
 		}
 	}
-	if c.Token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.Token)
-	}
-	response, err := httpClient.Do(request)
+	response, err := c.HTTP.Do(request)
 	if err != nil {
 		return fmt.Errorf("tearoom server unreachable: %w", err)
 	}
@@ -157,81 +113,38 @@ func (c *Client) doWith(httpClient *http.Client, ctx context.Context, method, pa
 	return json.NewDecoder(response.Body).Decode(out)
 }
 
-func (c *Client) Room(ctx context.Context) (*core.Room, error) {
+// CreateRoom creates one room in the served tree.
+func (c *Client) CreateRoom(ctx context.Context, name, parent string) (*core.Room, error) {
 	var room core.Room
-	return &room, c.do(ctx, http.MethodGet, "/api/room", nil, nil, &room)
+	return &room, c.do(ctx, http.MethodPost, "/api/rooms", nil,
+		map[string]string{"name": name, "parent": parent}, &room)
 }
 
-// AdmitActor joins the named actor explicitly under loopback/OS trust.
-func (c *Client) AdmitActor(ctx context.Context, actorID string) (*core.Actor, error) {
-	var actor core.Actor
-	return &actor, c.do(ctx, http.MethodPost, "/api/actors", nil, map[string]string{"id": actorID}, &actor)
+// Rooms lists the rooms of the served tree.
+func (c *Client) Rooms(ctx context.Context) ([]core.Room, error) {
+	var rooms []core.Room
+	return rooms, c.do(ctx, http.MethodGet, "/api/rooms", nil, nil, &rooms)
 }
 
-func (c *Client) Actors(ctx context.Context) ([]core.Actor, error) {
-	var actors []core.Actor
-	return actors, c.do(ctx, http.MethodGet, "/api/actors", nil, nil, &actors)
-}
-
-// Read returns the events after the exclusive caller-owned boundary, read as
-// the named actor. The read is pure; callers that need to wait for new
-// history poll from their own boundary.
-func (c *Client) Read(ctx context.Context, actor string, after uint64) ([]core.Event, error) {
+// Read returns the records after the exclusive caller-owned boundary. The
+// read is pure; callers that need to wait for new records poll from their
+// own boundary.
+func (c *Client) Read(ctx context.Context, room string, after uint64) ([]core.Record, error) {
 	params := url.Values{}
+	params.Set("room", room)
 	params.Set("after", strconv.FormatUint(after, 10))
-	headers := map[string]string{actorHeader: actor}
-	var events []core.Event
-	return events, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), headers, nil, &events)
+	var records []core.Record
+	return records, c.do(ctx, http.MethodGet, "/api/events?"+params.Encode(), nil, nil, &records)
 }
 
-// CreatedRoom is the answer of room creation on a hosted service. Server is
-// the room URL that TEAROOM_SERVER points at from then on.
-type CreatedRoom struct {
-	ID      string    `json:"id"`
-	Created time.Time `json:"created"`
-	Server  string    `json:"server"`
-}
-
-// CreateRoom mints one Room on a hosted service and admits its creator. The
-// bearer on this client must be the deployment's owner token.
-func (c *Client) CreateRoom(ctx context.Context, creator string) (CreatedRoom, error) {
-	var room CreatedRoom
-	return room, c.do(ctx, http.MethodPost, "/api/rooms", nil, map[string]string{"actor": creator}, &room)
-}
-
-// IssueCredential mints one write credential for an admitted actor. The
-// bearer on this client must be the deployment's owner token.
-func (c *Client) IssueCredential(ctx context.Context, request IssueRequest) (IssuedCredential, error) {
-	var issued IssuedCredential
-	return issued, c.do(ctx, http.MethodPost, "/api/credentials", nil, request, &issued)
-}
-
-// RevokeCredential immediately invalidates one credential.
-func (c *Client) RevokeCredential(ctx context.Context, credentialID string) error {
-	return c.do(ctx, http.MethodPost, "/api/credentials/revoke", nil, map[string]string{"id": credentialID}, nil)
-}
-
-// IssueRequest names the actor and the lifetime of a new credential.
-type IssueRequest struct {
-	Actor      string `json:"actor"`
-	TTLSeconds int    `json:"ttl_seconds"`
-}
-
-// IssuedCredential is the one-time view of a minted credential.
-type IssuedCredential struct {
-	ID        string    `json:"id"`
-	Actor     string    `json:"actor"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Token     string    `json:"token"`
-}
-
-// Append contributes one Event as the named actor. The request body carries
-// only to and content; the idempotency key, when set, travels in the
-// Idempotency-Key header.
-func (c *Client) Append(ctx context.Context, actor string, request core.AppendRequest) (*core.Event, error) {
-	var event core.Event
-	headers := map[string]string{actorHeader: actor, idempotencyHeader: request.IdempotencyKey}
-	return &event, c.do(ctx, http.MethodPost, "/api/events", headers, request, &event)
+// Append contributes one record with the given signature. The request body
+// carries only room and content; the idempotency key, when set, travels in
+// the Idempotency-Key header.
+func (c *Client) Append(ctx context.Context, room, author string, request core.AppendRequest) (*core.Record, error) {
+	var record core.Record
+	headers := map[string]string{authorHeader: author, idempotencyHeader: request.IdempotencyKey}
+	return &record, c.do(ctx, http.MethodPost, "/api/events", headers,
+		map[string]any{"room": room, "content": request.Content}, &record)
 }
 
 var _ core.Store = (*Client)(nil)

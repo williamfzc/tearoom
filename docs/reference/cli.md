@@ -121,9 +121,10 @@ command. It takes no flags and reads no Room.
 
 ## Signature selection
 
-`send` and `read` take `--as` for a one-off signature, falling back to
-`TEAROOM_ACTOR`. A missing signature is not an error: the record simply
-carries an empty author. Nothing validates the value.
+`send` takes `--as` for the signature, falling back to `TEAROOM_ACTOR`. A
+missing signature is not an error: the record simply carries an empty author.
+Nothing validates the value, and `read` needs no signature at all — reading
+requires no identity.
 
 ## Failure contract
 
