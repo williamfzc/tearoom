@@ -2,7 +2,7 @@
 type: runbook
 title: Serving a workspace
 description: Operate the local loopback server and the external wake loop.
-resource: cmd/tearoom/main.go
+resource: rust/src/cli/observation.rs
 tags: [runbook, server, waker]
 timestamp: 2026-11-07
 ---
@@ -61,6 +61,6 @@ Operational preconditions for unattended waking (measured 2026-11-07, see
   script.
 
 Rollback uses the previous release with its data snapshot; the workspace
-database carries the format marker, and incompatible layouts are refused,
+marker carries the format version, and incompatible layouts are refused,
 not upgraded. See [the HTTP API](../reference/http-api.md) for the wire
 contract and [status.md](../architecture/status.md) for implementation state.

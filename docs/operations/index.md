@@ -15,12 +15,13 @@ for implementation state, and [../evaluations.md](../evaluations.md) for proof.
 
 | Document | Concern |
 |---|---|
-| [building.md](building.md) | Build targets, the test suites, and the toolchain traps |
+| [building.md](building.md) | Build targets, the test suites, and the toolchain requirements |
 | [releasing.md](releasing.md) | Public binary artifacts, installation, credentials, and rollback |
 | [serving.md](serving.md) | Running the loopback-only server and the external wake loop |
 
 ## The one thing to remember
 
-Build and test with `make`, not bare `go build`. See [building.md](building.md)
-for why a directly built binary or test executable can abort at startup on
-this machine.
+Build and test through `make`, so one pinned Rust toolchain and the full
+suite decide what is green. See [building.md](building.md) for the
+requirements and for the cross-language and hc tests that stay ignored
+until their external binaries are provided.
