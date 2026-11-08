@@ -15,11 +15,11 @@ realized; it is not a second product fact source. For executable proof, use
 | Document | Concern |
 |---|---|
 | [layers.md](layers.md) | Package ownership and dependency direction |
-| [collaboration.md](collaboration.md) | Proposed roles, hc panel routing, and recoverable delivery |
+| [collaboration.md](collaboration.md) | Roles, hc panel routing, and recoverable delivery |
 | [persistence.md](persistence.md) | The room tree, per-room streams, and the one-time format migration |
 | [status.md](status.md) | Sole implementation-gap source: what the code implements and what remains |
 
 The short version: `core` defines Room, Record, Notification, and `Store`;
 persistence holds the tree and streams in workspace files; transport carries
-the minimal local HTTP face; the CLI presents the command surface. The planned
+the minimal local HTTP face; the CLI presents the command surface. The
 [collaboration integration](collaboration.md) connects Room records to hc.

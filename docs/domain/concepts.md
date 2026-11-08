@@ -92,7 +92,7 @@ independent of read progress.
 | A role is addressed | The runtime routes the shared Room message to that Room's panel for the role |
 | Two roles review work | They use the same Room stream; the reviewing role differs from the executing role |
 | Work crosses Rooms | The roles coordinate through a shared ancestor Room |
-| A role panel fails | The Room preserves history; recovery behavior is not yet defined |
+| A role panel fails | The Room preserves history; [delivery recovery](../architecture/collaboration.md#delivery-and-recovery) handles pending and uncertain work |
 
 **Platform rule:** the storage backend must provide a real cross-process
 serialization primitive or reject concurrent operation on that platform.

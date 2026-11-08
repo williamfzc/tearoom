@@ -17,7 +17,16 @@ and complete user journeys belong in [evaluations.md](../evaluations.md).
 
 ```text
 tearoom room init --name <name> [--parent <room>]
-tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>] [--idempotency-key <key>]
+tearoom room init --name <name> [--parent <room>] [--role <role,...>]
+tearoom room roles --room <name> [--add <role,...>] [--remove <role,...>]
+tearoom role define --name <name> --agent-type <type> (--template <name> | --command <program>)
+tearoom role list
+tearoom role show --name <name>
+tearoom collab run
+tearoom collab status
+tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]
+tearoom send [--room <room>] --text <text> [--to @role,...] [--reply-to <room>#<seq>] [--as <signature>] [--idempotency-key <key>]
+tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key <key>]
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
 tearoom watch [--room <room>] [--json]
@@ -34,6 +43,15 @@ tearoom --version
 - The first `room init` in a directory creates the workspace (`.tearoom`);
   later inits add Rooms to the same tree. There is no join, no admission, and
   no credential step.
+- `--role` binds existing reusable role definitions to the new Room.
+- `room roles` lists configured roles or adds/removes bindings. `--status`
+  explicitly queries hc for each panel's observed availability; failures are
+  shown as unknown. The roster does not grant or restrict read/write access.
+- `role define` creates a reusable launch definition with an agent type and
+  either an installed hc template or an executable with repeatable `--arg`
+  values. `--cwd` defaults to the workspace root; a relative directory is
+  resolved from that root when the panel starts. `--instructions` supplies role
+  text. `role list` and `role show` print JSONL definitions.
 - Success prints one JSON object:
 
 ```json
@@ -48,6 +66,18 @@ Identifiers and timestamps above are examples, not fixed values.
   object. Plain text becomes a JSON string; `--json` accepts one valid JSON
   value. `--as` sets the signature — an unverified label; omitting it stores
   an empty signature.
+- An explicit `@reviewer` in text, `--to @reviewer`, or
+  `--to @builder,@reviewer` addresses configured Room roles. Escaped @ signs,
+  email addresses, and Markdown code spans and fences do not address roles.
+  Unknown roles and `@all` are rejected. The appended content is structured
+  JSON with `text` and `mentions`;
+  recipients remain outside Record and Notification fields. Addressed `--json`
+  content is not supported. Without `--to`, existing text and raw JSON shapes
+  are unchanged.
+- `--reply-to <room>#<seq>` writes a structured `reply_to` reference alongside
+  the message. Combine it with `--to` to acknowledge the delivery and direct
+  the next step in one append. The signature remains unverified; this reference
+  is a coordination convention, not proof of who completed the work.
 - `--idempotency-key` is optional and scoped per (room, signature, key).
   Repeating the same key with the same content returns the original Record;
   reusing it with different content fails.
@@ -55,6 +85,7 @@ Identifiers and timestamps above are examples, not fixed values.
   empty result prints nothing and exits 0.
   - `--after e42` starts after that exclusive boundary.
   - `--tail 5` prints only the last 5 records of each selected Room.
+    Explicit `--tail 0` prints no records; omitting the flag prints all records.
   - `--subtree` selects the Room and all its descendants (depth-first by
     name); each Record line carries its `room` field.
 - A Record has this output shape:
@@ -136,6 +167,22 @@ unknown room name or an idempotency conflict is a request failure (exit 1).
 
 ## Delivery boundary
 
-The CLI does not wake anyone. `watch` emits notifications; an external waker
-reads them and starts the next worker. No scheduler, launcher, or attention
-management ships in this repository.
+`watch` emits recipient-free notifications. The collaboration dispatcher
+reads the addressed Record, resolves the Room-role binding, and uses hc to
+start or notify that role's panel. Role and Room roster commands configure
+routing; `collab run` starts the dispatcher and `collab status` prints its
+observed delivery intents. They do not wake Agents by themselves. See
+[collaboration delivery](../architecture/collaboration.md) for the delivery
+contract and [status.md](../architecture/status.md) for what ships.
+
+Automated template launches reject `ready: quiet`: a quiet startup can be an
+update or permission prompt. Codex roles must use `--no-daemon`. Agents that
+do not report a reliable hc status remain pending after their first turn;
+the dispatcher does not infer readiness from terminal text.
+
+`collab resolve` changes only an `unknown` delivery and takes the same
+workspace lock as the dispatcher. `delivered` stops retries while awaiting an
+Agent's Room receipt; `skip` closes the delivery and releases later messages
+for that role. `retry --confirm` requeues the message and may repeat work or
+external side effects. Inspect `collab status` before resolving; unknown
+outcomes are never retried automatically.

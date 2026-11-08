@@ -149,14 +149,14 @@ once execution of external side effects.
   configured Room-role has an independent hc panel. Cross-Room collaboration
   uses the common parent Room as the shared conversation point.
 - Room history is the durable shared context; hc provides Agent terminals,
-  prompt delivery, and runtime observations. Reliable delivery and recovery
-  belong to the integration, which is not yet implemented.
+  prompt delivery, and runtime observations. Delivery and recovery belong to
+  the [integration](../architecture/collaboration.md).
 - Reusable role definitions and Room role assignments support discovery and
   routing; they do not authenticate a signature or create a permission boundary.
 - Collaborator names and role descriptions support discovery and routing.
   They do not authenticate a signature or create a permission boundary.
 - Normal messages are visible to roles in the Room. The proposed default is
   not to start every offline role; a mention expresses an intended wake.
-- The details of collaborator registration, message mention encoding, delivery
-  acknowledgement, and recovery state remain to be designed and proven.
+- Implementation status and remaining evidence are tracked in
+  [implementation status](../architecture/status.md).
 

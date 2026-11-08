@@ -1,7 +1,7 @@
 ---
 type: architecture
 title: Layers and dependency direction
-description: The package boundaries of the room-tree kernel and its planned herdr-core collaboration integration.
+description: The package boundaries of the room-tree kernel and its herdr-core collaboration integration.
 resource: internal/
 tags: [architecture, boundaries, layering, clean-break]
 timestamp: 2026-11-07
@@ -83,7 +83,7 @@ are deleted; no alias keeps them alive.
 
 `herdr-core` (`hc`) is the intended runtime foundation for Agent terminals,
 prompt delivery, parent-child execution, and lifecycle events. It has no
-native Tearoom board or role-routing policy. A planned integration outside the
+native Tearoom board or role-routing policy. An integration outside the
 kernel defines reusable roles (command, working directory, and role
 instructions), configures collaborators when creating a Room, and binds each
 Room's role instance to its own hc panel. All those roles share the Room's one
@@ -97,8 +97,9 @@ reconciles Room records with hc snapshots/events after interruption. The
 collaborator roster is discovery and routing data, not admission; it does not
 affect who can read or write a local Room. hc template text is an initial
 instruction, not a native system prompt. Panel-failure handling and reliable
-recovery are not existing hc guarantees. The proposed delivery contract is in
-[collaboration.md](collaboration.md); exact config and CLI syntax remain open.
+recovery are not existing hc guarantees. The delivery contract is in
+[collaboration.md](collaboration.md); configuration is in the
+[Agent integration guide](../reference/agent-integration.md).
 The integration may depend on `core` and `transport`; neither may depend on it.
 
 ## Clean-break dependency checks
@@ -110,7 +111,7 @@ The integration may depend on `core` and `transport`; neither may depend on it.
 4. Transport has one route/body/error vocabulary with no authorization paths.
 5. CLI, scripts, tests, and docs use only the command and record vocabulary
    above.
-6. The planned hc integration stays outside the kernel and does not add
+6. The hc integration stays outside the kernel and does not add
    recipient, membership, or process-state fields to core Records.
 
 `make check`, `make docs`, and repository searches verify these boundaries.

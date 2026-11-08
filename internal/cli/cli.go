@@ -5,7 +5,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -32,6 +31,8 @@ Usage:
 
 Commands:
   room      create rooms in the workspace tree
+  role      define and inspect reusable collaborator roles
+  collab    run or inspect the local hc collaboration dispatcher
   send      append one record to a room
   read      read records: a room, a subtree, a tail
   tree      print the skeleton: parents and children
@@ -83,6 +84,10 @@ func (a *App) Run(args []string) int {
 	switch args[0] {
 	case "room":
 		err = a.runRoom(args[1:])
+	case "role":
+		err = a.runRole(args[1:])
+	case "collab":
+		err = a.runCollab(args[1:])
 	case "send":
 		err = a.runSend(args[1:])
 	case "read":
@@ -109,76 +114,6 @@ func (a *App) Run(args []string) int {
 	default:
 		return ExitError
 	}
-}
-
-const sendHelp = `Append one record to a room.
-
-Plain text is encoded as a JSON string; --json passes the raw JSON content.
-The appended record is printed as one JSON object.
-
-Usage:
-  tearoom send [--room <room>] <text> [flags]
-  tearoom send [--room <room>] --text <text> [flags]
-  tearoom send [--room <room>] --json <json> [flags]
-
-Flags:
-  --room string             target room; defaults to the only room of the workspace
-  --as string               signature label; defaults to TEAROOM_ACTOR, may be empty
-  --text string             the record text
-  --json string             raw JSON content instead of text
-  --idempotency-key string  retry identity; an equal retry returns the original record
-  -h, --help                show help
-`
-
-func (a *App) runSend(args []string) error {
-	flags := newFlags("send", a.Out, sendHelp)
-	roomFlag := flags.String("room", "", "")
-	as := flags.String("as", "", "")
-	text := flags.String("text", "", "")
-	raw := flags.String("json", "", "")
-	key := flags.String("idempotency-key", "", "")
-	if err := parse(flags, args); err != nil {
-		return err
-	}
-	positionals := strings.Join(flags.Args(), " ")
-	var content json.RawMessage
-	switch {
-	case countSet(*raw, *text, positionals) > 1:
-		return errors.New("provide exactly one of positional text, --text, or --json")
-	case *raw != "":
-		content = json.RawMessage(*raw)
-	case *text != "":
-		encoded, err := json.Marshal(*text)
-		if err != nil {
-			return err
-		}
-		content = encoded
-	case positionals != "":
-		encoded, err := json.Marshal(positionals)
-		if err != nil {
-			return err
-		}
-		content = encoded
-	default:
-		return errors.New("provide positional text, --text, or --json content")
-	}
-	st, err := a.openStore()
-	if err != nil {
-		return err
-	}
-	ctx := a.context()
-	room, err := a.resolveRoom(ctx, st, *roomFlag)
-	if err != nil {
-		return err
-	}
-	record, err := st.Append(ctx, room, signature(*as), core.AppendRequest{
-		Content:        content,
-		IdempotencyKey: *key,
-	})
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(a.Out).Encode(record)
 }
 
 func (a *App) resolveRoom(ctx context.Context, st core.Store, flagValue string) (string, error) {
@@ -219,25 +154,7 @@ func (a *App) context() context.Context {
 	return context.Background()
 }
 
-func countSet(values ...string) int {
-	count := 0
-	for _, value := range values {
-		if value != "" {
-			count++
-		}
-	}
-	return count
-}
-
 // parseBoundary accepts only the presentation address e<seq>.
-func signature(flagValue string) string {
-	value := strings.TrimSpace(flagValue)
-	if value == "" {
-		value = strings.TrimSpace(os.Getenv("TEAROOM_ACTOR"))
-	}
-	return value
-}
-
 func isHelp(value string) bool { return value == "-h" || value == "--help" }
 
 func isVersion(value string) bool { return value == "--version" }

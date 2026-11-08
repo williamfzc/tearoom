@@ -36,15 +36,15 @@ executable proof in [../evaluations.md](../evaluations.md).
 
 ## Open work
 
-The group-chat and hc integration design in [../product.md](../product.md)
-is a new direction, not a description of the shipped CLI or runtime. The
-current waker uses a different herdr CLI and does not implement it.
+The group-chat and hc integration in [../product.md](../product.md) is
+implemented locally; its operational limits and remaining acceptance work
+are tracked below. The delivery contract is in [collaboration.md](collaboration.md).
 
 | Item | State |
 |---|---|
-| Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | Hand-run method recorded in [../evaluations.md](../evaluations.md); not yet executed against the room-tree model |
-| Wake journey S4 | `watch --json` ships; the external waker script drives herdr (`agent prompt … --wait`). Running it unattended requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host |
-| Group collaboration | Reusable roles, Room collaborator configuration, role-to-panel bindings, addressing, hc integration, and delivery recovery are not implemented or validated |
+| Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | One unattended Pi–Claude build-and-review journey passed; next-day resume and the complete acceptance suite remain open. See [../evaluations.md](../evaluations.md) |
+| Wake journey S4 | The hc dispatcher delivers addressed records to Room-role panels; unattended operation requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host. See [agent integration](../reference/agent-integration.md) for setup and [evaluations](../evaluations.md) for evidence |
+| Group collaboration | Local role definitions, Room rosters, addressed records and an hc dispatcher are implemented; one unattended two-Agent journey passed. Signatures are unverified, so independent review cannot be established from Room records alone; the evidence includes both Agent panels. See [../evaluations.md](../evaluations.md) |
 | Two-week real-work validation | The model's own acceptance bar: run the tree as the working context for two weeks of real work |
 
 ## Removed with the v1 model (2026-11-07)

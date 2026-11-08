@@ -5,6 +5,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,7 +23,9 @@ Usage:
 Flags:
   --room string    room to read; defaults to the only room of the workspace
   --after string   exclusive boundary, the presentation address e<seq>
-  --tail int       print only the last N records of each selected room
+  --tail int       print only the last N records of each selected room;
+                   explicit --tail 0 prints nothing, omitting the flag
+                   prints all records
   --subtree        read the room and all its descendants, depth-first
   -h, --help       show help
 `
@@ -39,6 +42,12 @@ func (a *App) runRead(args []string) error {
 	if *tail < 0 {
 		return errors.New("--tail must be a non-negative integer")
 	}
+	var tailSet bool
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "tail" {
+			tailSet = true
+		}
+	})
 	boundary, err := parseBoundary(*after)
 	if err != nil {
 		return err
@@ -64,7 +73,7 @@ func (a *App) runRead(args []string) error {
 		if err != nil {
 			return err
 		}
-		if *tail > 0 && len(records) > *tail {
+		if tailSet && len(records) > *tail {
 			records = records[len(records)-*tail:]
 		}
 		for _, record := range records {

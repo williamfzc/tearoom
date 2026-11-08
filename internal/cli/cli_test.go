@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/williamfzc/tearoom/internal/collab"
 	"github.com/williamfzc/tearoom/internal/core"
 	"github.com/williamfzc/tearoom/internal/store"
 	"github.com/williamfzc/tearoom/internal/transport"
@@ -53,11 +56,15 @@ func TestSkillPrintsAgentGuideWithoutArgs(t *testing.T) {
 	}
 	guide := out.String()
 	for _, want := range []string{
-		"TEAROOM_ACTOR",
 		"room init",
 		"tearoom read --room <room> [--after e<N>]",
 		"--idempotency-key",
 		"tearoom watch --json",
+		"reviewer label and separate Room record do not prove the reviewer",
+		"--to @reviewer",
+		"PI_HC_STATUS_EXTENSION",
+		"hc --skill is hc's canonical runtime guide",
+		"If startup is blocked by a prompt or status is unknown, escalate",
 		"tearoom <command> --help",
 	} {
 		if !strings.Contains(guide, want) {
@@ -419,6 +426,31 @@ func TestReadTailKeepsTheLastRecords(t *testing.T) {
 	}
 }
 
+func TestReadExplicitTailZeroPrintsNothing(t *testing.T) {
+	dir := initRoom(t, "main-line")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	for i := 1; i <= 3; i++ {
+		if code := app.Run([]string{"send", "m"}); code != ExitOK {
+			t.Fatalf("send %d exit = %d", i, code)
+		}
+	}
+	var out bytes.Buffer
+	reader := &App{Out: &out, Err: io.Discard, Dir: dir}
+	if code := reader.Run([]string{"read", "--tail", "0"}); code != ExitOK {
+		t.Fatalf("read --tail 0 exit = %d", code)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("read --tail 0 output = %q, want nothing", out.String())
+	}
+	out.Reset()
+	if code := reader.Run([]string{"read"}); code != ExitOK {
+		t.Fatalf("read exit = %d", code)
+	}
+	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 3 {
+		t.Fatalf("read = %q, want all 3 records", out.String())
+	}
+}
+
 func TestReadSubtreeWalksTheBranch(t *testing.T) {
 	dir := t.TempDir()
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
@@ -641,6 +673,260 @@ func TestParseRejectsUnknownFlag(t *testing.T) {
 	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
 	if code := app.Run([]string{"send", "hello", "--fromat", "json", "--as", "codex"}); code != ExitError {
 		t.Fatalf("unknown flag exit = %d, want %d", code, ExitError)
+	}
+}
+
+func TestRoomRolesAndStructuredMentions(t *testing.T) {
+	dir := initRoom(t, "main-line")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	for _, role := range []string{"builder", "reviewer", "审查者"} {
+		args := []string{"role", "define", "--name", role, "--agent-type", "test", "--command", "agent", "--instructions", "do the role"}
+		if code := app.Run(args); code != ExitOK {
+			t.Fatalf("define role %s exit = %d", role, code)
+		}
+	}
+	if code := app.Run([]string{"room", "roles", "--room", "main-line", "--add", "builder,reviewer,审查者"}); code != ExitOK {
+		t.Fatalf("configure roles exit = %d", code)
+	}
+	var out bytes.Buffer
+	sender := &App{Out: &out, Err: io.Discard, Dir: dir}
+	if code := sender.Run([]string{"send", "--room", "main-line", "--text", "Please review", "--to", "@reviewer", "--reply-to", "main-line#1", "--as", "builder"}); code != ExitOK {
+		t.Fatalf("addressed send exit = %d, output %s", code, out.String())
+	}
+	var record core.Record
+	if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		Text     string   `json:"text"`
+		Mentions []string `json:"mentions"`
+		ReplyTo  struct {
+			Room string `json:"room"`
+			Seq  uint64 `json:"seq"`
+		} `json:"reply_to"`
+	}
+	if err := json.Unmarshal(record.Content, &message); err != nil {
+		t.Fatal(err)
+	}
+	if message.Text != "Please review" || len(message.Mentions) != 1 || message.Mentions[0] != "reviewer" {
+		t.Fatalf("addressed content = %s", record.Content)
+	}
+	if message.ReplyTo.Room != "main-line" || message.ReplyTo.Seq != 1 {
+		t.Fatalf("reply_to = %+v", message.ReplyTo)
+	}
+	var errOut bytes.Buffer
+	unknown := &App{Out: io.Discard, Err: &errOut, Dir: dir}
+	if code := unknown.Run([]string{"send", "--text", "hi", "--to", "@missing"}); code != ExitError {
+		t.Fatalf("unknown mention exit = %d, want error", code)
+	}
+}
+
+func TestSendParsesExplicitRoleMentionsFromText(t *testing.T) {
+	dir := initRoom(t, "main-line")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	for _, role := range []string{"builder", "reviewer", "审查者"} {
+		args := []string{"role", "define", "--name", role, "--agent-type", "test", "--command", "agent", "--instructions", "do the role"}
+		if code := app.Run(args); code != ExitOK {
+			t.Fatalf("define role %s exit = %d", role, code)
+		}
+	}
+	if code := app.Run([]string{"room", "roles", "--room", "main-line", "--add", "builder,reviewer,审查者"}); code != ExitOK {
+		t.Fatalf("configure roles exit = %d", code)
+	}
+
+	for _, test := range []struct {
+		name       string
+		text       string
+		positional bool
+		to         string
+		wantText   string
+		mentions   []string
+	}{
+		{name: "natural mention", text: "@reviewer please inspect this", wantText: "@reviewer please inspect this", mentions: []string{"reviewer"}},
+		{name: "unicode mention and punctuation", text: "@审查者，请看这里", wantText: "@审查者，请看这里", mentions: []string{"审查者"}},
+		{name: "positional mention", text: "Can @reviewer inspect this", positional: true, wantText: "Can @reviewer inspect this", mentions: []string{"reviewer"}},
+		{name: "union with explicit target", text: "Please ask @reviewer too", to: "@builder,reviewer", wantText: "Please ask @reviewer too", mentions: []string{"reviewer", "builder"}},
+		{name: "escaped literal", text: `write \@reviewer literally`, wantText: `write \@reviewer literally`},
+		{name: "inline code", text: "run `@reviewer` after this", wantText: "run `@reviewer` after this"},
+		{name: "fenced code", text: "example:\n```text\n@reviewer\n```", wantText: "example:\n```text\n@reviewer\n```"},
+		{name: "email address", text: "contact dev@example.com", wantText: "contact dev@example.com"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var out bytes.Buffer
+			sender := &App{Out: &out, Err: io.Discard, Dir: dir}
+			args := []string{"send", "--room", "main-line"}
+			if test.positional {
+				args = append(args, test.text)
+			} else {
+				args = append(args, "--text", test.text)
+			}
+			if test.to != "" {
+				args = append(args, "--to", test.to)
+			}
+			if code := sender.Run(args); code != ExitOK {
+				t.Fatalf("send exit = %d, output %s", code, out.String())
+			}
+			var record core.Record
+			if err := json.Unmarshal(out.Bytes(), &record); err != nil {
+				t.Fatal(err)
+			}
+			if len(test.mentions) == 0 {
+				var got string
+				if err := json.Unmarshal(record.Content, &got); err != nil {
+					t.Fatalf("content = %s, want plain string: %v", record.Content, err)
+				}
+				if got != test.wantText {
+					t.Fatalf("text = %q, want %q", got, test.wantText)
+				}
+				return
+			}
+			var got collab.Message
+			if err := json.Unmarshal(record.Content, &got); err != nil {
+				t.Fatalf("content = %s, want structured message: %v", record.Content, err)
+			}
+			if got.Text != test.wantText || strings.Join(got.Mentions, ",") != strings.Join(test.mentions, ",") {
+				t.Fatalf("message = %+v, want text %q and mentions %v", got, test.wantText, test.mentions)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		text string
+		want string
+	}{{"@missing please help", `role "missing" is not configured`}, {"@all please help", "@all is not supported"}} {
+		var errOut bytes.Buffer
+		unknown := &App{Out: io.Discard, Err: &errOut, Dir: dir}
+		if code := unknown.Run([]string{"send", "--room", "main-line", "--text", test.text}); code != ExitError {
+			t.Fatalf("body mention %q exit = %d, want error", test.text, code)
+		}
+		if !strings.Contains(errOut.String(), test.want) {
+			t.Fatalf("body mention %q error = %q, want %q", test.text, errOut.String(), test.want)
+		}
+	}
+}
+
+func TestSendRejectsInvalidReplyReference(t *testing.T) {
+	dir := initRoom(t, "project")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"send", "--text", "done", "--reply-to", "project#zero"}); code != ExitError {
+		t.Fatalf("invalid reply reference exit = %d, want error", code)
+	}
+}
+
+func TestRoomInitAcceptsDefinedRoles(t *testing.T) {
+	dir := initRoom(t, "workspace")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"role", "define", "--name", "builder", "--agent-type", "test", "--template", "builder"}); code != ExitOK {
+		t.Fatalf("define template role exit = %d", code)
+	}
+	if code := app.Run([]string{"room", "init", "--name", "project", "--role", "@builder"}); code != ExitOK {
+		t.Fatalf("room init with role exit = %d", code)
+	}
+	if code := app.Run([]string{"room", "roles", "--room", "project"}); code != ExitOK {
+		t.Fatalf("room roles list exit = %d", code)
+	}
+}
+
+func TestRoomRolesCanReportPanelAvailability(t *testing.T) {
+	dir := initRoom(t, "project")
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: dir}
+	if app.Run([]string{"role", "define", "--name", "reviewer", "--agent-type", "test", "--template", "reviewer"}) != ExitOK ||
+		app.Run([]string{"room", "roles", "--room", "project", "--add", "reviewer"}) != ExitOK {
+		t.Fatal("configure reviewer")
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "hc"), []byte("#!/bin/sh\nprintf '%s\\n' '{\"terminals\":[]}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	out.Reset()
+	if code := app.Run([]string{"room", "roles", "--room", "project", "--status"}); code != ExitOK {
+		t.Fatalf("room roles --status exit = %d", code)
+	}
+	var role struct {
+		Panel  string `json:"panel"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &role); err != nil || role.Status != "missing" {
+		t.Fatalf("room roles status = %q, err = %v", out.String(), err)
+	}
+	root, err := store.Find(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPanel, err := collab.PanelName(root, "project", "reviewer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role.Panel != wantPanel {
+		t.Fatalf("room roles panel = %q, want workspace-scoped %q", role.Panel, wantPanel)
+	}
+}
+
+func TestCollabStatusDoesNotRequireHC(t *testing.T) {
+	dir := initRoom(t, "project")
+	var out bytes.Buffer
+	app := &App{Out: &out, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"collab", "status"}); code != ExitOK {
+		t.Fatalf("collab status exit = %d, output %s", code, out.String())
+	}
+	if strings.TrimSpace(out.String()) != "[]" {
+		t.Fatalf("collab status output = %q, want empty durable ledger", out.String())
+	}
+}
+
+func TestCollabResolveRequiresExplicitRetryAndResolvesUnknown(t *testing.T) {
+	for _, test := range []struct {
+		outcome, confirm, want string
+	}{
+		{"delivered", "", "submitted"},
+		{"skip", "", "skipped"},
+		{"retry", "--confirm", "pending"},
+	} {
+		t.Run(test.outcome, func(t *testing.T) {
+			dir := initRoom(t, "project")
+			root, err := store.Find(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := `{"version":1,"cursor":{},"intents":[{"room":"project","seq":1,"text":"task","deliveries":[{"role":"reviewer","panel":"tr-reviewer","state":"unknown","error":"ambiguous"}]}]}`
+			if err := os.WriteFile(filepath.Join(root, "dispatch.json"), []byte(state), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var out, errOut bytes.Buffer
+			app := &App{Out: &out, Err: &errOut, Dir: dir}
+			args := []string{"collab", "resolve", "--room", "project", "--seq", "1", "--role", "reviewer", "--outcome", test.outcome}
+			if test.confirm != "" {
+				args = append(args, test.confirm)
+			}
+			if code := app.Run(args); code != ExitOK {
+				t.Fatalf("resolve exit = %d, stderr %s", code, errOut.String())
+			}
+			data, err := os.ReadFile(filepath.Join(root, "dispatch.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ledger struct {
+				Intents []struct {
+					Deliveries []struct {
+						State string `json:"state"`
+					} `json:"deliveries"`
+				} `json:"intents"`
+			}
+			if err := json.Unmarshal(data, &ledger); err != nil {
+				t.Fatal(err)
+			}
+			if got := ledger.Intents[0].Deliveries[0].State; got != test.want {
+				t.Fatalf("resolved state = %q, want %q", got, test.want)
+			}
+		})
+	}
+
+	dir := initRoom(t, "project")
+	app := &App{Out: io.Discard, Err: io.Discard, Dir: dir}
+	if code := app.Run([]string{"collab", "resolve", "--room", "project", "--seq", "1", "--role", "reviewer", "--outcome", "retry"}); code != ExitError {
+		t.Fatalf("unconfirmed retry exit = %d, want error", code)
 	}
 }
 

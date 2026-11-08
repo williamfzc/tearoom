@@ -7,3 +7,6 @@ bin/
 .tearoom/lock
 
 .DS_Store
+.tearoom/collaboration.lock
+.tearoom/dispatch.json
+.tearoom/.dispatch.lock

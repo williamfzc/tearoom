@@ -1,7 +1,5 @@
-// skill.go renders the agent orientation guide: the room-tree journey and the
-// rules that hold at every command, carried by the binary so no skill file
-// has to be distributed. Exact syntax stays with per-command help and the
-// CLI contract; this text only teaches the journey.
+// skill.go renders the self-contained agent orientation guide carried by the
+// binary, including the minimum role, hc, and readiness setup an Agent needs.
 package cli
 
 import (
@@ -12,44 +10,96 @@ import (
 // works before any setup: it reads no Room and takes no flags.
 const skillText = `tearoom agent guide
 
-Tearoom is a durable room tree. Every room is one span of context with one
-ordered, append-only record stream; rooms link through single parents, and
-whoever reads a room can pick up the work — across agents, tools, and
-process restarts. A signature is an unverified label. The CLI is the whole
-interface.
+Tearoom is a durable, append-only conversation per Room. Rooms form a parent
+tree. People and Agents share the same Room history across tools and restarts.
+The CLI is the product interface. Run tearoom <command> --help for exact flags.
 
-The journey:
-  1. Record the goal            tearoom room init --name main-line
-                                tearoom send --text "the goal and acceptance"
-  2. Split into children        tearoom room init --name implementation --parent main-line
-  3. Work inside one room       tearoom send --text "..." --room implementation
-  4. Hand off in writing        what was done, what is blocked, what the next
-                                worker should do first
-  5. The next worker reads      tearoom read --room implementation --tail 20
-                                and continues. Verify in another room, never
-                                in the one that did the work.
+Minimum setup (run in the project directory):
+  (
+  set -eu
+  tearoom room init --name project
+  mkdir -p .tearoom
+  if [ -e .tearoom/claude-settings.json ]; then cat .tearoom/claude-settings.json; exit 1; fi
+  printf '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}' > .tearoom/claude-settings.json
+  : "${TEAROOM_SOURCE:?set to the Tearoom source checkout containing scripts/pi-hc-status.ts}"
+  export PI_HC_STATUS_EXTENSION="$TEAROOM_SOURCE/scripts/pi-hc-status.ts"
+  export PI_BIN="${PI_BIN:-pi}"
+  test -r "$PI_HC_STATUS_EXTENSION"
+  "$PI_BIN" --version
+  tearoom role define --name builder --agent-type claude \
+    --command claude --arg=--settings --arg="$PWD/.tearoom/claude-settings.json" \
+    --arg=--permission-mode --arg=dontAsk \
+    --description "Implements and tests changes" \
+    --instructions "Implement and record evidence. If a command is denied, try simpler permitted commands; never disable the sandbox. Record unresolved blockers."
+  tearoom role define --name reviewer --agent-type pi --command "$PI_BIN" \
+    --arg=--extension --arg="$PI_HC_STATUS_EXTENSION" \
+    --description "Independently reviews changes" \
+    --instructions "Review the change and evidence; report findings and verdict."
+  tearoom room roles --room project --add builder,reviewer
+  tearoom room roles --room project --status
+  tearoom collab run
+  )
 
-Every agent, every session:
-  export TEAROOM_ACTOR=<signature>              a plain label, chosen once
-  tearoom tree                                  the skeleton: parents and children
-  tearoom read --room <room> [--after e<N>] [--tail 5] [--subtree]
-  tearoom send --text <text> | --json <json> [--room <room>]
+Before launch, install and initialize hc, authenticate each Agent CLI, and
+resolve its one-time trust/update prompts in the intended working directory.
+If startup is blocked by a prompt or status is unknown, escalate instead of
+assuming readiness. hc --skill is hc's canonical runtime guide. hc template
+launches are also supported with --template; inspect the installed template
+and ensure its readiness mode reports status (report) or uses a proven default.
+ready: quiet is refused because an update or permission prompt can look like a
+ready terminal. Codex launches need --no-daemon in the template command.
 
-Rules that hold everywhere:
-- Records form one dense, ordered, durable stream per room. The Store
-  assigns each position; callers never pick one.
-- Reads are pure and repeatable. Keep your own boundary in --after; Tearoom
-  stores no cursor or acknowledgement for you.
-- The signature is never verified. Quoting a record is room-name#seq in
-  plain text; tools do not parse it.
-- An empty read is success: no output, exit 0.
-- If a send may have gone through, retry with the same --idempotency-key and
-  you get the original record back instead of a duplicate.
-- Notifications say only "there is something new": tearoom watch --json
-  prints one envelope per new record. Deciding who wakes and how belongs to
-  an external waker.
+The Pi extension path must point to an installed copy of this repository's
+scripts/pi-hc-status.ts; Pi provider and model configuration must also exist.
+The example passes settings only to this Claude process and does not edit
+user-level settings. dontAsk denies calls that need approval instead of waiting;
+the Agent can retry with simpler permitted commands or record a blocker. This
+is a sandbox configuration, not a blanket permission grant. Not every Agent
+supports it, and it does not guarantee every task can run unattended.
+Review the exact policy and available controls in Claude's own documentation.
 
-Exact flags live with each command: run tearoom <command> --help.
+How work moves:
+  tearoom read --room project
+  tearoom send --room project --as builder --to @reviewer \
+    --reply-to project#1 --text "Implemented; verify these commands and files: ..."
+  tearoom read --room project --tail 5
+  tearoom collab status
+
+An unaddressed message is shared history (broadcast) and does not wake a panel.
+An explicit @role in text or --to @role directs it to that Room's configured
+role. Each Room-role binding maps to its own hc panel; the same role in another
+Room has a separate panel. --reply-to room#seq is a reference convention, not
+identity proof. Tearoom does not validate --as: any process can write any
+signature. A reviewer label and separate Room record do not prove the reviewer
+was independent. Use a genuinely separate Agent/tool and inspect its evidence;
+the runtime cannot enforce that independence.
+
+Readiness and recovery:
+- tearoom room roles --room project --status queries hc for observed panel
+  states. Unknown, blocked, idle, working, and done are observations, not task
+  completion guarantees. A missing status report remains pending; do not infer
+  readiness from terminal text.
+- tearoom collab status lists durable delivery intents. Successful prompt
+  submission is not successful work. Require the Agent's Room receipt/evidence.
+- Resolve only an ambiguous (unknown) delivery after checking hc and Room:
+  tearoom collab resolve --room project --seq 2 --role reviewer --outcome delivered
+  or ... --outcome skip. Retrying requires --outcome retry --confirm and
+  may repeat work or external side effects. Exactly-once execution is not promised.
+
+Core commands:
+  tearoom tree
+  tearoom read --room <room> [--after e<N>] [--tail N] [--subtree]
+  tearoom send --room <room> --text <text> [--as <label>] [--to @role,...]
+  tearoom watch --json
+  tearoom collab run | status | resolve ...
+
+Records are ordered and append-only; the store assigns sequence numbers. Reads
+are repeatable and save no cursor. Empty read succeeds with no output. If a send
+may have succeeded, retry the exact content with the same --idempotency-key.
+watch --json emits notification envelopes but does not choose a recipient
+or wake an Agent; collab run is the local hc dispatcher. Stop it with Ctrl-C.
+
+Detailed integration notes: docs/reference/agent-integration.md (when available).
 `
 
 // runSkill prints the agent guide. It owns no Room state and takes no flags,

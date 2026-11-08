@@ -20,7 +20,7 @@ Current implementation details do not belong in this tree.
 | [http-api.md](http-api.md) | The only HTTP protocol |
 | [exit-codes.md](exit-codes.md) | Machine-readable outcomes |
 | [storage-layout.md](storage-layout.md) | Workspace storage and the one-time format migration |
-| [agent-integration.md](agent-integration.md) | Minimal Agent integration and replay guide |
+| [agent-integration.md](agent-integration.md) | Agent roles, hc panels, readiness, and handoffs |
 
 Agents and Agent products should consume only these contracts. Human text
 output may improve without changing the protocol. Current implementation

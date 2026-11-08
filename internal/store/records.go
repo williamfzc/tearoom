@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,9 @@ func (s *Store) Append(ctx context.Context, room, author string, request core.Ap
 	if err := s.requireRoomLocked(room); err != nil {
 		return nil, err
 	}
+	if err := s.recoverAppendLocked(room); err != nil {
+		return nil, err
+	}
 
 	// Resolve an existing idempotency key: an equal fingerprint returns the
 	// original record, a different one conflicts.
@@ -111,14 +115,18 @@ func (s *Store) Append(ctx context.Context, room, author string, request core.Ap
 		At:      s.now().UTC(),
 		Content: content,
 	}
-	if err := appendJSONLine(s.recordsPath(room), record); err != nil {
-		return nil, err
-	}
 	if key != "" {
 		entry := ledgerFile{Author: author, Key: key, Fingerprint: fingerprint, Seq: record.Seq}
-		if err := appendJSONLine(s.ledgerPath(room), entry); err != nil {
+		if err := s.writePendingAppend(room, pendingAppend{Record: record, Ledger: entry}); err != nil {
 			return nil, err
 		}
+		if err := s.recoverAppendLocked(room); err != nil {
+			return nil, err
+		}
+		return &record, nil
+	}
+	if err := appendJSONLine(s.recordsPath(room), record); err != nil {
+		return nil, err
 	}
 	return &record, nil
 }
@@ -208,9 +216,14 @@ func appendJSONLine(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(data); err != nil {
+	n, err := f.Write(data)
+	if err != nil {
 		_ = f.Close()
 		return err
+	}
+	if n != len(data) {
+		_ = f.Close()
+		return io.ErrShortWrite
 	}
 	if err := f.Sync(); err != nil {
 		_ = f.Close()

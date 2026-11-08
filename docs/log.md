@@ -8,6 +8,13 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-08 — Retain unverified role signatures
+
+The user chose not to restrict signatures after the role-independence pilot
+showed an Agent can write under another role's label. Signatures remain
+unverified; independent review therefore requires evidence beyond the label.
+The failed pilot is recorded in [evaluations.md](evaluations.md).
+
 ## 2026-11-08 — Propose a recoverable hc delivery boundary
 
 Recorded the local role-to-panel and directed delivery proposal in

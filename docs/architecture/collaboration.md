@@ -8,8 +8,9 @@ timestamp: 2026-11-08
 
 # Room collaboration delivery
 
-This is the proposed first local integration for the product and
-[user journeys](../domain/user-stories.md). It is not implemented or proven.
+This is the local integration for the product and
+[user journeys](../domain/user-stories.md). One unattended builder–reviewer
+workflow has been exercised; wider acceptance remains open.
 The [implementation status](status.md) records what ships. The kernel owns
 Room history; this integration owns configuration, delivery and recovery.
 
@@ -30,7 +31,8 @@ terminals and conversations. A panel may be created on demand; a lost terminal
 can be replaced without changing the Room-role identity. A CLI view should
 show the role name, description, agent type and observed availability, including
 unknown or blocked; it must not claim that an absent or unready panel is ready.
-The exact configuration file and commands need a first runnable slice.
+Configuration and commands are documented in the
+[Agent integration guide](../reference/agent-integration.md).
 
 ## Message and addressing
 
@@ -41,8 +43,8 @@ recipient fields. The integration routes only explicit, machine-readable
 targets, not guesses from prose or quoted text. Sending without a target is a
 broadcast in shared history and does not start offline agents. `@all` may
 notify existing panels but does not start every offline role by default. Exact
-input escaping and the structured content encoding need a boundary test before
-they become a CLI contract. If an unknown role is detected before append, the
+input escaping and the structured content encoding are defined in the
+[CLI reference](../reference/cli.md). If an unknown role is detected before append, the
 CLI reports it; if found in a persisted record, the runtime reports an
 undeliverable target without changing the record or routing to another role.
 
@@ -75,10 +77,21 @@ blocked or unready panel. hc readiness and reported status vary by agent; a tool
 without reliable status cannot be assumed idle or done. When readiness cannot
 be established, the delivery remains pending or is escalated.
 
+hc 0.1.18 accepts an atomic `--if idle` guard but has no `--if done`. For a
+panel reporting `done`, the current adapter rechecks its status and then sends
+without `--force`; the check and send are not atomic. A concurrent actor could
+start work in that gap. A blocked panel is still refused by hc. This remains
+an open reliability limit, not an exactly-once or exclusive-use guarantee.
+
 The runtime distinguishes pending, submission in progress, submitted, and
 uncertain delivery. A successful terminal submission is not proof that the
-agent completed the work. The agent records its result or blocker in the Room
-and references the triggering record; completion is judged from that evidence.
+agent completed the work. A matching Room reply can move a submitted delivery
+to completed, but the reply remains an unverified claim: a signature and
+reference do not authenticate the author. Replies cannot complete pending or
+uncertain deliveries, so they cannot suppress work before submission or
+resolve an ambiguous submission. The agent records its result or blocker in the
+Room and references the triggering record; inspect that evidence when deciding
+whether the claimed work is complete.
 On interruption, refresh hc's terminal snapshot and inspect the Room before
 deciding what to do. hc event sequence numbers restart and missed events yield
 a snapshot, not a complete replay. A spawn or send timeout can mean the action

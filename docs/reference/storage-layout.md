@@ -26,6 +26,7 @@ history diffs cleanly.
       room.json                     {"name":"main-line","created":"..."}
       records.jsonl                 one Record per line, seq 1..n
       idempotency.jsonl             one ledger line per (author, key) use
+      append-pending.json            temporary durable intent during a keyed append
     implementation/
       room.json                     {"name":"implementation","parent":"main-line","created":"..."}
       records.jsonl
@@ -49,6 +50,12 @@ backend — is refused with an incompatible-store error.
   (author, key) use — `{"author":...,"key":...,"fingerprint":...,"seq":...}`.
   An equal retry returns the original record; the same key with different
   content conflicts. The key is never exposed as a record field.
+- `append-pending.json` is absent between operations. During a keyed append it
+  durably records the intended Record and ledger entry before either JSONL
+  append. The next writer replays that intent under the workspace lock, filling
+  in whichever append is missing, then removes the intent. Existing workspaces
+  need no conversion; the file appears only while a keyed append is in flight
+  or awaiting recovery.
 
 The directory is the Room's address; the name inside `room.json` and the
 `room` field on each record line exist so a moved or edited file fails
@@ -58,9 +65,17 @@ no `/`, no leading dot, and never `.` or `..`.
 ## Serialization and durability
 
 One `flock` on `.tearoom/lock` serializes writers across processes: an
-append holds the exclusive lock across room verification, idempotency
-resolution, sequence assignment, and the append itself, so concurrent
-writers receive one dense per-room sequence with no loss or duplication.
+append holds the exclusive lock across recovery, room verification,
+idempotency resolution, sequence assignment, and all writes. Keyed appends
+write and sync the pending intent before appending the Record and ledger entry;
+the intent is removed only after both JSONL files are synced. An interrupted
+append is completed by the next append. Recovery may truncate an unparseable
+final fragment only when those bytes are a prefix of the exact Record or ledger
+line in the pending intent; unrelated bytes and complete but mismatching
+unterminated entries fail closed. Truncation preserves all preceding newline
+terminated lines. No whole-file rewrites or migrations are performed. Reads
+remain side-effect-free; if a crash left an incomplete tail, a read reports
+corruption until a retrying append performs recovery.
 Reads take the shared lock and are pure: no cursor is stored, and repeated
 reads return identical history. The Windows gap stands: concurrent use is
 unsupported where no cross-process lock exists.
