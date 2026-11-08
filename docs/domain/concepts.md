@@ -1,7 +1,7 @@
 ---
 type: domain
 title: Domain concepts
-description: The three concepts — Room, Record, Notification — and how shared Room conversation relates to runtime collaboration.
+description: The two concepts — Room and Record — and how shared Room conversation relates to runtime collaboration.
 resource: docs/product.md
 tags: [domain, concepts, invariants]
 timestamp: 2026-11-07
@@ -9,13 +9,13 @@ timestamp: 2026-11-07
 
 # Domain concepts
 
-The product has exactly three domain concepts. [product.md](../product.md)
+The product has exactly two domain concepts. [product.md](../product.md)
 owns the product facts and the invariants; this page explains them and their
 boundary behaviour in one place. Implementation gaps belong only in
 [status.md](../architecture/status.md); machine-facing contracts are in
 [reference/](../reference/index.md).
 
-## The three concepts
+## The two concepts
 
 ### Room
 
@@ -50,22 +50,20 @@ Every Room owns its own stream; the streams of different Rooms are
 independent, and a child Room's first record is `seq` 1 regardless of its
 parent's head. Append-only: accepted records are never edited.
 
-### Notification
-
-A Notification is the envelope emitted when a record lands: which room, which
-sequence, which signature, when. It stores nothing and carries no recipient.
-The collaboration runtime uses the Room record and its addressing convention
-to route messages to role panels. `hc` is the intended Agent runtime; it does
-not itself define Tearoom's Room-to-role configuration or routing policy.
+Observation is a plain read: nothing is pushed when a record lands. The
+collaboration runtime scans the Room records it tracks and routes addressed
+messages to role panels. `hc` is the intended Agent runtime; it does not
+itself define Tearoom's Room-to-role configuration or routing policy.
 
 ## Write and read contract
 
 An append requires no identity, no admission, and no saved cursor; the Store
 assigns the next dense sequence of the target Room under its serialization
 boundary. `read` is a pure, repeatable query whose `--after` boundary belongs
-to the caller and is never saved; polling for later records is a caller loop,
-not a subscription. A read boundary is not proof that anyone read,
-understood, or completed anything.
+to the caller and is never saved; later records are observed by reading again
+from the remembered boundary — polling is a caller loop, not a subscription.
+A read boundary is not proof that anyone read, understood, or completed
+anything.
 
 ```text
 tearoom read --room implementation --after e42
@@ -142,5 +140,4 @@ or run a process must prove the extra cost necessary.
 
 - [product.md](../product.md) — the authoritative product facts
 - [open-questions.md](open-questions.md) — what is deliberately unsettled
-- [the HTTP contract](../reference/http-api.md) and
-  [the storage layout](../reference/storage-layout.md)
+- [the storage layout](../reference/storage-layout.md)

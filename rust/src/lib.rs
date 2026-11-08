@@ -5,4 +5,3 @@ pub mod core;
 pub mod hc;
 pub mod mentions;
 pub mod store;
-pub mod transport;

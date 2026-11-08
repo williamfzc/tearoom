@@ -8,8 +8,8 @@ timestamp: 2026-11-07
 
 # Domain
 
-The minimum vocabulary is Room, Record, and Notification. Rooms form a
-single-parent tree; each Room owns one ordered record stream; a Notification
+The minimum vocabulary is Room and Record. Rooms form a
+single-parent tree; each Room owns one ordered record stream; an addressed
 is the envelope emitted when a record lands. Signatures are unverified
 labels. Protocols and conventions live in the records people write, not in
 kernel entities. [Product definition](../product.md) owns the product facts;

@@ -25,12 +25,11 @@ executable proof in [../evaluations.md](../evaluations.md).
   through the pending-intent file, and a cross-process flock around every
   append. Legacy format-2/3 (SQLite) workspaces are refused on open — the
   one-time migration belongs to the final Go release (tag `go-final`).
-- `rust/src/transport.rs` serves the minimal local HTTP face (room list,
-  create, read, append) and the client that speaks the same contract.
 - `rust/src/cli.rs` and `cli/` expose `room init --name/--parent`, `send`,
-  `read` (`--after`, `--tail`, `--subtree`), `tree`, `watch` (`--json`),
-  `server start` (loopback), `skill`, and the `role`/`collab` collaboration
-  surface. Membership, credentials, and the hosted profile are deleted.
+  `read` (`--after`, `--tail`, `--subtree`), `tree`, `skill`, and the
+  `role`/`collab` collaboration surface. Membership, credentials, the hosted
+  profile, and the watch/HTTP faces are deleted (2026-11-09 concept pass;
+  see [../log.md](../log.md)).
 - The repository carries its own workspace in `.tearoom/` and works inside
   it: the project's goal and acceptance live in the root Room.
 

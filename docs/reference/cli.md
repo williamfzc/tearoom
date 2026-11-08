@@ -29,8 +29,6 @@ tearoom send [--room <room>] --text <text> [--to @role,...] [--reply-to <room>#<
 tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key <key>]
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
-tearoom watch [--room <room>] [--json]
-tearoom server start [--address 127.0.0.1:8787]
 tearoom skill
 tearoom --version
 ```
@@ -71,7 +69,7 @@ Identifiers and timestamps above are examples, not fixed values.
   email addresses, and Markdown code spans and fences do not address roles.
   Unknown roles and `@all` are rejected. The appended content is structured
   JSON with `text` and `mentions`;
-  recipients remain outside Record and Notification fields. Addressed `--json`
+  recipients live in the record's structured content, never in the kernel Record. Addressed `--json`
   content is not supported. Without `--to`, existing text and raw JSON shapes
   are unchanged.
 - `--reply-to <room>#<seq>` writes a structured `reply_to` reference alongside
@@ -96,12 +94,11 @@ Identifiers and timestamps above are examples, not fixed values.
 
 ### Room selection
 
-`send`, `read`, and `watch` target Rooms by name:
+`send` and `read` target Rooms by name:
 
 - With `--room <name>` the named Room is used; an unknown name is an error.
 - Without `--room`, a workspace containing exactly one Room uses it; a
-  workspace with several Rooms refuses and names the rule. `watch` without
-  `--room` watches every Room in the workspace instead of refusing.
+  workspace with several Rooms refuses and names the rule.
 
 ### Skeleton
 
@@ -113,35 +110,6 @@ main-line
 ├── implementation
 │   └── login-page
 └── review
-```
-
-### Notifications
-
-`watch` follows appends and prints one line per new Record. `--json` prints
-the notification envelope, one JSON object per line:
-
-```json
-{"room":"implementation","seq":7,"author":"codex","at":"2026-11-07T10:02:00Z"}
-```
-
-The envelope carries no content and requests nothing; an external waker
-decides what to start. `watch` runs until interrupted.
-
-### Server
-
-`server start` serves the nearest workspace over HTTP on the loopback
-interface only — it has no credentials, and everything on loopback belongs to
-one OS user, the same trust domain as the `.tearoom` directory. The HTTP
-contract is [http-api.md](http-api.md). When `TEAROOM_SERVER` names a server
-URL, `send`, `read`, and `watch` use it instead of the nearest local
-workspace; room selection still follows the rules above.
-
-```bash
-# Local profile
-tearoom server start
-export TEAROOM_SERVER=http://127.0.0.1:8787
-tearoom send --text "ready" --as codex
-tearoom read --tail 5
 ```
 
 ### Agent guide
@@ -161,13 +129,13 @@ requires no identity.
 
 All diagnostics go to standard error; successful machine-readable output goes
 to standard output. [exit-codes.md](exit-codes.md) is the only exit-code
-source. In particular, an empty `read` succeeds, and a missing workspace or
-unreachable configured server is an availability failure (exit 4), while an
-unknown room name or an idempotency conflict is a request failure (exit 1).
+source. In particular, an empty `read` succeeds, a missing workspace is an
+availability failure (exit 4), and an unknown room name or an idempotency
+conflict is a request failure (exit 1).
 
 ## Delivery boundary
 
-`watch` emits recipient-free notifications. The collaboration dispatcher
+The collaboration dispatcher
 reads the addressed Record, resolves the Room-role binding, and uses hc to
 start or notify that role's panel. Role and Room roster commands configure
 routing; `collab run` starts the dispatcher and `collab status` prints its

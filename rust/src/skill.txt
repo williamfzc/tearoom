@@ -80,13 +80,11 @@ Core commands:
   tearoom tree
   tearoom read --room <room> [--after e<N>] [--tail N] [--subtree]
   tearoom send --room <room> --text <text> [--as <label>] [--to @role,...]
-  tearoom watch --json
   tearoom collab run | status | resolve ...
 
 Records are ordered and append-only; the store assigns sequence numbers. Reads
 are repeatable and save no cursor. Empty read succeeds with no output. If a send
 may have succeeded, retry the exact content with the same --idempotency-key.
-watch --json emits notification envelopes but does not choose a recipient
-or wake an Agent; collab run is the local hc dispatcher. Stop it with Ctrl-C.
+collab run is the local hc dispatcher; stop it with Ctrl-C.
 
 Detailed integration notes: docs/reference/agent-integration.md (when available).

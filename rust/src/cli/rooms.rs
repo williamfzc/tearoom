@@ -94,27 +94,12 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
         raw.to_owned()
     } else {
         let plain = if !text.is_empty() { text } else { &positional };
-        let mut names = mentions::extract(plain);
-        for name in mentions::parse_explicit(args.get("to")).map_err(|e| anyhow!(e))? {
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-        if names.iter().any(|name| name == "all") {
-            bail!("@all is not supported; mention a configured role explicitly");
-        }
-        if !names.is_empty() {
-            let config = Config::load(&store.root()?)?;
-            let allowed = config
-                .rooms
-                .get(&room)
-                .ok_or_else(|| anyhow!("room {room:?} has no collaborator roles configured"))?;
-            for name in &names {
-                if !allowed.roles.contains(name) {
-                    bail!("role {name:?} is not configured in room {room:?}");
-                }
-            }
-        }
+        let roster = Config::load(store.root())?
+            .rooms
+            .get(&room)
+            .map(|binding| binding.roles.clone());
+        let names = mentions::resolve(plain, args.get("to"), &room, roster.as_deref())
+            .map_err(|e| anyhow!(e))?;
         let reply = if args.get("reply-to").is_empty() {
             None
         } else {

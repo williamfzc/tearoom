@@ -57,9 +57,10 @@ The proposed reconciliation boundary is in
 store, agent-specific readiness, and ambiguous spawn or send outcomes with
 interruption tests. hc does not guarantee task completion or recovery.
 
-## Notification transport
+## Wake and delivery scanning
 
-The current `watch` command polls and prints recipient-free envelopes but does
-not replay missed notifications. The integration must scan Room records as
-specified in [collaboration.md](../architecture/collaboration.md); the choice
-of notification carrier remains open until the integration is exercised.
+The kernel has no notification surface: observation is a plain read, and the
+dispatcher scans Room records from its durable boundary as specified in
+[collaboration.md](../architecture/collaboration.md). Whether that scan and
+the hc event stream together cover every interruption case remains open until
+exercised.

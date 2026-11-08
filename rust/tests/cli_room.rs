@@ -98,7 +98,6 @@ fn exit_codes_and_signature_follow_the_cli_contract() {
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_tearoom"))
             .current_dir(dir.path())
-            .env_remove("TEAROOM_SERVER")
             .env_remove("TEAROOM_ACTOR")
             .args(args)
             .output()
@@ -111,17 +110,6 @@ fn exit_codes_and_signature_follow_the_cli_contract() {
     let record: serde_json::Value = serde_json::from_slice(&appended.stdout).unwrap();
     assert_eq!(record["author"], "alice");
     assert_eq!(run(&["read", "--room", "missing"]).status.code(), Some(1));
-
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let unreachable = Command::new(env!("CARGO_BIN_EXE_tearoom"))
-        .current_dir(dir.path())
-        .env("TEAROOM_SERVER", format!("http://{address}"))
-        .args(["read"])
-        .output()
-        .unwrap();
-    assert_eq!(unreachable.status.code(), Some(4));
 }
 
 #[test]
@@ -130,7 +118,6 @@ fn command_specific_flags_and_boolean_values_are_checked() {
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_tearoom"))
             .current_dir(dir.path())
-            .env_remove("TEAROOM_SERVER")
             .args(args)
             .output()
             .unwrap()

@@ -14,7 +14,10 @@ build: cli
 cli:
 	$(CARGO) build --locked --manifest-path $(RUST_MANIFEST) --target-dir rust/target
 	mkdir -p $(BIN)
-	cp rust/target/debug/tearoom $(BIN)/tearoom
+	# macOS kills an ad-hoc signed binary overwritten in place; replace by
+	# rename so the executable lands on a fresh inode every build.
+	cp rust/target/debug/tearoom $(BIN)/.tearoom.tmp
+	mv -f $(BIN)/.tearoom.tmp $(BIN)/tearoom
 
 test:
 	$(CARGO) test --locked --manifest-path $(RUST_MANIFEST) --target-dir rust/target
@@ -32,14 +35,13 @@ line-budget:
 
 # E1: the room-tree contract through the shipped binary — named rooms under
 # parents, per-room dense sequences, concurrent append, idempotent retries,
-# tails, subtrees, the skeleton, missing signatures, and the loopback HTTP
-# leg.
+# tails, subtrees, the skeleton, and missing signatures.
 target-room: cli
 	@./scripts/target-room.sh
 
-# E2: replay across real processes without server-owned read progress —
+# E2: replay across real processes without stored read progress —
 # explicit eN boundaries, no session/cursor files, and consistent history
-# across restarts.
+# across processes.
 target-replay: cli
 	@./scripts/target-replay.sh
 

@@ -35,8 +35,6 @@ admission, and the hosted multi-room service were removed with the v1 model on
   recipient field;
 - content compaction and fingerprints used for idempotent appends.
 
-Notifications are derived from appended records and are never stored.
-
 The Store never checks identity: reading and writing require no admission,
 and no Store operation creates membership as a side effect. What one Room
 sees is bounded by the tree, not by permissions.
@@ -57,27 +55,27 @@ resolution, sequence assignment, and the append, so concurrent writers
 receive a dense per-room sequence. The format boundary is specified in
 [persistence.md](persistence.md).
 
-## Outside boundaries
-
-`rust/src/transport.rs` exposes the minimal local HTTP face: room list, record
-read, record append. It holds no authentication paths — the exposed profile,
-owner tokens, and credential routes died with the hosted service.
+## Outside boundary
 
 `rust/src/cli.rs` and `cli/` expose the command surface:
 
 ```text
-tearoom room init --name <name> [--parent <room>]
-tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>]
+tearoom room init --name <name> [--parent <room>] [--role @<role>,...]
+tearoom role define|list|show
+tearoom room roles --room <room> [--add @<role>,...] [--status]
+tearoom collab run|status|resolve
+tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>] [--to @role] [--reply-to room#seq]
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
-tearoom watch [--room <room>] [--json]
-tearoom server start
 tearoom skill
 ```
 
 It owns formatting and invocation-local options, not shared invariants. The
 v1 commands `room join`, `room credential`, and the hosted `server` profile
-are deleted; no alias keeps them alive.
+are deleted; no alias keeps them alive. The 2026-11-09 concept pass removed
+the watch and HTTP faces with the notification concept (see
+[../log.md](../log.md)); the loopback `server start` and `TEAROOM_SERVER`
+client mode died with it.
 
 ## Collaboration runtime boundary
 
@@ -100,14 +98,15 @@ instruction, not a native system prompt. Panel-failure handling and reliable
 recovery are not existing hc guarantees. The delivery contract is in
 [collaboration.md](collaboration.md); configuration is in the
 [Agent integration guide](../reference/agent-integration.md).
-The integration may depend on `core` and `transport`; neither may depend on it.
+The integration may depend on `core` and the Store; neither may depend on it.
 
 ## Clean-break dependency checks
 
-1. `core` has no import path to persistence, transport, or CLI.
+1. `core` has no import path to persistence or CLI.
 2. The current Store has one format and no parallel old/new reader or writer.
 3. No Store operation validates identity or admits anyone.
-4. Transport has one route/body/error vocabulary with no authorization paths.
+4. The hc client (`hc.rs`) is one JSON-RPC vocabulary with no authorization
+   paths and no Room semantics.
 5. CLI, scripts, tests, and docs use only the command and record vocabulary
    above.
 6. The hc integration stays outside the kernel and does not add

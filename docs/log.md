@@ -8,6 +8,28 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-09 — Two concepts: remove the notification and HTTP faces
+
+The kernel is now exactly two concepts: Room and Record. The third concept —
+the notification envelope — had no consumer: the collaboration dispatcher
+scans Room records from its durable boundary instead, `watch` had no test, no
+gate coverage, and no caller besides the retired herdr waker, and the
+loopback HTTP face served every recorded Agent journey zero times while the
+same journeys ran through the CLI in one checkout. The 2026-11-07 design made
+"notify externally, wake elsewhere" the wake contract; the 2026-11-08 hc
+integration became the real wake path, and what remains of that old contract
+— "observe by reading" — is now stated plainly: later records are observed by
+reading again from a remembered boundary.
+
+Removed: the `watch` command and its envelope, the `server start` command,
+the `TEAROOM_SERVER` client mode, the transport layer (`rust/src/transport.rs`
+and its dependencies), `scripts/waker.sh`, and the serving and HTTP reference
+pages. E1 and E2 lost their HTTP legs — every other check stands, and E2's
+restart leg became a plain cross-process leg. The reopening condition is a
+real integration that cannot live as a caller-side read loop: if a second
+consumer of record streams needs a served or pushed interface, the case goes
+through product.md first.
+
 ## 2026-11-08 — Port the kernel to Rust and retire the Go implementation
 
 The shipped binary is now built from `rust/` with Cargo. The format-4
@@ -152,7 +174,8 @@ PostgreSQL 18: room creation, per-Actor credentials, the four-step
 continuation journey with token-free open reads, and the revocation matrix —
 all green, zero manual relays. The transcript is recorded in
 [evaluations.md](evaluations.md) hand-run evidence. Operational facts that
-cost debugging time are in [operations/serving.md](operations/serving.md):
+cost debugging time are in the serving runbook (removed 2026-11-09 with the
+HTTP face):
 the Render API requires a payment method on file even for free-service
 creation (existing services are updated freely), and macOS ignores
 SSL_CERT_FILE, which is why the client carries TEAROOM_CA_FILE.
@@ -169,8 +192,7 @@ expired token joined the negative matrix at the HTTP boundary, the gated
 PostgreSQL battery and credential control ran green against PostgreSQL 16.15,
 and the client gained TEAROOM_CA_FILE for private-CA TLS fronts. Remote
 readiness is now a deployment gate that runs on every `make check`; putting
-the hosted profile on a cloud host is operational work per
-[operations/serving.md](operations/serving.md), not another proof.
+the hosted profile on a cloud host is operational work, not another proof.
 
 ## 2026-09-10 — Ship the remote profile: credentials, hosted service, and the served contract
 

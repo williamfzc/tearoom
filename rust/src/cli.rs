@@ -1,16 +1,13 @@
-//! CLI entry point, argument parsing and shared backend selection.
+//! CLI entry point, argument parsing and shared workspace access.
 mod collaboration;
-mod observation;
 mod rooms;
 
-use crate::core::{AppendRequest, Record, Room};
 use crate::store::Store;
-use crate::transport::Client;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
-const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nCommands:\n  room      create rooms and manage collaborators\n  role      define and inspect collaborator roles\n  collab    run or inspect the hc dispatcher\n  send      append a record\n  read      read a room or subtree\n  tree      print the room tree\n  watch     follow notifications\n  server    serve the workspace over local HTTP\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n  TEAROOM_SERVER  local server URL instead of the nearest workspace\n\nUse \"tearoom <command> --help\" for more information.\n";
+const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nCommands:\n  room      create rooms and manage collaborators\n  role      define and inspect collaborator roles\n  collab    run or inspect the hc dispatcher\n  send      append a record\n  read      read a room or subtree\n  tree      print the room tree\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
 
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -19,7 +16,7 @@ pub fn run() -> i32 {
         Err(error) => {
             eprintln!("{error:#}");
             let detail = format!("{error:#}");
-            if detail.contains("no workspace") || detail.contains("server unreachable") {
+            if detail.contains("no workspace") {
                 4
             } else {
                 1
@@ -60,8 +57,6 @@ fn execute(args: &[String]) -> Result<()> {
         "send" => rooms::send_command(rest),
         "read" => rooms::read_command(rest),
         "tree" => rooms::tree_command(rest),
-        "watch" => observation::watch_command(rest),
-        "server" => observation::server_command(rest),
         _ => bail!("unknown command {command:?}"),
     }
 }
@@ -153,46 +148,10 @@ fn print_json(value: &impl Serialize) -> Result<()> {
     println!("{}", serde_json::to_string(value)?);
     Ok(())
 }
-enum Backend {
-    Local(Store),
-    Remote(Client),
+fn open() -> Result<Store> {
+    Store::open(std::env::current_dir()?)
 }
-impl Backend {
-    fn rooms(&self) -> Result<Vec<Room>> {
-        match self {
-            Self::Local(s) => s.rooms(),
-            Self::Remote(s) => s.rooms(),
-        }
-    }
-    fn read(&self, room: &str, after: u64) -> Result<Vec<Record>> {
-        match self {
-            Self::Local(s) => s.read(room, after),
-            Self::Remote(s) => s.read(room, after),
-        }
-    }
-    fn append(&self, room: &str, author: &str, req: AppendRequest<'_>) -> Result<Record> {
-        match self {
-            Self::Local(s) => s.append(room, author, req),
-            Self::Remote(s) => s.append(room, author, req),
-        }
-    }
-    fn root(&self) -> Result<std::path::PathBuf> {
-        match self {
-            Self::Local(s) => Ok(s.root().to_path_buf()),
-            Self::Remote(_) => Store::find(std::env::current_dir()?),
-        }
-    }
-}
-fn open() -> Result<Backend> {
-    let server = std::env::var("TEAROOM_SERVER").unwrap_or_default();
-    if !server.trim().is_empty() {
-        return Ok(Backend::Remote(Client::new(
-            server.trim().trim_end_matches('/'),
-        )?));
-    }
-    Ok(Backend::Local(Store::open(std::env::current_dir()?)?))
-}
-fn resolve(store: &Backend, room: &str) -> Result<String> {
+fn resolve(store: &Store, room: &str) -> Result<String> {
     let room = room.trim();
     if !room.is_empty() {
         return Ok(room.into());

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Evaluation: E2 — replay across real processes, no server-owned read progress
+# Evaluation: E2 — replay across real processes, no stored read progress
 #
 # Proves: different real processes act on the same workspace; a later process
 # replays from an explicit eN boundary after the writer exited; no session or
 # cursor files exist anywhere (the client config directory stays empty); every
 # invocation picks its own boundary; workspace history is consistent across
-# process and server restarts.
+# processes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -82,34 +82,10 @@ check "independent invocations replay the same boundary (e1 -> 2 3 4)" \
   "$([ "$one" = "$two" ] && [ "$one" = "2 3 4" ] && echo 0 || echo 1)"
 
 echo
-echo "E2: history is consistent across restarts"
-PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-URL="http://127.0.0.1:$PORT"
-start_server() {
-  ( cd "$room" && exec "$BIN" server start --address "127.0.0.1:$PORT" ) >"$WORK/server.log" 2>&1 &
-  SRV_PID=$!
-  for _ in $(seq 1 100); do
-    if TEAROOM_SERVER="$URL" "$BIN" read >/dev/null 2>&1; then return 0; fi
-    sleep 0.1
-  done
-  return 1
-}
-stop_server() {
-  kill "$SRV_PID" 2>/dev/null || true
-  wait "$SRV_PID" 2>/dev/null || true
-}
-
-start_server
-srv_first="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read | seqs_of)"
-stop_server
-start_server
-srv_second="$(in_dir "$room" env TEAROOM_SERVER="$URL" "$BIN" read | seqs_of)"
-check "server restart serves the same history" "$([ "$srv_first" = "$srv_second" ] && [ "$srv_first" = "1 2 3 4" ] && echo 0 || echo 1)"
-stop_server
-
-expect "process 4: alice appends after the restarts" "$room" "$BIN" send "after restart" --as alice
+echo "E2: history is consistent across processes"
+expect "process 4: alice appends in a fresh process" "$room" "$BIN" send "fifth record" --as alice
 final="$(in_dir "$room" "$BIN" read | seqs_of)"
-check "history stays consistent after restarts: 1..5" \
+check "history stays consistent across processes: 1..5" \
   "$(printf '%s' "$final" | grep -q '^1 2 3 4 5$' && echo 0 || echo 1)"
 
 echo

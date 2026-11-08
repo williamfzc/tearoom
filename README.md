@@ -15,11 +15,10 @@ lives in [status.md](docs/architecture/status.md); proof lives in
   stream.
 - **Record** — one stream entry: sequence, time, signature, content.
   Append-only, never edited.
-- **Notification** — the envelope emitted when a record lands: which room,
-  which sequence, which signature. It stores nothing.
 
-Signatures are unverified labels. The current CLI has no collaborator roster,
-admission, or credentials: the `.tearoom` directory is the trust domain. Storage is
+Signatures are unverified labels. There is no admission or credential step: the
+`.tearoom` directory is the trust domain, and a Room's collaborator roster is
+routing configuration, not access control. Storage is
 plain files — one JSONL stream per Room — so the tree can be committed to
 git and the memory travels with the checkout. This repository does exactly
 that: its own development lives in its `.tearoom/` tree.
@@ -49,10 +48,8 @@ TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
   boundary, `--tail 5` limits each selected Room, `--subtree` reads the Room
   and its descendants. Reading is side-effect free.
 - `tree` prints the skeleton: every root with its descendants.
-- `watch --json` prints one notification envelope per new record; an
-  external waker decides whether anyone is woken.
-- `server start` serves the workspace over HTTP on `127.0.0.1:8787`
-  (loopback only); set `TEAROOM_SERVER` to point other processes at it.
+- `role` and `collab` configure Room collaborators and run the local hc
+  dispatcher that delivers addressed records to Agent panels.
 
 ## Working the tree
 

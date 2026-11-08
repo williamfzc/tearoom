@@ -32,17 +32,17 @@ Use one source for each kind of claim:
 |---|---|
 | [product.md](product.md) | Authoritative product: the three concepts, invariants, refusals, and proof standard |
 | [evaluations.md](evaluations.md) | Proof source: acceptance journeys, evaluations, and hand-run evidence |
-| [domain/](domain/index.md) | Room, Record, and Notification concepts, boundary behaviour, and trust model |
+| [domain/](domain/index.md) | Room and Record concepts, boundary behaviour, and trust model |
 | [architecture/](architecture/index.md) | Layer ownership, persistence, and the implementation gap |
 | [reference/](reference/index.md) | The CLI, HTTP, exit, storage, and Agent integration contracts |
-| [operations/](operations/index.md) | Non-normative build, release, and serving state; read only after status |
+| [operations/](operations/index.md) | Non-normative build and release state; read only after status |
 | [lessons/](lessons/index.md) | Durable lessons behind the current design |
 | [log.md](log.md) | Historical decisions, retirements, and migration evidence; not a specification |
 
 ## Reading order
 
 1. [product.md](product.md) — product facts
-2. [domain/concepts.md](domain/concepts.md) — Room, Record, and Notification behaviour
+2. [domain/concepts.md](domain/concepts.md) — Room and Record behaviour
 3. [architecture/status.md](architecture/status.md) — implementation gap
 4. [evaluations.md](evaluations.md) — proof and hand-run evidence
 5. [reference/index.md](reference/index.md) — machine-facing contracts

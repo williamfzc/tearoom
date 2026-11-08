@@ -119,11 +119,11 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
     if !store.rooms()?.iter().any(|r| r.name == room) {
         bail!("room {room:?}: not found");
     }
-    let root = store.root()?;
+    let root = store.root();
     let adds = mentions::parse_explicit(args.get("add")).map_err(|e| anyhow!(e))?;
     let removes = mentions::parse_explicit(args.get("remove")).map_err(|e| anyhow!(e))?;
     if !adds.is_empty() || !removes.is_empty() {
-        Config::update(&root, |config| {
+        Config::update(root, |config| {
             let mut roles: std::collections::BTreeSet<String> = config
                 .rooms
                 .get(room)
@@ -146,7 +146,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
             Ok(())
         })?;
     }
-    let config = Config::load(&root)?;
+    let config = Config::load(root)?;
     let mut names = config
         .rooms
         .get(room)
@@ -156,7 +156,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
         let mut entry =
             serde_json::json!({"room":room,"role":name,"definition":config.roles.get(&name)});
         if args.switches.contains("status") {
-            let panel = crate::collab::panel_name(&root, room, &name)?;
+            let panel = crate::collab::panel_name(root, room, &name)?;
             let status = runtime().and_then(|runtime| runtime.status(&panel));
             entry["panel"] = serde_json::json!(panel);
             match status {

@@ -5,8 +5,7 @@
 # refused); per-room dense sequences that start at 1 in a child; concurrent
 # append yields one dense sequence; a missing signature is stored as an empty
 # author; an idempotent retry returns the original record and a key conflict
-# is an error (CLI exit 1, HTTP 409); tails, subtrees, and the skeleton print
-# what the tree holds; and the loopback HTTP face answers the same contract.
+# is an error; tails, subtrees, and the skeleton print what the tree holds.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -119,30 +118,6 @@ check "all six concurrent appends succeed" "$concurrent_rc"
 busy_seqs="$(in_dir "$local_room" "$BIN" read --room busy | seqs_of)"
 rc=0; dense "$busy_seqs" || rc=$?
 check "concurrent appends yield the dense sequence 1..6 ($busy_seqs)" "$rc"
-
-echo
-echo "E1: HTTP leg"
-PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-URL="http://127.0.0.1:$PORT"
-( cd "$local_room" && exec "$BIN" server start --address "127.0.0.1:$PORT" ) >"$WORK/server.log" 2>&1 &
-SRV_PID=$!
-cleanup_server() { kill "$SRV_PID" 2>/dev/null || true; wait "$SRV_PID" 2>/dev/null || true; }
-trap 'cleanup_server; rm -rf "$WORK"' EXIT
-
-ready=0
-for _ in $(seq 1 100); do
-  if TEAROOM_SERVER="$URL" "$BIN" read --room main-line >/dev/null 2>&1; then ready=1; break; fi
-  sleep 0.1
-done
-check "http server becomes ready on 127.0.0.1:$PORT" "$([ "$ready" -eq 1 ] && echo 0 || echo 1)"
-
-expect "http send appends through the server" "$local_room" env TEAROOM_SERVER="$URL" "$BIN" send --json '{"plan":"http"}' --room main-line --as planner
-http_seqs="$(in_dir "$local_room" env TEAROOM_SERVER="$URL" "$BIN" read --room main-line | seqs_of)"
-check "http read sees the same stream ($http_seqs)" "$(printf '%s' "$http_seqs" | grep -q '^1 2 3 4 5$' && echo 0 || echo 1)"
-reject "http unknown room read is refused" "$local_room" env TEAROOM_SERVER="$URL" "$BIN" read --room missing
-reject "http same key with different content conflicts (409)" "$local_room" env TEAROOM_SERVER="$URL" "$BIN" send --json '{"n":2}' --idempotency-key local-k1 --room main-line --as planner
-
-cleanup_server
 
 echo
 if [ "$fail" -eq 0 ]; then

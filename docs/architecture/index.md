@@ -19,7 +19,7 @@ realized; it is not a second product fact source. For executable proof, use
 | [persistence.md](persistence.md) | The room tree, per-room streams, and the one-time format migration |
 | [status.md](status.md) | Sole implementation-gap source: what the code implements and what remains |
 
-The short version: `core` defines Room, Record, Notification, and `Store`;
+The short version: `core` defines Room, Record, and the Store seam;
 persistence holds the tree and streams in workspace files; transport carries
 the minimal local HTTP face; the CLI presents the command surface. The
 [collaboration integration](collaboration.md) connects Room records to hc.

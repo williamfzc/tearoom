@@ -17,7 +17,6 @@ Current implementation details do not belong in this tree.
 | Document | Contract |
 |---|---|
 | [cli.md](cli.md) | The only command contract |
-| [http-api.md](http-api.md) | The only HTTP protocol |
 | [exit-codes.md](exit-codes.md) | Machine-readable outcomes |
 | [storage-layout.md](storage-layout.md) | Workspace storage and the one-time format migration |
 | [agent-integration.md](agent-integration.md) | Agent roles, hc panels, readiness, and handoffs |

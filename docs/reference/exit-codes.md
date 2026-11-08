@@ -15,7 +15,7 @@ timestamp: 2026-11-07
 |---|---|
 | 0 | Operation succeeded; an empty `read` is still success |
 | 1 | Invalid command, validation error, unknown room name, or any store/HTTP error — including an HTTP 409 idempotency conflict |
-| 4 | No workspace can be opened in the current profile, or the configured server is unreachable |
+| 4 | No workspace can be opened from the current directory |
 
 Agents should branch on the documented code rather than parse prose. Code `4`
 must never be treated as success because workspace state is unknown.

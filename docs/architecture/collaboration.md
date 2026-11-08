@@ -38,7 +38,7 @@ Configuration and commands are documented in the
 
 All messages remain visible in the Room's single append-only stream. The CLI
 accepts an explicit @role and stores target role names as structured message
-content alongside the text; the Record and Notification contracts do not gain
+content alongside the text; the Record contract does not gain
 recipient fields. The integration routes only explicit, machine-readable
 targets, not guesses from prose or quoted text. Sending without a target is a
 broadcast in shared history and does not start offline agents. `@all` may
@@ -57,9 +57,9 @@ ancestor Room, with the relevant roles configured there.
 
 A local integration process observes Room appends and uses hc to start a role
 terminal or deliver a prompt to it. hc events report terminal facts, not Room
-appends. Notifications are hints: on startup and reconnect the integration
-also scans Room records from its durable boundary. The current `watch` stream
-alone cannot provide replay. The integration stores its delivery progress
+appends. hc events are hints: on startup and reconnect the integration
+scans Room records from its durable boundary, because no event stream
+provides replay. The integration stores its delivery progress
 outside the Room stream and kernel, keyed by workspace, Room, record sequence,
 and target role. It persists delivery intents before moving its scan boundary;
 each intent then tracks its own outcome. Re-scanning must not create a second
