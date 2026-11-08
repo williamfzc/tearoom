@@ -25,7 +25,7 @@ func (s *Store) pendingPath(room string) string {
 }
 
 func (s *Store) writePendingAppend(room string, pending pendingAppend) error {
-	data, err := json.Marshal(pending)
+	data, err := marshalStoredJSON(pending)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func validatePendingRecordStream(path, room string, pending core.Record) error {
 		if json.Valid(tail) && !matches {
 			return fmt.Errorf("read %s: complete unterminated record does not match pending append", path)
 		}
-		expected, err := json.Marshal(pending)
+		expected, err := marshalStoredJSON(pending)
 		if err != nil {
 			return err
 		}
@@ -243,7 +243,7 @@ func repairPendingJSONL(path string, expected any, matches func([]byte) (bool, e
 		return err
 	}
 	tail := data[bytes.LastIndexByte(data, '\n')+1:]
-	expectedLine, err := json.Marshal(expected)
+	expectedLine, err := marshalStoredJSON(expected)
 	if err != nil {
 		return err
 	}

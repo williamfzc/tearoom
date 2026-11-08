@@ -295,3 +295,91 @@ func TestKeyedAppendDoesNotClaimExistingIncompleteRecord(t *testing.T) {
 		t.Fatalf("unexpected intent: %v", err)
 	}
 }
+
+func TestKeyedAppendPreservesRawContentAcrossRecovery(t *testing.T) {
+	for _, mode := range []string{"new", "record-written", "partial-record"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := Init(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.CreateRoom(ctx, "project", ""); err != nil {
+				t.Fatal(err)
+			}
+			s := st.(*Store)
+			// Include HTML-sensitive text, a literal line separator, an escaped
+			// sequence, and deliberately nonalphabetical object keys.
+			content := json.RawMessage("{\"z\":\"<tag>&\\u0061\u2028\",\"a\":1}")
+			request := core.AppendRequest{Content: content, IdempotencyKey: "raw"}
+			if mode != "new" {
+				record := core.Record{Room: "project", Seq: 1, Author: "<agent>", At: time.Date(2026, 11, 8, 0, 0, 0, 0, time.UTC), Content: content}
+				ledger := ledgerFile{Author: record.Author, Key: request.IdempotencyKey, Seq: record.Seq, Fingerprint: hex.EncodeToString(core.Fingerprint(record.Author, content))}
+				if err := s.writePendingAppend("project", pendingAppend{Record: record, Ledger: ledger}); err != nil {
+					t.Fatal(err)
+				}
+				line, err := marshalStoredJSON(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if mode == "record-written" {
+					line = append(line, '\n')
+				} else {
+					line = line[:len(line)-5]
+				}
+				if err := os.WriteFile(s.recordsPath("project"), line, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first, err := st.Append(ctx, "project", "<agent>", request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second, err := st.Append(ctx, "project", "<agent>", request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if first.Seq != 1 || second.Seq != 1 || !bytes.Equal(first.Content, content) || !bytes.Equal(second.Content, content) {
+				t.Fatalf("retry = %+v, %+v; want seq 1 and original content %q", first, second, content)
+			}
+			records, err := st.Read(ctx, "project", 0)
+			if err != nil || len(records) != 1 || !bytes.Equal(records[0].Content, content) {
+				t.Fatalf("read = %+v, %v; want original content %q", records, err, content)
+			}
+			data, err := os.ReadFile(s.recordsPath("project"))
+			if err != nil || !bytes.Contains(data, content) {
+				t.Fatalf("stored record = %q, %v; raw content changed", data, err)
+			}
+		})
+	}
+}
+
+func TestInvalidLegacyEscapedPendingRemainsUntouched(t *testing.T) {
+	ctx := context.Background()
+	st, err := Init(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateRoom(ctx, "project", ""); err != nil {
+		t.Fatal(err)
+	}
+	s := st.(*Store)
+	content := json.RawMessage(`"<tag>"`)
+	intent := pendingAppend{Record: core.Record{Room: "project", Seq: 1, Author: "agent", At: time.Now().UTC(), Content: content},
+		Ledger: ledgerFile{Author: "agent", Key: "raw", Seq: 1, Fingerprint: hex.EncodeToString(core.Fingerprint("agent", content))}}
+	legacy, err := json.Marshal(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy = append(legacy, '\n')
+	if err := os.WriteFile(s.pendingPath("project"), legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Append(ctx, "project", "agent", core.AppendRequest{Content: content, IdempotencyKey: "raw"}); err == nil {
+		t.Fatal("invalid legacy intent was accepted")
+	}
+	after, err := os.ReadFile(s.pendingPath("project"))
+	if err != nil || !bytes.Equal(after, legacy) {
+		t.Fatalf("legacy intent changed: %q, %v", after, err)
+	}
+}

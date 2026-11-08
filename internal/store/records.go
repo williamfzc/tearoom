@@ -4,6 +4,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -207,7 +208,7 @@ func (s *Store) readLedgerLocked(room string) ([]ledgerFile, error) {
 // appendJSONLine writes one JSON object as one line, durably: a single
 // O_APPEND write of the complete line, then a file sync.
 func appendJSONLine(path string, value any) error {
-	data, err := json.Marshal(value)
+	data, err := marshalStoredJSON(value)
 	if err != nil {
 		return err
 	}
@@ -230,4 +231,44 @@ func appendJSONLine(path string, value any) error {
 		return err
 	}
 	return f.Close()
+}
+
+// marshalStoredJSON keeps raw content byte-identical to the fingerprint while
+// retaining the existing encoding of record metadata and ledger entries.
+func marshalStoredJSON(value any) ([]byte, error) {
+	switch v := value.(type) {
+	case pendingAppend:
+		record, err := marshalStoredJSON(v.Record)
+		if err != nil {
+			return nil, err
+		}
+		ledger, err := json.Marshal(v.Ledger)
+		if err != nil {
+			return nil, err
+		}
+		data := append([]byte(`{"record":`), record...)
+		data = append(data, []byte(`,"ledger":`)...)
+		data = append(data, ledger...)
+		return append(data, '}'), nil
+	case core.Record:
+		if !json.Valid(v.Content) {
+			return nil, fmt.Errorf("invalid record content")
+		}
+		content := v.Content
+		v.Content = nil
+		data, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		const placeholder = `"content":null}`
+		if !bytes.HasSuffix(data, []byte(placeholder)) {
+			return nil, errors.New("record JSON is missing its content field")
+		}
+		data = data[:len(data)-len(placeholder)]
+		data = append(data, []byte(`"content":`)...)
+		data = append(data, content...)
+		return append(data, '}'), nil
+	default:
+		return json.Marshal(value)
+	}
 }
