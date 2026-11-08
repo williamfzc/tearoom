@@ -8,7 +8,9 @@ Everything here is in English, because the work is in English.
 
 ## Where the work lives
 
-This repository runs on its own Tearoom tree, committed to git.
+This repository works inside its own local Tearoom workspace — untracked, by
+the owner's 2026-11-09 decision; `.tearoom/` is gitignored and lives on this
+machine only.
 `make cli && bin/tearoom tree` shows the rooms; `bin/tearoom read --room main-line`
 carries the goal and the current state, so you never need a verbal handoff.
 Record meaningful work in the room you worked in — what changed, why, and the

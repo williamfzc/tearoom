@@ -20,8 +20,9 @@ Signatures are unverified labels. There is no admission or credential step: the
 `.tearoom` directory is the trust domain, and a Room's collaborator roster is
 routing configuration, not access control. Storage is
 plain files — one JSONL stream per Room — so the tree can be committed to
-git and the memory travels with the checkout. This repository does exactly
-that: its own development lives in its `.tearoom/` tree.
+git and the memory can travel with the checkout. This repository keeps its
+own `.tearoom/` workspace local (gitignored, owner decision 2026-11-09) and
+works inside it.
 
 ## Quick start
 

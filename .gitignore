@@ -3,11 +3,9 @@
 bin/
 rust/target/
 
-# The workspace lock is runtime state: the flock target every process takes.
-# The rest of .tearoom is project memory and travels with git.
-.tearoom/lock
+# The project's own workspace is local working state, not committed history
+# (owner decision 2026-11-09): its records live on this machine and stay
+# append-only there.
+.tearoom/
 
 .DS_Store
-.tearoom/collaboration.lock
-.tearoom/dispatch.json
-.tearoom/.dispatch.lock

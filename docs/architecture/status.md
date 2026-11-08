@@ -30,8 +30,9 @@ executable proof in [../evaluations.md](../evaluations.md).
   `role`/`collab` collaboration surface. Membership, credentials, the hosted
   profile, and the watch/HTTP faces are deleted (2026-11-09 concept pass;
   see [../log.md](../log.md)).
-- The repository carries its own workspace in `.tearoom/` and works inside
-  it: the project's goal and acceptance live in the root Room.
+- The repository works inside its own `.tearoom/` workspace, which stays
+  local and untracked (owner decision 2026-11-09): the project's goal and
+  acceptance live in the root Room on this machine.
 
 ## Open work
 

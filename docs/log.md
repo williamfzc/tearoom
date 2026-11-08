@@ -8,6 +8,18 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-09 — Keep the project's own workspace local
+
+The project's own `.tearoom/` workspace is no longer committed: the owner
+asked for the unpublished history to be rewritten without it and the
+directory gitignored. This supersedes the 2026-11-07 decision to carry the
+room tree in git; the layout capability stands (a workspace can still be
+committed and travel with a checkout), but this repository keeps its working
+state on the machine. The unpushed commit range was filtered to remove every
+`.tearoom` path, the three record-only commits became empty and were pruned,
+and `go-final` was re-tagged on the rewritten commit. Reopening condition:
+when the room memory must travel with clones again, the owner re-decides.
+
 ## 2026-11-09 — Two concepts: remove the notification and HTTP faces
 
 The kernel is now exactly two concepts: Room and Record. The third concept —
