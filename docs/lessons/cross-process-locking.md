@@ -1,8 +1,8 @@
 ---
 type: lesson
 title: Test concurrency with processes, and prove the test can fail
-description: Dense Room order must be verified with independent processes, not only goroutines.
-resource: internal/store/concurrency_test.go
+description: Dense Room order must be verified with independent processes, not only threads.
+resource: rust/src/store.rs
 tags: [lesson, concurrency, testing]
 timestamp: 2026-08-30
 ---
@@ -16,9 +16,9 @@ must receive one unique dense sequence, even when independent processes race.
 Ordinary target-model appends do not compete for an Actor checkpoint or require
 all but one writer to fail.
 
-## Why goroutines are not enough
+## Why threads are not enough
 
-Goroutines share one process. A process-local mutex could satisfy them while independent `tearoom` processes still race. The meaningful test launches separate OS processes against one `.tearoom` directory.
+Threads share one process — the Go battery first proved this with goroutines, and the principle survived the Rust cutover. A process-local lock could satisfy them while independent `tearoom` processes still race. The meaningful test launches separate OS processes against one `.tearoom` directory.
 
 ## The boundary
 

@@ -2,40 +2,40 @@
 type: architecture
 title: Layers and dependency direction
 description: The package boundaries of the room-tree kernel and its herdr-core collaboration integration.
-resource: internal/
+resource: rust/src/
 tags: [architecture, boundaries, layering, clean-break]
 timestamp: 2026-11-07
 ---
 
 # Layers and dependency direction
 
-The kernel has one foundation contract and no compatibility layer:
+The Rust implementation has these boundaries:
 
 | Layer | Package or owner | Owns |
 |---|---|---|
-| Foundation | `internal/core` | Room, Record, Notification, the `Store` seam, and typed domain errors |
-| Persistence | `internal/store` | The `.tearoom` JSONL layout, the JSONL Store implementation, the cross-process lock, and the one-time migrations from the retired SQLite formats |
-| Outside | `internal/transport` | The minimal local HTTP face of the `Store` contract |
-| Outside | `internal/cli`, `cmd/tearoom` | `room`, `send`, `read`, `tree`, `watch`, `server`, output, and process entry |
+| Domain | `rust/src/core.rs` | Room and Record data, content compaction, and idempotency fingerprints |
+| Persistence | `rust/src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
+| Application | `rust/src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
+| Outside | `rust/src/transport.rs`, `hc.rs` | The local HTTP interface and hc JSON-RPC client |
+| Outside | `rust/src/cli.rs`, `cli/`, `main.rs` | Command parsing, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-implements `core.Store`; transport adapts it; the CLI translates commands. The
+uses the domain types; transport adapts Store operations; the CLI translates commands. The
 kernel never imports a scheduler, launcher, or Agent runtime. Credentials,
 admission, and the hosted multi-room service were removed with the v1 model on
 2026-11-07 (see [../log.md](../log.md)).
 
 ## Foundation boundary
 
-`internal/core` defines only the shared collaboration truth:
+`rust/src/core.rs` defines the shared Room and Record data:
 
 - Room identity: a name, an optional parent, and a creation time;
 - Record: `seq`, `author`, `at`, `content` — the author is an unverified
   label, and message addressing remains in content/convention rather than a
   recipient field;
-- Notification: room, sequence, signature, time — derived, never stored;
-- the `Store` seam: create a room (optionally under a parent), list rooms,
-  read a room's stream from a boundary, append one record;
-- typed errors that describe that contract.
+- content compaction and fingerprints used for idempotent appends.
+
+Notifications are derived from appended records and are never stored.
 
 The Store never checks identity: reading and writing require no admission,
 and no Store operation creates membership as a side effect. What one Room
@@ -43,9 +43,9 @@ sees is bounded by the tree, not by permissions.
 
 ## Persistence boundary
 
-`internal/store` owns the `.tearoom` layout: one workspace directory holds
+`rust/src/store.rs` and `store/` own the `.tearoom` layout: one workspace directory holds
 the whole room tree as JSONL files behind a format marker, and the JSONL
-Store implements `core.Store` under a cross-process flock. It may not:
+Store operates under a cross-process flock. It may not:
 
 - filter records by author or message addressing;
 - validate or transform a signature beyond storing it verbatim;
@@ -54,16 +54,16 @@ Store implements `core.Store` under a cross-process flock. It may not:
 
 One append holds the exclusive lock across room verification, idempotency
 resolution, sequence assignment, and the append, so concurrent writers
-receive a dense per-room sequence. The one-time format-2/3 → format-4
-migrations are specified in [persistence.md](persistence.md).
+receive a dense per-room sequence. The format boundary is specified in
+[persistence.md](persistence.md).
 
 ## Outside boundaries
 
-`internal/transport` exposes the minimal local HTTP face: room list, record
+`rust/src/transport.rs` exposes the minimal local HTTP face: room list, record
 read, record append. It holds no authentication paths — the exposed profile,
 owner tokens, and credential routes died with the hosted service.
 
-`internal/cli` exposes the currently shipped command surface:
+`rust/src/cli.rs` and `cli/` expose the command surface:
 
 ```text
 tearoom room init --name <name> [--parent <room>]
@@ -105,8 +105,7 @@ The integration may depend on `core` and `transport`; neither may depend on it.
 ## Clean-break dependency checks
 
 1. `core` has no import path to persistence, transport, or CLI.
-2. Every Store implementation satisfies one interface; there is no parallel
-   old/new reader or writer.
+2. The current Store has one format and no parallel old/new reader or writer.
 3. No Store operation validates identity or admits anyone.
 4. Transport has one route/body/error vocabulary with no authorization paths.
 5. CLI, scripts, tests, and docs use only the command and record vocabulary

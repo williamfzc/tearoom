@@ -2,7 +2,7 @@
 type: reference
 title: CLI reference
 description: Authoritative command contract for the tearoom binary over the room tree.
-resource: internal/cli/cli.go
+resource: rust/src/cli.rs
 tags: [reference, cli, contract]
 timestamp: 2026-11-07
 ---

@@ -2,7 +2,7 @@
 type: reference
 title: Exit codes
 description: Authoritative machine-readable CLI outcomes.
-resource: internal/cli/cli.go
+resource: rust/src/cli.rs
 tags: [reference, contract, cli, agents]
 timestamp: 2026-11-07
 ---

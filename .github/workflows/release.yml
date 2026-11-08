@@ -1,4 +1,4 @@
-# Tag-driven R2 publication; packaging and verification live in scripts/.
+# Tag-driven Rust publication; each binary is built and tested on its native host.
 name: Release
 
 on:
@@ -14,31 +14,71 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  verify:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
-          fetch-depth: 1
+          components: clippy,rustfmt
+      - run: make check
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-amd64
+            runner: macos-15-intel
+            triple: x86_64-apple-darwin
+          - target: darwin-arm64
+            runner: macos-15
+            triple: aarch64-apple-darwin
+          - target: linux-amd64
+            runner: ubuntu-24.04
+            triple: x86_64-unknown-linux-musl
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            triple: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
         with:
-          go-version-file: go.mod
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: ${{ matrix.triple }}
+      - name: Install musl compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build target twice and compare
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          make release-target RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/one RELEASE_TARGET="$RELEASE_TARGET"
+          make release-target RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/two RELEASE_TARGET="$RELEASE_TARGET"
+          cmp "dist/one/tearoom_${GITHUB_REF_NAME}_${RELEASE_TARGET%-*}_${RELEASE_TARGET#*-}.tar.gz" "dist/two/tearoom_${GITHUB_REF_NAME}_${RELEASE_TARGET%-*}_${RELEASE_TARGET#*-}.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/one/*
+          if-no-files-found: error
 
-      - name: Check AWS CLI
-        run: aws --version
-
-      - name: Run repository verification
-        run: make check
-
-      - name: Build and verify release artifacts
-        run: make package RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}" VERSION_LDFLAGS="-s -w -X github.com/williamfzc/tearoom/internal/version.Version=${GITHUB_REF_NAME} -X github.com/williamfzc/tearoom/internal/version.Commit=${GITHUB_SHA}"
-
-      - name: Verify release artifacts again
-        run: make release-check RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}"
-
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist/release
+          merge-multiple: true
+      - name: Assemble and verify artifacts
+        run: make package RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/release
       - name: Publish to Cloudflare R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -47,4 +87,4 @@ jobs:
           R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
           R2_BUCKET: ${{ vars.R2_BUCKET }}
           R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
-        run: make release-upload RELEASE_TAG="${GITHUB_REF_NAME}" RELEASE_DIR="dist/releases/${GITHUB_REF_NAME}" R2_ENDPOINT="${R2_ENDPOINT}" R2_BUCKET="${R2_BUCKET}" R2_PUBLIC_BASE_URL="${R2_PUBLIC_BASE_URL}"
+        run: make release-upload RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/release R2_ENDPOINT="$R2_ENDPOINT" R2_BUCKET="$R2_BUCKET" R2_PUBLIC_BASE_URL="$R2_PUBLIC_BASE_URL"

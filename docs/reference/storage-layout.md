@@ -1,8 +1,8 @@
 ---
 type: reference
 title: Storage layout
-description: Authoritative on-disk workspace representation — JSONL files that travel with git — and the one-time format migrations.
-resource: internal/store/open.go
+description: Authoritative on-disk workspace representation — JSONL files that travel with git — and the format gate.
+resource: rust/src/store.rs
 tags: [reference, storage, jsonl, git, migration]
 timestamp: 2026-11-07
 ---
@@ -33,9 +33,11 @@ history diffs cleanly.
 ```
 
 The marker is the format gate: `format: 4` with backend `jsonl` is the
-current layout; formats 2 and 3 (the SQLite eras) upgrade once on open; any
-other layout — markerless (the v0 file layout), version 1, or a retired
-backend — is refused with an incompatible-store error.
+current layout; formats 2 and 3 (the SQLite eras) are refused with an error
+naming an earlier release — the one-time migration to format 4 is an
+operator step with the final Go release (tag `go-final`); any other layout —
+markerless (the v0 file layout), version 1, or a retired backend — is
+refused with an incompatible-store error.
 
 ## The files
 
@@ -80,19 +82,19 @@ Reads take the shared lock and are pure: no cursor is stored, and repeated
 reads return identical history. The Windows gap stands: concurrent use is
 unsupported where no cross-process lock exists.
 
-## The one-time migrations
+## Legacy formats
 
-- **Format 2 → 4** (the v1 single-room SQLite model): the room becomes a
-  root named by its old identifier, records keep their author verbatim, the
-  recipient column and the actor and credential tables are dropped.
-- **Format 3 → 4** (the SQLite room tree): the tree and its records export
-  verbatim.
-
-Both run once, on open: the SQLite database is read, the JSONL layout is
-written, the database file is deleted, and the marker is rewritten. There is
-no compatibility layer after it, and databases without the marker are
-refused, never read or reused. Rollback restores the previous release with
-its data snapshot.
+Formats 2 and 3 (the SQLite eras) are not read by this binary. An operator
+holding such a workspace runs the final Go release once (tag `go-final`),
+which performs the one-time export — format 2 (the v1 single-room model)
+becomes a root named by its old identifier with authors kept verbatim;
+format 3 (the SQLite room tree) exports the tree and its records verbatim —
+deletes the database, and rewrites the marker to format 4. After that step
+the current binary reads the workspace natively. There is no compatibility
+layer in either release, and markerless databases are refused, never read or
+reused. Refusing on open keeps an automatic migration from racing an old
+process still writing the database. Rollback restores the previous release
+with its data snapshot.
 
 ## Git and clones
 
@@ -105,8 +107,7 @@ any other merged text.
 
 ## Portability
 
-The storage engine is plain files, so release binaries stay static
-(`CGO_ENABLED=0`) on every platform. The legacy SQLite reader used only by
-the one-time migrations is pure Go. See
+The storage engine is plain files with no database dependency, so release
+binaries stay static on every platform. See
 [persistence.md](../architecture/persistence.md) for the persistence
 discipline behind this layout.

@@ -8,6 +8,27 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-08 — Port the kernel to Rust and retire the Go implementation
+
+The shipped binary is now built from `rust/` with Cargo. The format-4
+room-tree contract is unchanged — E1 and E2 run through the shipped Rust
+binary, and a hand-run differential proved keyed JSON interoperable in both
+directions against the final Go build ([evaluations.md](evaluations.md)).
+The move retires the Go toolchain traps (macOS test linking, the module
+proxy), lets each release target build on its native runner, and drops the
+pure-Go SQLite driver entirely.
+
+Two refusals come with it. First, the automatic format-2/3 → 4 migration is
+gone: the Rust store refuses legacy markers on open without touching the
+database, because an automatic migration could run while an old process is
+still writing; migrating such a workspace is a one-time operator step with
+the final Go release, preserved at tag `go-final`. Second, the Go
+implementation leaves the tree rather than staying as an unbuilt parallel:
+it remains reachable at `go-final` and serves as the prebuilt baseline for
+the ignored `go_compat` differential test. The reopening condition for both
+is a real workspace that must cross the boundary — the Go-era release
+performs the migration; nothing here blocks it.
+
 ## 2026-11-08 — Retain unverified role signatures
 
 The user chose not to restrict signatures after the role-independence pilot

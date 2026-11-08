@@ -10,14 +10,14 @@ timestamp: 2026-09-09
 # Releasing the Tearoom binary
 
 This is the canonical release and installation contract. Source remains in the
-private repository; the release surface is a public, compiled binary and its
+repository; the release surface is a public, compiled binary and its
 verification metadata. A binary is not a secrecy boundary: it can be
 reverse-engineered, so it must contain no source-host credentials, R2 secrets,
 tokens, private endpoints, or other secrets.
 
 ## Public artifact boundary
 
-Cloudflare R2 is the only public artifact source. GitHub Actions is the private
+Cloudflare R2 is the only public artifact source. GitHub Actions is the
 build and publication control plane; GitHub Releases and a second public
 distribution repository are not parallel download channels.
 
@@ -34,11 +34,9 @@ releases/vX.Y.Z/tearoom_vX.Y.Z_sbom.spdx.json
 
 Each archive contains the root `LICENSE` file and a deterministic
 `THIRD_PARTY_NOTICES` file; there are no separately published license objects.
-Both the notices and SPDX generators consume only the actual runtime module
-graph from `go list -deps -json ./cmd/tearoom`. The current graph reports
-`modules=22, license-files=25, missing=0`; a module without a root-level
-`LICENSE`, `COPYING`, or `NOTICE` text fails packaging rather than producing an
-incomplete notice file.
+Both notices and SPDX data are generated from the Cargo dependency graph for
+the target. Missing dependency license text fails packaging rather than
+producing an incomplete notice file.
 
 The version prefix and its objects are never overwritten. The only mutable
 pointer is:
@@ -47,22 +45,21 @@ pointer is:
 releases/latest.json
 ```
 
-`latest.json` records the current tag, source commit, `storeFormat: 2`, the
+`latest.json` records the current tag, source commit, `storeFormat: 4`, the
 checksum filename, and each artifact's R2 object key and SHA256 digest; it is a
 convenience pointer, not evidence that an older version changed. Pin an
 immutable version URL for reproducible installation and rollback.
 
 The checked-in workflow is [`.github/workflows/release.yml`](../../.github/workflows/release.yml),
-named `Release`. It runs on a `push` of any `v*` tag, on one
-`ubuntu-latest` `release` job. The job checks out the tagged commit, sets up Go
-from `go.mod`, configures the AWS-compatible client, runs the package build,
-runs a second artifact check, and uploads to R2. Its concurrency group is
+named `Release`. It runs on a `push` of any `v*` tag, verifies the source,
+builds each target twice on its native runner, compares the archives, then
+assembles and uploads them to R2. Its concurrency group is
 `tearoom-release-${{ github.ref_name }}` and it does not cancel an in-progress
 run for the same tag.
 
 ## Supported platforms
 
-The shipped product requires Go 1.22+ to build and a Unix-like operating
+The shipped product requires Rust and a Unix-like operating
 system to run. The current workflow publishes exactly these targets:
 
 ```text
@@ -71,14 +68,14 @@ darwin-amd64  darwin-arm64  linux-amd64  linux-arm64
 
 Windows is not a supported concurrent Room platform: its current lock
 implementation does not provide a safe cross-process primitive. Other pairs
-may be buildable by Go but are not release support unless the workflow
+are not release support unless the workflow
 publishes and verifies them.
 
 The binary reports its build identity and storage compatibility:
 
 ```text
 tearoom --version
-tearoom version=<version> commit=<sha> store-format=2
+tearoom version=<version> commit=<sha> store-format=4
 ```
 
 ## Install a pinned release
@@ -110,7 +107,7 @@ record the version it returns and use that version prefix for the download.
 Only the release publication process may hold R2 write credentials: normally
 the `Release` workflow, or a deliberately controlled operator invocation of
 `release-upload`. Configure them as repository or environment secrets in the
-private source repository, scoped to the release bucket and to object writes
+source repository, scoped to the release bucket and to object writes
 needed by publication. The build must not receive those credentials as linker
 values or embed them in the binary.
 
@@ -145,12 +142,12 @@ The workflow runs `make check` before its release-specific package build and
 artifact checks. Treat a tag as publishable only after that verification passes
 on the tagged commit.
 
-The local release entry points are `make package`, `make package-check`,
-`make release-check`, and `make release-upload`. `package` cross-builds the
-four published targets, creates the archives and SPDX document, writes
-`SHA256SUMS` and `latest.json`, and verifies the result. `package-check` builds
-twice in disposable directories with a fixed commit timestamp and compares
-`SHA256SUMS` to prove deterministic bytes. `release-upload` uses the AWS S3
+The release entry points are `make release-target`, `make package`,
+`make package-check`, `make release-check`, and `make release-upload`.
+`release-target` builds an archive and dependency metadata on its native host;
+`package` assembles the four target outputs and writes `SHA256SUMS`, SPDX and
+`latest.json`. `package-check` compares two assembled directories.
+`release-upload` uses the AWS S3
 API against R2, skips an existing immutable object only when its `sha256`
 metadata matches, refuses mismatches, uploads the package, `SHA256SUMS`, and
 SBOM, then updates `releases/latest.json` with no-cache headers. It finally
@@ -158,15 +155,14 @@ reads the public domain back, verifies the Linux amd64 checksum, and executes
 its `--version` output.
 
 The `Release` workflow runs `make check`, builds from the tagged commit,
-injects the tag and commit into `internal/version`, and invokes these
+injects the tag and commit at compile time, and invokes these
 checked-in entry points. The package check verifies archive contents, SHA256
 entries, the SPDX 2.3 document, and the generated manifest before upload.
 Updating `latest.json` is followed by public checksum, archive, and
 `tearoom --version` readback.
 
 For a tagged release, the workflow supplies `RELEASE_TAG=vX.Y.Z` and
-`VERSION_LDFLAGS` for both `internal/version.Version` and
-`internal/version.Commit`. Publication requires the repository variables
+`RELEASE_COMMIT`. Publication requires the repository variables
 `R2_ENDPOINT` and `R2_BUCKET`, plus the secrets
 `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`; `R2_PUBLIC_BASE_URL` is also a
 repository variable. Secrets are exposed to the script as
@@ -188,7 +184,7 @@ object with matching SHA256 metadata is safely skipped, while an object with a
 different digest is rejected. An operator must use the R2 control plane to
 update only the mutable `latest.json` object during rollback.
 
-The current storage contract is `format: 2`. A format-2 cutover is a clean
+The current storage contract is `format: 4`. A storage cutover is a clean
 break: an older binary does not read the new layout. Before a storage-changing
 release, preserve the operator-owned data snapshot required by the prior
 binary. To roll back after cutover, deploy the matched prior binary and restore

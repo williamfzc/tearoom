@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Enforce the Go line budget as a ratchet.
+# Enforce the production source line budget as a ratchet.
 #
 # A hard cap on a codebase that already carries stock fails on day one for
 # debt nobody just wrote, and a gate whose first act is two hundred failures
@@ -13,8 +13,7 @@
 # split that made it true, is how the debt is paid back; adding a line needs
 # the same review as a rule change, because it is one.
 #
-# The budget covers production Go files only. Test batteries grow with the
-# surface they prove and are governed by review, not by this gate.
+# Test batteries grow with the surface they prove and are governed by review.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,7 +22,7 @@ note() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=$((fail + 1)); }
 good() { printf '  \033[32mok\033[0m   %s\n' "$1"; }
 
 echo
-echo "checking go line budget"
+echo "checking production line budget"
 echo
 
 if python3 - <<'PY'
@@ -36,12 +35,10 @@ baseline_path = pathlib.Path("scripts/line-baseline.txt")
 bad = []
 
 over = {}
-for p in sorted(pathlib.Path(".").rglob("*.go")):
-    if ".git" in p.parts:
-        continue
-    if p.name.endswith("_test.go"):
-        continue
-    n = len(p.read_text(encoding="utf-8").splitlines())
+for p in sorted(pathlib.Path("rust/src").rglob("*.rs")):
+    lines = p.read_text(encoding="utf-8").splitlines()
+    # Inline test modules are production-adjacent proof, not production source.
+    n = next((i for i, line in enumerate(lines) if line.strip() == "#[cfg(test)]"), len(lines))
     if n > BUDGET:
         over[p.as_posix()] = n
 
@@ -84,7 +81,7 @@ for b in bad:
 sys.exit(1 if bad else 0)
 PY
 then
-  good "every production go file is within budget or pinned by the baseline"
+  good "every production file is within budget or pinned by the baseline"
 else
   note "line budget problems above"
 fi

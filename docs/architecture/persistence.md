@@ -8,7 +8,7 @@ timestamp: 2026-11-07
 
 # Persistence direction
 
-The contract is `core.Store`: a room tree where each Room owns one ordered
+The contract is the Store seam: a room tree where each Room owns one ordered
 immutable record stream. The storage is plain files — one JSONL stream per
 Room — chosen so the workspace can live inside git: appends are new lines,
 new Rooms are new directories, and the memory follows the checkout.
@@ -32,16 +32,15 @@ credential files: identity checks do not exist in the kernel.
 
 ## Ownership
 
-- `internal/core` owns Room, Record, Notification, `Store`, and invariant
-  language.
-- `internal/store` owns the `.tearoom` layout, the format gate, the JSONL
-  Store implementation, the cross-process lock, and the one-time migrations
-  from the retired SQLite layouts.
-- CLI and HTTP depend on `core.Store`, never on the file layout.
+- `rust/src/core.rs` owns the Room and Record data, content compaction, and
+  idempotency fingerprints.
+- `rust/src/store.rs` and `store/` own the `.tearoom` layout, the format
+  gate, the JSONL Store implementation, crash recovery, and the
+  cross-process lock.
+- CLI and HTTP depend on the Store seam, never on the file layout.
 
-No SQL backend ships. The SQLite eras (formats 2 and 3) exist only as
-migration sources; the pure-Go SQLite driver in the release binary exists
-only to read them once.
+No SQL backend ships and no database code is linked: the SQLite eras
+(formats 2 and 3) are refused on open, not read.
 
 ## Append and read contract
 
@@ -60,13 +59,15 @@ with different content conflicts. A signature may be empty.
 ## Migration discipline
 
 Schema changes are versioned by the `store.json` format marker. The current
-format is 4. Formats 2 and 3 (the SQLite eras) upgrade once, on open, into
-the JSONL layout; the database file is deleted and the marker rewritten.
-There is no import, no dual decoder, and no old/new double path: after the
-one-time upgrade the old layout is never read again, and workspaces without
-the marker (the v0 file layout or anything unrecognized) are refused, never
-read, migrated, or reused. Rollback restores the previous release with its
-data snapshot.
+format is 4. Formats 2 and 3 (the SQLite eras) are refused on open with an
+error naming an earlier release: migrating such a workspace is a one-time
+operator step with the final Go release (tag `go-final`), which upgrades it
+to format 4; after that the current binary reads it natively. There is no
+import, no dual decoder, and no old/new double path: workspaces without the
+marker (the v0 file layout or anything unrecognized) are refused, never
+read, migrated, or reused. Refusing beats migrating here because an
+automatic migration could run while an old process is still writing the
+database. Rollback restores the previous release with its data snapshot.
 
 ## Git and clones
 

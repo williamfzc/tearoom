@@ -2,7 +2,7 @@
 type: reference
 title: HTTP API
 description: Authoritative HTTP protocol for the minimal local face of the room tree.
-resource: internal/transport/server.go
+resource: rust/src/transport.rs
 tags: [reference, contract, http, api]
 timestamp: 2026-11-07
 ---
@@ -19,6 +19,7 @@ in [status.md](../architecture/status.md).
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/api/rooms` | List every Room (name, parent, creation time) |
+| `POST` | `/api/rooms` | Create a Room with `name` and an optional `parent` |
 | `GET` | `/api/events?room=<name>&after=<seq>` | Read one Room's records after an exclusive boundary |
 | `POST` | `/api/events` | Append one Record |
 

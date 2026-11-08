@@ -2,7 +2,7 @@
 type: lesson
 title: Borrowed from consensus systems
 description: Serialize Room facts once and make uncertain retries safe without turning every append into consensus.
-resource: internal/store/file.go
+resource: rust/src/store.rs
 tags: [lesson, concurrency, consensus, design]
 timestamp: 2026-09-09
 ---

@@ -1,13 +1,13 @@
 ---
 type: lesson
-title: Invariants belong under the Store interface
+title: Invariants belong under the Store boundary
 description: A rule enforced only by one client disappears as soon as a second client arrives.
-resource: internal/store/file.go
+resource: rust/src/store.rs
 tags: [lesson, invariants, layering]
 timestamp: 2026-09-09
 ---
 
-# Invariants belong under the Store interface
+# Invariants belong under the Store boundary
 
 ## What happened
 
@@ -15,7 +15,7 @@ An earlier design kept coordination transitions in the CLI. Its tests passed bec
 
 ## The rule
 
-If a statement must be true of the Room rather than of one interface, enforce it under `core.Store`.
+If a statement must be true of the Room rather than of one client, enforce it under the Store boundary.
 
 The current Store owns:
 

@@ -58,16 +58,17 @@ TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
 
 The executor writes what it did, what is blocked, and what the next worker
 should do first; a different reviewer cites evidence. Record references use
-`room-name#seq` in plain text. The intended same-Room role and hc integration
-is described in [product.md](docs/product.md); it is not yet implemented.
+`room-name#seq` in plain text. The same-Room role and hc integration is
+specified in [product.md](docs/product.md) and
+[architecture/collaboration.md](docs/architecture/collaboration.md).
 
 ## Build and verify
 
 ```bash
-make check   # fmt vet test test-race target-room target-replay check-evals line-budget docs
+make check   # formatting, Clippy, tests, E1/E2 journeys, docs, line budget, release checks
 ```
 
 See [operations/building.md](docs/operations/building.md) for the toolchain
-traps (macOS test linking, the module proxy) and
+requirements and the ignored cross-language and hc tests, and
 [reference/agent-integration.md](docs/reference/agent-integration.md) for the
 Agent-facing integration path.

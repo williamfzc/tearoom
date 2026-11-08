@@ -1,4 +1,4 @@
-# Line-budget baseline: existing production Go files over the 300-line budget.
+# Line-budget baseline: existing production files over the 300-line budget.
 #
 # One violation per line: <file> <lines>. This file only ever shrinks.
 # - Fixed the size? Delete the line in the same commit as the split.
@@ -6,5 +6,6 @@
 #   file? That fails `make line-budget`; adding a line here is a rule change
 #   and needs its own justification in review.
 #
-# Measured 2026-11-07 against the room-tree tree; the SQL era left with the JSONL cutover.
-internal/core/contract.go 371
+# Measured 2026-11-08 against the Rust tree; the Go era left with the
+# language cutover (its last entry, internal/core/contract.go 371, went with
+# it).

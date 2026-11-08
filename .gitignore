@@ -1,6 +1,7 @@
 # Build outputs are reproducible from source via `make build`, so committing them
 # would only create merge conflicts.
 bin/
+rust/target/
 
 # The workspace lock is runtime state: the flock target every process takes.
 # The rest of .tearoom is project memory and travels with git.
