@@ -296,6 +296,92 @@ func TestKeyedAppendDoesNotClaimExistingIncompleteRecord(t *testing.T) {
 	}
 }
 
+func TestAppendRejectsUnterminatedJSONLWithoutPending(t *testing.T) {
+	for _, file := range []string{"records", "ledger"} {
+		t.Run(file, func(t *testing.T) {
+			ctx := context.Background()
+			st, err := Init(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := st.CreateRoom(ctx, "project", ""); err != nil {
+				t.Fatal(err)
+			}
+			s := st.(*Store)
+			original := core.AppendRequest{Content: json.RawMessage(`"first"`), IdempotencyKey: "first"}
+			if _, err := st.Append(ctx, "project", "agent", original); err != nil {
+				t.Fatal(err)
+			}
+			path := s.recordsPath("project")
+			if file == "ledger" {
+				path = s.ledgerPath("project")
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || len(data) == 0 || data[len(data)-1] != '\n' {
+				t.Fatalf("initial file = %q, %v", data, err)
+			}
+			data = data[:len(data)-1]
+			if !json.Valid(data) {
+				t.Fatal("fixture must contain a complete JSON value without a newline")
+			}
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			requests := []core.AppendRequest{original, {Content: json.RawMessage(`"second"`), IdempotencyKey: "second"}}
+			if file == "records" {
+				requests = append(requests, core.AppendRequest{Content: json.RawMessage(`"unkeyed"`)})
+			}
+			for _, request := range requests {
+				if _, err := st.Append(ctx, "project", "agent", request); err == nil {
+					t.Fatalf("append accepted unterminated %s", file)
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(after, data) {
+					t.Fatalf("unterminated %s changed: %q, %v", file, after, err)
+				}
+				if _, err := os.Stat(s.pendingPath("project")); !os.IsNotExist(err) {
+					t.Fatalf("unexpected recovery intent: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestAppendRejectsNonconsecutiveRecordsWithoutMutation(t *testing.T) {
+	ctx := context.Background()
+	st, err := Init(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateRoom(ctx, "project", ""); err != nil {
+		t.Fatal(err)
+	}
+	s := st.(*Store)
+	for _, seq := range []uint64{1, 3} {
+		record := core.Record{Room: "project", Seq: seq, Author: "agent", At: time.Now().UTC(), Content: json.RawMessage(`"work"`)}
+		if err := appendJSONLine(s.recordsPath("project"), record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := os.ReadFile(s.recordsPath("project"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Read(ctx, "project", 0); err == nil {
+		t.Fatal("read accepted a nonconsecutive stream")
+	}
+	if _, err := st.Append(ctx, "project", "agent", core.AppendRequest{Content: json.RawMessage(`"next"`), IdempotencyKey: "next"}); err == nil {
+		t.Fatal("append accepted a nonconsecutive stream")
+	}
+	after, err := os.ReadFile(s.recordsPath("project"))
+	if err != nil || !bytes.Equal(after, before) {
+		t.Fatalf("corrupt stream changed: %q, %v", after, err)
+	}
+	if _, err := os.Stat(s.pendingPath("project")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected recovery intent: %v", err)
+	}
+}
+
 func TestKeyedAppendPreservesRawContentAcrossRecovery(t *testing.T) {
 	for _, mode := range []string{"new", "record-written", "partial-record"} {
 		t.Run(mode, func(t *testing.T) {

@@ -177,7 +177,7 @@ func (d *Dispatcher) deliver(ctx context.Context, config Config, intent *Intent,
 		if err := d.markSubmitting(intent, delivery); err != nil {
 			return err
 		}
-		result, err := d.hc.Submit(ctx, delivery.Panel, task, status)
+		result, err := d.hc.Submit(ctx, delivery.Panel, strings.TrimSpace(role.Instructions+"\n\n"+task), status)
 		if err != nil {
 			return d.markUnknown(delivery, err)
 		}

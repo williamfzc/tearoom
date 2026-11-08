@@ -19,6 +19,7 @@ type fakeHC struct {
 	sends   int
 	result  SubmitResult
 	request PanelRequest
+	task    string
 }
 
 func (f *fakeHC) PanelStatus(context.Context, string) (PanelStatus, error) { return f.status, nil }
@@ -27,8 +28,9 @@ func (f *fakeHC) EnsurePanel(_ context.Context, request PanelRequest) (SubmitRes
 	f.request = request
 	return f.result, nil
 }
-func (f *fakeHC) Submit(context.Context, string, string, PanelStatus) (SubmitResult, error) {
+func (f *fakeHC) Submit(_ context.Context, _ string, task string, _ PanelStatus) (SubmitResult, error) {
 	f.sends++
+	f.task = task
 	return f.result, nil
 }
 
@@ -108,6 +110,47 @@ func TestPumpRoutesMentionOnceAndWaitsForRoomReply(t *testing.T) {
 	}
 	if len(intents) != 1 || intents[0].Deliveries[0].State != DeliveryCompleted {
 		t.Fatalf("delivery not completed by correlated Room reply: %+v", intents)
+	}
+}
+
+func TestReadyPanelReceivesRoleInstructions(t *testing.T) {
+	for _, prestarted := range []bool{true, false} {
+		t.Run(map[bool]string{true: "prestarted", false: "delayed-ready"}[prestarted], func(t *testing.T) {
+			started := true
+			hc := &fakeHC{status: PanelIdle, result: SubmitResult{Accepted: true, Started: &started}}
+			if !prestarted {
+				hc.status = PanelMissing
+				hc.result = SubmitResult{Pending: true}
+			}
+			d, st, root := testDispatcher(t, hc)
+			if err := Update(root, func(c *Config) error {
+				role := c.Roles["reviewer"]
+				role.Template = ""
+				role.Command = []string{"agent"}
+				role.Instructions = "Independently check the work."
+				c.Roles["reviewer"] = role
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			appendMessage(t, st, "builder", Message{Text: "review this", Mentions: []string{"reviewer"}})
+			if err := d.Pump(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if !prestarted {
+				if hc.starts != 1 || hc.sends != 0 {
+					t.Fatalf("first calls = starts:%d sends:%d", hc.starts, hc.sends)
+				}
+				hc.status = PanelIdle
+				hc.result = SubmitResult{Accepted: true, Started: &started}
+				if err := d.Pump(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if hc.sends != 1 || !strings.Contains(hc.task, "Independently check the work.") || !strings.Contains(hc.task, "You are the reviewer role only") {
+				t.Fatalf("role instructions missing from ready panel task: sends=%d task=%q", hc.sends, hc.task)
+			}
+		})
 	}
 }
 

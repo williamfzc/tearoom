@@ -165,6 +165,9 @@ func (s *Store) readRecordsLocked(room string) ([]core.Record, error) {
 		}
 		return nil, err
 	}
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		return nil, fmt.Errorf("read %s: unterminated record line", s.recordsPath(room))
+	}
 	records := []core.Record{}
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == "" {
@@ -176,6 +179,9 @@ func (s *Store) readRecordsLocked(room string) ([]core.Record, error) {
 		}
 		if record.Room != room {
 			return nil, fmt.Errorf("read %s: record %d names room %q", s.recordsPath(room), record.Seq, record.Room)
+		}
+		if want := uint64(len(records) + 1); record.Seq != want {
+			return nil, fmt.Errorf("read %s: record sequence %d, want %d", s.recordsPath(room), record.Seq, want)
 		}
 		records = append(records, record)
 	}
@@ -190,6 +196,9 @@ func (s *Store) readLedgerLocked(room string) ([]ledgerFile, error) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if len(data) > 0 && data[len(data)-1] != '\n' {
+		return nil, fmt.Errorf("read %s: unterminated ledger line", s.ledgerPath(room))
 	}
 	entries := []ledgerFile{}
 	for _, line := range strings.Split(string(data), "\n") {
