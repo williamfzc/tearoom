@@ -30,9 +30,8 @@ executable proof in [../evaluations.md](../evaluations.md).
   `role`/`collab` collaboration surface. Membership, credentials, the hosted
   profile, and the watch/HTTP faces are deleted (2026-11-09 concept pass;
   see [../log.md](../log.md)).
-- The repository works inside its own `.tearoom/` workspace, which stays
-  local and untracked (owner decision 2026-11-09): the project's goal and
-  acceptance live in the root Room on this machine.
+- A repository-local `.tearoom/` workspace is optional and untracked. Existing
+  workspace data is preserved; repository work does not require a root Room.
 
 ## Open work
 
@@ -45,7 +44,8 @@ are tracked below. The delivery contract is in [collaboration.md](collaboration.
 | Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | One unattended Pi–Claude build-and-review journey passed; next-day resume and the complete acceptance suite remain open. See [../evaluations.md](../evaluations.md) |
 | Wake journey S4 | The hc dispatcher delivers addressed records to Room-role panels; unattended operation requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host. See [agent integration](../reference/agent-integration.md) for setup and [evaluations](../evaluations.md) for evidence |
 | Group collaboration | Local role definitions, Room rosters, addressed records and an hc dispatcher are implemented; one unattended two-Agent journey passed. Signatures are unverified, so independent review cannot be established from Room records alone; the evidence includes both Agent panels. See [../evaluations.md](../evaluations.md) |
-| Two-week real-work validation | The model's own acceptance bar: run the tree as the working context for two weeks of real work |
+| Cross-product collaboration | Not yet proven on the current direct-command path: the earlier Pi–Trae run used the template launch concept, which was removed. Claude Code and DSH still lack hc lifecycle status or an interactive profile here. See [../evaluations.md](../evaluations.md) |
+| Herdr visibility | Each Room now uses a separate named local Herdr session, with role panels in tabs. Two real Rooms and DSH roles were checked; Herdr's independently selected remote machine can still obscure the local view. Restart limits are in [agent integration](../reference/agent-integration.md#herdr-session-per-room) and evidence is in [evaluations](../evaluations.md) |
 
 ## Removed with the v1 model (2026-11-07)
 

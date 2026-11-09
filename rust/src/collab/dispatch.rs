@@ -1,5 +1,5 @@
 //! Durable Room-to-panel dispatch, serialized by the workspace lock.
-use super::runtime::{PanelRequest, PanelStatus, Runtime};
+use super::runtime::{quote, PanelRequest, PanelStatus, Runtime};
 use super::{
     dispatch_lock, panel_name, Config, Delivery, DeliveryState, DispatchState, Intent, Message,
 };
@@ -15,7 +15,7 @@ pub struct Dispatcher<R> {
 }
 
 impl<R: Runtime> Dispatcher<R> {
-    pub fn status(&self) -> Result<Vec<Intent>> {
+    pub fn deliveries(&self) -> Result<Vec<Intent>> {
         Ok(DispatchState::load(self.store.root())?.intents)
     }
 
@@ -188,10 +188,6 @@ impl<R: Runtime> Dispatcher<R> {
         }
         Ok(())
     }
-}
-
-fn quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 fn mark_reply(state: &mut DispatchState, record: &Record) {
@@ -390,7 +386,7 @@ mod tests {
         dispatcher.pump().unwrap();
         assert_eq!(dispatcher.runtime.sends.get(), 1);
         assert_eq!(
-            dispatcher.status().unwrap()[0].deliveries[0].state,
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Submitted
         );
         dispatcher.pump().unwrap();
@@ -409,7 +405,7 @@ mod tests {
         );
         dispatcher.pump().unwrap();
         assert_eq!(
-            dispatcher.status().unwrap()[0].deliveries[0].state,
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Completed
         );
     }
@@ -428,7 +424,7 @@ mod tests {
         );
         dispatcher.pump().unwrap();
         assert_eq!(
-            dispatcher.status().unwrap()[0].deliveries[0].state,
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Unknown
         );
         dispatcher.pump().unwrap();
@@ -440,7 +436,7 @@ mod tests {
             .resolve("project", seq, "reviewer", "retry", true)
             .unwrap();
         assert_eq!(
-            dispatcher.status().unwrap()[0].deliveries[0].state,
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Pending
         );
     }
@@ -499,13 +495,13 @@ mod tests {
             dispatcher.pump().unwrap();
             if initial == PanelStatus::Missing {
                 assert_eq!(
-                    dispatcher.status().unwrap()[0].deliveries[0].state,
+                    dispatcher.deliveries().unwrap()[0].deliveries[0].state,
                     DeliveryState::Pending
                 );
                 dispatcher.pump().unwrap();
             }
             assert_eq!(
-                dispatcher.status().unwrap()[0].deliveries[0].state,
+                dispatcher.deliveries().unwrap()[0].deliveries[0].state,
                 DeliveryState::Submitted
             );
             let prompts = dispatcher.runtime.prompts.borrow();

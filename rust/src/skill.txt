@@ -4,72 +4,71 @@ Tearoom is a durable, append-only conversation per Room. Rooms form a parent
 tree. People and Agents share the same Room history across tools and restarts.
 The CLI is the product interface. Run tearoom <command> --help for exact flags.
 
-Minimum setup (run in the project directory):
-  (
-  set -eu
-  tearoom room init --name project
-  mkdir -p .tearoom
-  if [ -e .tearoom/claude-settings.json ]; then cat .tearoom/claude-settings.json; exit 1; fi
-  printf '{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}' > .tearoom/claude-settings.json
-  : "${TEAROOM_SOURCE:?set to the Tearoom source checkout containing scripts/pi-hc-status.ts}"
-  export PI_HC_STATUS_EXTENSION="$TEAROOM_SOURCE/scripts/pi-hc-status.ts"
-  export PI_BIN="${PI_BIN:-pi}"
-  test -r "$PI_HC_STATUS_EXTENSION"
-  "$PI_BIN" --version
-  tearoom role define --name builder --agent-type claude \
-    --command claude --arg=--settings --arg="$PWD/.tearoom/claude-settings.json" \
-    --arg=--permission-mode --arg=dontAsk \
-    --description "Implements and tests changes" \
-    --instructions "Implement and record evidence. If a command is denied, try simpler permitted commands; never disable the sandbox. Record unresolved blockers."
-  tearoom role define --name reviewer --agent-type pi --command "$PI_BIN" \
-    --arg=--extension --arg="$PI_HC_STATUS_EXTENSION" \
-    --description "Independently reviews changes" \
-    --instructions "Review the change and evidence; report findings and verdict."
-  tearoom room roles --room project --add builder,reviewer
-  tearoom room roles --room project --status
-  tearoom collab run
-  )
+The Agent setting up a Room owns the setup below. Prefer a known, stable
+project directory so each Agent CLI can reuse its own trust decision.
+Before dispatch, install and initialize hc, authenticate each Agent CLI, and
+check startup in the actual working directory. Trust only a directory whose
+contents are known and whose use is authorized; inspect first, then resolve
+the tool's trust prompt. For an unfamiliar directory or a decision requiring a
+person, stop and ask. Never bypass sandbox or permission controls to proceed.
 
-Before launch, install and initialize hc, authenticate each Agent CLI, and
-resolve its one-time trust/update prompts in the intended working directory.
-If startup is blocked by a prompt or status is unknown, escalate instead of
-assuming readiness. hc --skill is hc's canonical runtime guide. hc template
-launches are also supported with --template; inspect the installed template
-and ensure its readiness mode reports status (report) or uses a proven default.
-ready: quiet is refused because an update or permission prompt can look like a
-ready terminal. Codex launches need --no-daemon in the template command.
+Prepare once, reuse in each Room:
+- In a new project directory, create the first Room with
+  tearoom room init --name <name>. This also initializes the workspace.
+- Run tearoom role list and reuse suitable definitions. Define missing roles
+  with tearoom role define --help and explicitly configured local Agent
+  commands. Do not assume a particular Agent, executable, or permission mode.
+- Assign existing roles when creating another Room with
+  tearoom room init --name <name> --parent <parent> --role <roles>, or add
+  them later with tearoom room roles --room <name> --add <roles>.
+- Start tearoom collab run to deliver addressed messages. Room creation tries
+  to prepare its own Herdr session. Open it with tearoom room open --room <name>;
+  if preparation fails, retry as instructed.
 
-The Pi extension path must point to an installed copy of this repository's
-scripts/pi-hc-status.ts; Pi provider and model configuration must also exist.
-The example passes settings only to this Claude process and does not edit
-user-level settings. dontAsk denies calls that need approval instead of waiting;
-the Agent can retry with simpler permitted commands or record a blocker. This
-is a sandbox configuration, not a blanket permission grant. Not every Agent
-supports it, and it does not guarantee every task can run unattended.
-Review the exact policy and available controls in Claude's own documentation.
+Use hc get and hc read to inspect a blocked or unknown panel. Resolve an
+authorized first-run trust prompt according to the actual screen; login and
+trust are separate checks. If login, approval, or readiness cannot be resolved,
+record the blocker without claiming completion. Do not blindly resend: inspect
+the panel, Room, and delivery state first. hc --skill is hc's canonical runtime
+guide. Codex launches need --no-daemon so the dispatcher controls the panel it
+observes. Agents that do not report hc status stay pending; do not infer
+readiness from a quiet terminal.
 
 How work moves:
   tearoom read --room project
   tearoom send --room project --as builder --to @reviewer \
     --reply-to project#1 --text "Implemented; verify these commands and files: ..."
-  tearoom read --room project --tail 5
-  tearoom collab status
+  tearoom collab deliveries
 
 An unaddressed message is shared history (broadcast) and does not wake a panel.
-An explicit @role in text or --to @role directs it to that Room's configured
-role. Each Room-role binding maps to its own hc panel; the same role in another
+An explicit --to directs the message only to the listed roles; without --to,
+@role in text directs it to that Room's configured role. Each Room-role binding
+maps to its own hc panel; the same role in another
 Room has a separate panel. --reply-to room#seq is a reference convention, not
 identity proof. Tearoom does not validate --as: any process can write any
 signature. A reviewer label and separate Room record do not prove the reviewer
 was independent. Use a genuinely separate Agent/tool and inspect its evidence;
 the runtime cannot enforce that independence.
 
+Prepare once, adjust later:
+  tearoom role update --name reviewer --instructions "..."
+  tearoom room roles --room project --add builder,reviewer
+  tearoom room roles --room project --remove reviewer
+  tearoom role delete --name reviewer
+
+Changing a role's command, agent type or cwd affects newly started
+panels; running panels keep their process. Remove a role from a Room when it no
+longer works there; its definition and history stay. Removing it does not stop
+an existing process or cancel pending delivery. Delete the reusable definition
+only after every Room has removed it and its pending deliveries are resolved;
+deletion does not stop a running process or erase Room records.
+
 Readiness and recovery:
-- tearoom room roles --room project --status queries hc for observed panel
+- tearoom room roles --room project --observe queries hc for observed panel
   states. Unknown, blocked, idle, working, and done are observations, not task
   completion guarantees. A missing status report remains pending; do not infer
   readiness from terminal text.
-- tearoom collab status lists durable delivery intents. Successful prompt
+- tearoom collab deliveries lists durable delivery intents. Successful prompt
   submission is not successful work. Require the Agent's Room receipt/evidence.
 - Resolve only an ambiguous (unknown) delivery after checking hc and Room:
   tearoom collab resolve --room project --seq 2 --role reviewer --outcome delivered
@@ -80,7 +79,7 @@ Core commands:
   tearoom tree
   tearoom read --room <room> [--after e<N>] [--tail N] [--subtree]
   tearoom send --room <room> --text <text> [--as <label>] [--to @role,...]
-  tearoom collab run | status | resolve ...
+  tearoom collab run | deliveries | resolve ...
 
 Records are ordered and append-only; the store assigns sequence numbers. Reads
 are repeatable and save no cursor. Empty read succeeds with no output. If a send

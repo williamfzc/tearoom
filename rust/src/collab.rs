@@ -3,6 +3,7 @@
 
 #[path = "collab/dispatch.rs"]
 pub mod dispatch;
+pub mod herdr;
 #[path = "collab/runtime.rs"]
 pub mod runtime;
 
@@ -36,8 +37,6 @@ pub struct Config {
 pub struct Role {
     pub description: String,
     pub agent_type: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub template: String,
     #[serde(default, deserialize_with = "null_default")]
     pub command: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -81,13 +80,20 @@ impl Config {
         }
     }
 
-    pub fn update(root: &Path, change: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
+    pub fn update<T>(root: &Path, change: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let lock = lock_file(root.join("collaboration.lock"))?;
         lock.lock_exclusive()?;
         let mut config = Self::load(root)?;
-        change(&mut config)?;
+        let result = change(&mut config)?;
         config.validate()?;
-        save(root, "collaboration.json", &config)
+        save(root, "collaboration.json", &config)?;
+        Ok(result)
+    }
+
+    pub fn with_lock<T>(root: &Path, read: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        let lock = lock_file(root.join("collaboration.lock"))?;
+        lock.lock_exclusive()?;
+        read(&Self::load(root)?)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -98,10 +104,8 @@ impl Config {
             if role.agent_type.trim().is_empty() {
                 bail!("role {name:?} requires an agent type");
             }
-            let has_command = role.command.first().is_some_and(|s| !s.trim().is_empty());
-            let has_template = !role.template.trim().is_empty();
-            if has_command == has_template {
-                bail!("role {name:?} requires exactly one of command or template");
+            if role.command.first().is_none_or(|s| s.trim().is_empty()) {
+                bail!("role {name:?} requires a command");
             }
         }
         for (name, room) in &self.rooms {
@@ -280,7 +284,7 @@ mod tests {
 
     #[test]
     fn go_null_config_and_dispatch_are_readable() {
-        let config: Config = serde_json::from_str(r#"{"roles":{"reviewer":{"description":"","agent_type":"claude","template":"reviewer","command":null}},"rooms":null}"#).unwrap();
+        let config: Config = serde_json::from_str(r#"{"roles":{"reviewer":{"description":"","agent_type":"claude","command":["reviewer"]}},"rooms":null}"#).unwrap();
         config.validate().unwrap();
         let state: DispatchState =
             serde_json::from_str(r#"{"version":1,"cursor":null,"intents":null}"#).unwrap();

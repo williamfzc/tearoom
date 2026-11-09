@@ -16,12 +16,12 @@ The Rust implementation has these boundaries:
 | Domain | `rust/src/core.rs` | Room and Record data, content compaction, and idempotency fingerprints |
 | Persistence | `rust/src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
 | Application | `rust/src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
-| Outside | `rust/src/transport.rs`, `hc.rs` | The local HTTP interface and hc JSON-RPC client |
+| Outside | `hc.rs`, `herdr/` | hc JSON-RPC and Herdr command adapters |
 | Outside | `rust/src/cli.rs`, `cli/`, `main.rs` | Command parsing, output, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
-uses the domain types; transport adapts Store operations; the CLI translates commands. The
-kernel never imports a scheduler, launcher, or Agent runtime. Credentials,
+uses the domain types; the CLI translates commands. The kernel never imports a
+scheduler, launcher, or Agent runtime. Credentials,
 admission, and the hosted multi-room service were removed with the v1 model on
 2026-11-07 (see [../log.md](../log.md)).
 
@@ -57,20 +57,9 @@ receive a dense per-room sequence. The format boundary is specified in
 
 ## Outside boundary
 
-`rust/src/cli.rs` and `cli/` expose the command surface:
-
-```text
-tearoom room init --name <name> [--parent <room>] [--role @<role>,...]
-tearoom role define|list|show
-tearoom room roles --room <room> [--add @<role>,...] [--status]
-tearoom collab run|status|resolve
-tearoom send [--room <room>] --text <text> | --json <json> [--as <signature>] [--to @role] [--reply-to room#seq]
-tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
-tearoom tree
-tearoom skill
-```
-
-It owns formatting and invocation-local options, not shared invariants. The
+`rust/src/cli.rs` and `cli/` expose the command surface documented in the
+[CLI reference](../reference/cli.md). The CLI owns formatting and
+invocation-local options, not shared invariants. The
 v1 commands `room join`, `room credential`, and the hosted `server` profile
 are deleted; no alias keeps them alive. The 2026-11-09 concept pass removed
 the watch and HTTP faces with the notification concept (see
@@ -83,18 +72,17 @@ client mode died with it.
 prompt delivery, parent-child execution, and lifecycle events. It has no
 native Tearoom board or role-routing policy. An integration outside the
 kernel defines reusable roles (command, working directory, and role
-instructions), configures collaborators when creating a Room, and binds each
+instructions), configures collaborators for a Room, and binds each
 Room's role instance to its own hc panel. All those roles share the Room's one
 record stream; reusing a role definition in another Room creates a separate
 panel instance. `@role` routes through hc to that Room-scoped panel. Different
-Rooms coordinate through a shared ancestor Room; build and review use separate
-Agent instances and roles in the same Room.
+Rooms can coordinate through a shared ancestor Room; build and review use
+separate Agent instances and roles in the same Room.
 
 The integration also exposes the configured collaborators to the CLI and
 reconciles Room records with hc snapshots/events after interruption. The
 collaborator roster is discovery and routing data, not admission; it does not
-affect who can read or write a local Room. hc template text is an initial
-instruction, not a native system prompt. Panel-failure handling and reliable
+affect who can read or write a local Room. Role instructions are an initial message, not a native system prompt. Panel-failure handling and reliable
 recovery are not existing hc guarantees. The delivery contract is in
 [collaboration.md](collaboration.md); configuration is in the
 [Agent integration guide](../reference/agent-integration.md).
@@ -112,7 +100,8 @@ The integration may depend on `core` and the Store; neither may depend on it.
 6. The hc integration stays outside the kernel and does not add
    recipient, membership, or process-state fields to core Records.
 
-`make check`, `make docs`, and repository searches verify these boundaries.
+Automated checks cover only part of these boundaries; review dependencies and
+repository searches when a change could cross them.
 Rollback is a Git rollback to a matched revision and data snapshot; adding a
 deprecated dependency or compatibility layer is not an allowed recovery.
 

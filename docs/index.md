@@ -21,7 +21,7 @@ Use one source for each kind of claim:
   source: what the code ships and what remains open.
 - [evaluations.md](evaluations.md) is the proof source: which executable checks
   support a story, plus the hand-run evidence record.
-- [reference/](reference/index.md) is the CLI, HTTP, and machine-facing
+- [reference/](reference/index.md) is the CLI and machine-facing
   contract. It does not redefine product scope or implementation status.
 - [log.md](log.md) is historical and retirement evidence only. It is not a
   normative entry point.
@@ -32,9 +32,9 @@ Use one source for each kind of claim:
 |---|---|
 | [product.md](product.md) | Authoritative product: the three concepts, invariants, refusals, and proof standard |
 | [evaluations.md](evaluations.md) | Proof source: acceptance journeys, evaluations, and hand-run evidence |
-| [domain/](domain/index.md) | Room and Record concepts, boundary behaviour, and trust model |
+| [domain/](domain/index.md) | Room, Record, and Role concepts, boundary behaviour, and trust model |
 | [architecture/](architecture/index.md) | Layer ownership, persistence, and the implementation gap |
-| [reference/](reference/index.md) | The CLI, HTTP, exit, storage, and Agent integration contracts |
+| [reference/](reference/index.md) | The CLI, exit, storage, and Agent integration contracts |
 | [operations/](operations/index.md) | Non-normative build and release state; read only after status |
 | [lessons/](lessons/index.md) | Durable lessons behind the current design |
 | [log.md](log.md) | Historical decisions, retirements, and migration evidence; not a specification |
@@ -42,7 +42,7 @@ Use one source for each kind of claim:
 ## Reading order
 
 1. [product.md](product.md) — product facts
-2. [domain/concepts.md](domain/concepts.md) — Room and Record behaviour
+2. [domain/concepts.md](domain/concepts.md) — Room, Record, and Role behaviour
 3. [architecture/status.md](architecture/status.md) — implementation gap
 4. [evaluations.md](evaluations.md) — proof and hand-run evidence
 5. [reference/index.md](reference/index.md) — machine-facing contracts

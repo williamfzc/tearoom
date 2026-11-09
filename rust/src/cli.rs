@@ -1,13 +1,18 @@
 //! CLI entry point, argument parsing and shared workspace access.
 mod collaboration;
+mod roles;
+mod room_herdr;
 mod rooms;
 
+use crate::collab::runtime::HcRuntime;
+use crate::hc::HcClient;
 use crate::store::Store;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
-const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nCommands:\n  room      create rooms and manage collaborators\n  role      define and inspect collaborator roles\n  collab    run or inspect the hc dispatcher\n  send      append a record\n  read      read a room or subtree\n  tree      print the room tree\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
+const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
 
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -52,13 +57,20 @@ fn execute(args: &[String]) -> Result<()> {
     }
     match command.as_str() {
         "room" => rooms::room_command(rest),
-        "role" => collaboration::role_command(rest),
+        "role" => roles::role_command(rest),
         "collab" => collaboration::collab_command(rest),
         "send" => rooms::send_command(rest),
         "read" => rooms::read_command(rest),
         "tree" => rooms::tree_command(rest),
         _ => bail!("unknown command {command:?}"),
     }
+}
+
+fn hc_runtime() -> Result<HcRuntime> {
+    Ok(HcRuntime {
+        client: HcClient::from_env()?,
+        timeout: Duration::from_secs(30),
+    })
 }
 
 #[derive(Default)]

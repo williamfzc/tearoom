@@ -15,14 +15,15 @@ lives in [status.md](docs/architecture/status.md); proof lives in
   stream.
 - **Record** — one stream entry: sequence, time, signature, content.
   Append-only, never edited.
+- **Role** — a reusable launch definition and a Room roster entry. It routes
+  addressed messages; it is not access control.
 
 Signatures are unverified labels. There is no admission or credential step: the
 `.tearoom` directory is the trust domain, and a Room's collaborator roster is
-routing configuration, not access control. Storage is
-plain files — one JSONL stream per Room — so the tree can be committed to
-git and the memory can travel with the checkout. This repository keeps its
-own `.tearoom/` workspace local (gitignored, owner decision 2026-11-09) and
-works inside it.
+routing configuration, not access control. The
+[storage reference](docs/reference/storage-layout.md) describes portability.
+This repository keeps its own `.tearoom/` workspace local (gitignored);
+working on the repository does not require using it.
 
 ## Quick start
 
@@ -33,9 +34,8 @@ work_dir="$(mktemp -d)"
 cd "$work_dir"
 "$tearoom_bin" room init --name main-line
 "$tearoom_bin" room init --name implementation --parent main-line
-"$tearoom_bin" room init --name review --parent main-line
 TEAROOM_ACTOR=planner "$tearoom_bin" send --text "goal recorded" --room main-line
-TEAROOM_ACTOR=codex "$tearoom_bin" send --text "started" --room implementation
+TEAROOM_ACTOR=codex "$tearoom_bin" send --text "started; review will happen here" --room implementation
 TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
 "$tearoom_bin" tree
 ```
@@ -52,10 +52,14 @@ TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
 - `role` and `collab` configure Room collaborators and run the local hc
   dispatcher that delivers addressed records to Agent panels.
 
+This example shows Room records only; it does not start an Agent or perform a
+review. For collaborator setup and Herdr visibility, see the
+[integration guide](docs/reference/agent-integration.md).
+
 ## Working the tree
 
-The executor writes what it did, what is blocked, and what the next worker
-should do first; a different reviewer cites evidence. Record references use
+When handing work over, record progress, blockers, and what comes next. When
+independent review is needed, a different reviewer cites evidence. Record references use
 `room-name#seq` in plain text. The same-Room role and hc integration is
 specified in [product.md](docs/product.md) and
 [architecture/collaboration.md](docs/architecture/collaboration.md).

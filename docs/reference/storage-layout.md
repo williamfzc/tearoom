@@ -11,16 +11,22 @@ timestamp: 2026-11-07
 
 ## Workspace state
 
-Every workspace is a `.tearoom` directory of plain files: one directory per
-Room, one JSONL stream per Room, and a format marker. Nothing else exists —
-no database, no binary state. The layout is chosen so the whole tree can be
-committed to git: appends are new lines, new Rooms are new directories, and
-history diffs cleanly.
+Every workspace is a `.tearoom` directory. Room history uses plain files: one
+directory and one JSONL stream per Room, plus a format marker. Collaboration
+and Herdr integration also keep configuration and runtime state there. The
+workspace's local or versioned status is a repository policy; see the
+[repository overview](../../README.md) for this checkout.
 
 ```text
 .tearoom/
   store.json                        format marker: {"format":4,"backend":"jsonl"}
   lock                              flock target for cross-process serialization
+  collaboration.json               reusable Role definitions and Room rosters
+  collaboration.lock               serializes collaboration configuration updates
+  dispatch.json                    durable hc delivery intents and read cursors
+  .dispatch.lock                   prevents concurrent dispatchers/resolution
+  herdr.json                       local Room-to-Herdr session and pane bindings
+  herdr.lock                        serializes Herdr binding updates
   rooms/
     main-line/
       room.json                     {"name":"main-line","created":"..."}
@@ -58,6 +64,15 @@ refused with an incompatible-store error.
   in whichever append is missing, then removes the intent. Existing workspaces
   need no conversion; the file appears only while a keyed append is in flight
   or awaiting recovery.
+- `collaboration.json` stores reusable Role launch definitions and each Room's
+  routing roster. The roster routes addressed messages; it does not grant
+  access to Room history or writes.
+- `dispatch.json` stores the delivery intents and per-Room read cursors used by
+  the local hc dispatcher. `.dispatch.lock` prevents a second dispatcher or a
+  concurrent manual resolution from changing that state.
+- `herdr.json` stores the local Herdr session, workspace and pane associations,
+  including prior shared-session bindings when migrated. It is
+  optional integration state; Room records remain usable if Herdr is absent.
 
 The directory is the Room's address; the name inside `room.json` and the
 `room` field on each record line exist so a moved or edited file fails

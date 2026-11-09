@@ -16,7 +16,7 @@ the [evaluation registry](../evaluations.md).
 The current design places builder and reviewer roles in the same project
 Room. This supersedes the earlier review boundary that required a separate
 review Room; that requirement is withdrawn by the latest user decision.
-Separate child Rooms still coordinate through their common parent Room.
+Separate child Rooms can coordinate through their common parent Room.
 
 ## Shared context and continuity
 
@@ -62,12 +62,11 @@ Room named by the handoff.
 
 ### S5: An Agent discovers who can help
 
-**When** an Agent needs a reviewer or another skill, **it can** use the CLI to
-list the roles configured in the Room, their names and descriptions, and the
-Agent assigned to each role, then choose whom to mention.
+**When** an Agent needs a reviewer or another skill, **it can** list the roles
+configured in the Room and their descriptions, then choose whom to mention.
 
 **Accept when:** the selection can be made from the displayed information,
-and a missing or unavailable role or Agent type is reported clearly. This
+and a missing or unavailable role is reported clearly. This
 listing helps route work; it does not grant or restrict permission to read or
 write a Room.
 
@@ -76,10 +75,9 @@ write a Room.
 **Proposed default:** when someone writes a normal message, **all collaborators
 can** read it in the shared Room history. Active collaborators may observe new
 messages; an ordinary message does not start every offline Agent. An explicit
-mention directs a wake to its named collaborator. An explicit
-all-participants mention may notify everyone, but does not by itself start
-every offline Agent. This wake policy is proposed for validation, not a shipped
-contract.
+mention directs a wake to its named collaborator. The interaction needs
+validation with real Agents; the shipped syntax is in the
+[CLI reference](../reference/cli.md).
 
 **Accept when:** broadcast visibility is preserved, mentions reach their
 targets, and ordinary discussion does not create an unbounded wake loop.
@@ -122,13 +120,13 @@ for collaboration and routing, not access control or signature validation.
 
 ### S11: Choose a collaborator by role and agent type
 
-**When** an Agent needs help, **it can** inspect the Room's configured roles,
-their descriptions, and the available agent types or implementations, then
-choose whom to mention for the task.
+**When** a role has to be configured or its availability investigated,
+**a person or Agent can** inspect which Agent implementation it uses.
 
-**Accept when:** an Agent can distinguish role purpose from the concrete
-agent type that will run it, and a missing or unavailable implementation is
-reported clearly rather than silently substituted.
+**Accept when:** the role's purpose is distinguishable from the concrete
+Agent type that will run it, and a missing or unavailable implementation is
+reported clearly rather than silently substituted. Role discovery and choosing
+a collaborator are covered by [S5](#s5-an-agent-discovers-who-can-help).
 
 ## Delivery and recovery
 
@@ -146,15 +144,13 @@ once execution of external side effects.
 ## Current design boundaries
 
 - A project Room can host several roles in one shared conversation. Each
-  configured Room-role has an independent hc panel. Cross-Room collaboration
-  uses the common parent Room as the shared conversation point.
+  configured Room-role has an independent hc panel. A common parent Room can
+  carry shared conversation across child Rooms.
 - Room history is the durable shared context; hc provides Agent terminals,
   prompt delivery, and runtime observations. Delivery and recovery belong to
   the [integration](../architecture/collaboration.md).
 - Reusable role definitions and Room role assignments support discovery and
   routing; they do not authenticate a signature or create a permission boundary.
-- Collaborator names and role descriptions support discovery and routing.
-  They do not authenticate a signature or create a permission boundary.
 - Normal messages are visible to roles in the Room. The proposed default is
   not to start every offline role; a mention expresses an intended wake.
 - Implementation status and remaining evidence are tracked in

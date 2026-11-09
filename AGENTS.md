@@ -4,18 +4,14 @@ Before you write a single line in my repository, read this.
 It is not a style guide. It is the shape of mind I want you to wear while you work here.
 Everything here is in English, because the work is in English.
 
----
 
 ## Where the work lives
 
-This repository works inside its own local Tearoom workspace — untracked, by
-the owner's 2026-11-09 decision; `.tearoom/` is gitignored and lives on this
-machine only.
-`make cli && bin/tearoom tree` shows the rooms; `bin/tearoom read --room main-line`
-carries the goal and the current state, so you never need a verbal handoff.
-Record meaningful work in the room you worked in — what changed, why, and the
-evidence — and make handoffs explicit about who is next. `.tearoom/` is project
-memory, not scratch state: append, never rewrite.
+Developing Tearoom does not require using Tearoom to coordinate the work.
+The repository and its documentation must stand on their own. A local
+`.tearoom/` may contain project memory; preserve it and do not silently replace
+or migrate it. Its absence or an incompatible format must not block repository
+work.
 
 ---
 
@@ -26,12 +22,14 @@ The future will make its own demands; it does not need your sympathy.
 Before creating a file, a layer, a flag, or an abstraction, ask whether something
 that already exists can carry the weight. If it can, let it.
 Concept count and module count are budgets, not growth metrics. Every addition
-states what it replaces, or what count it keeps from growing. A page that could
+states what it replaces, or what count it keeps from growing.
+The product has three entities: Room, Record, and Role. A new need extends one
+of them, or is a view over them; it does not add a fourth noun. A new entity is
+a product decision that must name what it replaces. A page that could
 be a paragraph in an existing page is a bug, not a contribution. Unsure means
 no change: the correct action is a question or a no-op, not an artifact.
-The mechanical form is the line-budget ratchet (`make line-budget`):
-`scripts/line-baseline.txt` pins the files already past the budget, and that
-file only ever shrinks.
+The line-budget ratchet (`make line-budget`) limits production file length;
+it does not check concept count or module responsibilities.
 
 Before adding or moving code, find the existing boundaries.
 Name the module you are changing, the layer it belongs to, and the responsibility
@@ -117,6 +115,14 @@ The changed module has a clear owner.
 The dependency direction still runs one way.
 The lasting knowledge is in `docs/` as OKF-shaped Markdown, with links to the
 source of truth.
+Check product intent against [product.md](docs/product.md), shipped commands
+against [cli.md](docs/reference/cli.md), implementation gaps against
+[status.md](docs/architecture/status.md), and evidence against
+[evaluations.md](docs/evaluations.md). When behavior changes, verify the
+relevant contract against the implementation and run the applicable checks.
+`make docs` checks document shape and links, not whether claims are true;
+`make check-evals` checks the evidence registry, not whether evidence proves a
+story. Review those claims and the boundaries explicitly.
 
 Refresh it whenever a unit of work closes — before the commit, after the commit,
 at the end of the session. Drift is decay.

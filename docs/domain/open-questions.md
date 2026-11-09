@@ -25,11 +25,13 @@ were removed on 2026-11-07 and must not return in that shape. Reopen only
 with a concrete deployment whose trust model the signature-label design can
 honestly carry.
 
-## Room rename and move
+## Room organization
 
-Names are the addresses everyone quotes (`room#seq`). Renaming or moving a
-Room would silently break quoted references; no evidence yet says the
-operation is needed often enough to design around that.
+The current CLI can move a Room without changing its name or history; see the
+[CLI reference](../reference/cli.md#room-organization). Moving is not part of the
+main journey, and its place in a simpler command surface needs a real
+reorganization case. Renaming would also affect quoted `room#seq` references;
+do not add it without a concrete need.
 
 ## Presentation of multiple roots
 
@@ -39,20 +41,27 @@ question, not a data-model one.
 
 ## Room board and collaborator discovery
 
-The proposed Room-role binding is in
-[collaboration.md](../architecture/collaboration.md). The configuration file,
-CLI syntax, and precise availability reporting remain to be validated.
+Room-role configuration and commands exist; see the
+[CLI reference](../reference/cli.md). How reliably availability is reported
+across real Agent runtimes remains to be validated.
+
+## Seeing a shared Room conversation
+
+Role terminals in the same Room occupy separate Herdr tabs. They use one
+shared record history, but the interface does not present that conversation
+alongside their work; a reader must use the CLI to see it. Determine from real
+use whether a shared conversation view or a different panel layout makes the
+collaboration clear, without treating role terminals as separate Rooms.
 
 ## Broadcast and addressed delivery
 
-The proposed defaults and explicit targeting are in
-[collaboration.md](../architecture/collaboration.md). Validate broadcast and
-`@all` behavior, input escaping, and structured content encoding with real
-agents before treating them as a shipped CLI contract.
+The targeting contract is in the [CLI reference](../reference/cli.md).
+Validate broadcast and the resulting delivery behavior with real Agents
+before claiming the group conversation journey is proven.
 
 ## Delivery recovery
 
-The proposed reconciliation boundary is in
+The reconciliation boundary is in
 [collaboration.md](../architecture/collaboration.md). Validate the durable
 store, agent-specific readiness, and ambiguous spawn or send outcomes with
 interruption tests. hc does not guarantee task completion or recovery.

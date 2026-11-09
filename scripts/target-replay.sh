@@ -11,6 +11,8 @@ cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+# This is a contract run, not a user journey: never touch a developer's Herdr.
+export TEAROOM_HERDR_BIN="$WORK/missing-herdr"
 export HOME="$WORK/home"
 # macOS's python3 writes .pyc caches under $HOME/Library/Caches; the tearoom
 # binary must be the only process allowed to touch the client state directory.

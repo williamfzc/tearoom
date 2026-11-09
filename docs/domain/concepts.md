@@ -1,7 +1,7 @@
 ---
 type: domain
 title: Domain concepts
-description: The two concepts — Room and Record — and how shared Room conversation relates to runtime collaboration.
+description: The kernel concepts Room and Record, and Role, the collaboration entity above them.
 resource: docs/product.md
 tags: [domain, concepts, invariants]
 timestamp: 2026-11-07
@@ -9,13 +9,14 @@ timestamp: 2026-11-07
 
 # Domain concepts
 
-The product has exactly two domain concepts. [product.md](../product.md)
-owns the product facts and the invariants; this page explains them and their
-boundary behaviour in one place. Implementation gaps belong only in
+The kernel has exactly two concepts. The collaboration layer adds Role; the
+product's three entities are Room, Record, and Role. [product.md](../product.md)
+owns the product facts and the invariants; this page explains the kernel
+concepts and their boundary behaviour in one place. Implementation gaps belong only in
 [status.md](../architecture/status.md); machine-facing contracts are in
 [reference/](../reference/index.md).
 
-## The two concepts
+## The kernel concepts
 
 ### Room
 
@@ -55,6 +56,35 @@ collaboration runtime scans the Room records it tracks and routes addressed
 messages to role panels. `hc` is the intended Agent runtime; it does not
 itself define Tearoom's Room-to-role configuration or routing policy.
 
+## The collaboration entity
+
+### Role
+
+A Role is a named, reusable launch definition and a Room roster entry. It is
+not a participant, an identity, or an access grant; it is the configuration
+that tells the collaboration runtime how to start one Agent and which Room it
+serves.
+
+| Field | Rule |
+|---|---|
+| name | Unique in the workspace; the key in `roles` and the value a Room roster lists. |
+| agent_type | Required. Selects launch checks such as Codex's `--no-daemon`. |
+| command | Required, non-empty argv. The only launch mechanism. |
+| directory | Optional working directory; empty means the workspace root. |
+| description | Optional human-facing summary. |
+| instructions | Optional initial message prepended to the dispatch prompt. |
+
+A Room-role binding is one entry in `rooms[room].roles`. It maps to at most one
+live panel at a time; the same Role used in two Rooms gets two panels and two
+conversations. Bindings are routing data, not permission. Removing a binding
+does not delete the definition or Room history. Changing a launch field affects
+newly started panels; a running panel keeps its process.
+
+Role is a product entity but not a kernel concept: it lives in the
+collaboration configuration, never inside a Record or a Room file. The launch
+and delivery contract is in [collaboration.md](../architecture/collaboration.md);
+the CLI contract is in [cli.md](../reference/cli.md#room-lifecycle).
+
 ## Write and read contract
 
 An append requires no identity, no admission, and no saved cursor; the Store
@@ -81,15 +111,16 @@ independent of read progress.
 | Situation | Behaviour |
 |---|---|
 | Writers race in one Room | Store serialization assigns distinct dense sequence numbers |
-| Writers race in different Rooms | Streams are independent; neither waits on the other |
+| Writers race in different Rooms | Sequences are independent, but the workspace lock serializes writes across Rooms |
 | Writer crashes mid-append | Transaction semantics release the lock on recovery; no partial record is accepted |
 | Identical request is retried | An idempotent append returns the original record |
-| A child Room is created | It records its parent once; the parent's data is never written to |
+| A child Room is created | It records its parent; the parent's data is never written to |
+| A Room is moved | Its parent changes; the Room name, records and descendants remain in place |
 | The child list is needed | Derived by reading the workspace at query time; never cached |
 | Reader supplies a boundary | Read repeats from the caller's explicit boundary |
 | A role is addressed | The runtime routes the shared Room message to that Room's panel for the role |
 | Two roles review work | They use the same Room stream; the reviewing role differs from the executing role |
-| Work crosses Rooms | The roles coordinate through a shared ancestor Room |
+| Work crosses Rooms | A shared ancestor Room can carry decisions and handoffs |
 | A role panel fails | The Room preserves history; [delivery recovery](../architecture/collaboration.md#delivery-and-recovery) handles pending and uncertain work |
 
 **Platform rule:** the storage backend must provide a real cross-process

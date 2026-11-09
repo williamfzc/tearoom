@@ -16,14 +16,13 @@ Room history; this integration owns configuration, delivery and recovery.
 
 ## Roles and Room panels
 
-Define a reusable role with a stable name, description, agent command or hc
-template, working-directory setting, role instructions, and the readiness and
-input behavior needed by that agent. Instructions supplied through an hc
-template are an initial message, not a guaranteed system prompt. Credentials
+Define a reusable role with a stable name, description, agent command,
+working-directory setting, and role instructions. Role instructions are an
+initial message, not a guaranteed system prompt. Credentials
 remain with the agent environment; Room messages and role descriptions do not
 store secrets.
 
-Room creation selects role definitions. The resulting roster is discoverable
+Room creation may select role definitions; they can also be changed later. The roster is discoverable
 through the CLI and is routing configuration, not permission to read or write.
 One Room-role binding identifies one logical panel and at most one active hc
 terminal at a time. Different Rooms using the same definition have separate
@@ -37,21 +36,17 @@ Configuration and commands are documented in the
 ## Message and addressing
 
 All messages remain visible in the Room's single append-only stream. The CLI
-accepts an explicit @role and stores target role names as structured message
-content alongside the text; the Record contract does not gain
-recipient fields. The integration routes only explicit, machine-readable
-targets, not guesses from prose or quoted text. Sending without a target is a
-broadcast in shared history and does not start offline agents. `@all` may
-notify existing panels but does not start every offline role by default. Exact
-input escaping and the structured content encoding are defined in the
-[CLI reference](../reference/cli.md). If an unknown role is detected before append, the
-CLI reports it; if found in a persisted record, the runtime reports an
-undeliverable target without changing the record or routing to another role.
+stores target role names in structured message content; the Record contract
+does not gain recipient fields. The [CLI reference](../reference/cli.md)
+defines how text mentions and `--to` targets are selected and
+validated. If an unknown role is found in a persisted record, the runtime
+reports an undeliverable target without changing the record or routing to
+another role.
 
 The recipient reads the Room record by room and sequence, rather than treating
 the prompt as shared history. Builder and reviewer work in the same Room; the
-reviewer is a different agent instance. Separate Rooms coordinate in a shared
-ancestor Room, with the relevant roles configured there.
+reviewer is a different agent instance. A shared ancestor Room can carry
+coordination across branches, with the relevant roles configured there.
 
 ## Delivery and recovery
 
@@ -69,7 +64,7 @@ is busy. A dedicated workspace lock admits one local dispatcher; another
 process must not dispatch until it holds that lock.
 
 For each directed message, resolve the configured role and its panel. A missing
-panel is started with its configured template and the Room and record reference;
+panel is started with its configured command and the Room and record reference;
 the integration checks hc's first-message result, since a created terminal does
 not prove that task was sent. An existing ready panel receives the reference
 through hc. A busy panel leaves the message pending. Never force input into a

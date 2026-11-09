@@ -37,7 +37,7 @@ credential files: identity checks do not exist in the kernel.
 - `rust/src/store.rs` and `store/` own the `.tearoom` layout, the format
   gate, the JSONL Store implementation, crash recovery, and the
   cross-process lock.
-- CLI and HTTP depend on the Store seam, never on the file layout.
+- The CLI depends on the Store seam, never on the file layout.
 
 No SQL backend ships and no database code is linked: the SQLite eras
 (formats 2 and 3) are refused on open, not read.

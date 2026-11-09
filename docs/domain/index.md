@@ -8,10 +8,10 @@ timestamp: 2026-11-07
 
 # Domain
 
-The minimum vocabulary is Room and Record. Rooms form a
-single-parent tree; each Room owns one ordered record stream; an addressed
-is the envelope emitted when a record lands. Signatures are unverified
-labels. Protocols and conventions live in the records people write, not in
+The minimum vocabulary is Room and Record; the collaboration layer adds
+Role. Rooms form a single-parent tree; each Room owns one ordered record
+stream. Addressing is runtime routing, not a kernel entity. Signatures are
+unverified labels. Protocols and conventions live in the records people write, not in
 kernel entities. [Product definition](../product.md) owns the product facts;
 [architecture/status.md](../architecture/status.md) owns implementation gaps;
 [evaluations.md](../evaluations.md) owns proof.

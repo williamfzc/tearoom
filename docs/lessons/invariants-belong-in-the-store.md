@@ -28,11 +28,11 @@ Signatures are labels: the Store validates no identity and filters no record.
 Read boundaries belong to callers, and ordinary append has no
 implicit cursor-freshness rule.
 
-The HTTP server delegates to this boundary, so a raw HTTP caller and the CLI receive the same result.
+Every caller of the Store receives the same rules, regardless of its interface.
 
 ## Guarded by
 
-- The Store and HTTP tests guard the adopted Room contract.
+- Store and CLI tests guard the adopted Room contract.
 - The completed clean break replaced hidden-Event and mandatory stale-write
   cases with membership visibility, pure reads, and concurrent ordinary append
   cases.

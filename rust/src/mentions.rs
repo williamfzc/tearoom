@@ -142,19 +142,18 @@ pub fn parse_explicit(value: &str) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-// Resolve the Room roster after parsing, retaining first-mention ordering.
+// Explicit CLI targets take priority over mentions found in the message body.
 pub fn resolve(
     text: &str,
     to: &str,
     room: &str,
     available: Option<&[String]>,
 ) -> Result<Vec<String>, String> {
-    let mut names = extract(text);
-    for name in parse_explicit(to)? {
-        if !names.contains(&name) {
-            names.push(name);
-        }
-    }
+    let names = if to.trim().is_empty() {
+        extract(text)
+    } else {
+        parse_explicit(to)?
+    };
     if names.iter().any(|name| name == "all") {
         return Err("@all is not supported; mention a configured role explicitly".into());
     }
@@ -209,13 +208,25 @@ mod tests {
     }
 
     #[test]
-    fn resolve_validates_all_and_roster_without_losing_order() {
+    fn resolve_uses_explicit_targets_instead_of_body_mentions() {
         let roles = vec!["alice".to_owned(), "bob".to_owned()];
         assert_eq!(
             resolve("@alice", "@bob,@alice", "work", Some(&roles)).unwrap(),
+            ["bob", "alice"]
+        );
+        assert_eq!(
+            resolve("@alice", "@bob", "work", Some(&roles)).unwrap(),
+            ["bob"]
+        );
+        assert_eq!(
+            resolve("@alice then @bob", "", "work", Some(&roles)).unwrap(),
             ["alice", "bob"]
         );
         assert!(resolve("@all", "", "work", Some(&roles)).is_err());
+        assert_eq!(
+            resolve("@all", "@alice", "work", Some(&roles)).unwrap(),
+            ["alice"]
+        );
         assert!(resolve("@unknown", "", "work", Some(&roles))
             .unwrap_err()
             .contains("not configured"));

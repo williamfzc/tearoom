@@ -33,27 +33,41 @@ content. A task, handoff, verdict, approval, or status remains content or a
 convention over records — never a kernel field. The Room is the shared
 conversation: readers of a Room see its same ordered history.
 
-Words that were merged away: unit/topic/channel are Rooms; parent pointers,
-trees, roots, and subtrees are one stored field plus a shape derived at read
-time; "current state" is the last N records; closure, archive, and reopen are
-sentences people write; verification uses a different Agent instance and role
-in the same Room; "work" and "project" are informal names for a subtree; the
-notification envelope died with the watch surface — observation is a plain
-read, and wake-up belongs entirely to the collaboration runtime. Only Room
-and Record remain.
+Role is the collaboration entity above the kernel: a reusable launch
+definition and Room assignment, not a Room or Record field. Earlier naming
+and retired interfaces are recorded in [log.md](log.md).
 
 ## Who it is for
 
 The primary user is a person coordinating work that Agents split, advance, and
-verify. Humans intervene only at three kinds of moments: set or change a goal,
-approve irreversible or outward-facing actions, and handle escalations.
-Everything else proceeds by reading Rooms.
+verify. The goal is to reduce manual handoffs while keeping it easy for the
+person to set direction, review progress, make decisions, and intervene.
+
+## Everyday use
+
+One common path is to set up reusable roles when needed, create a Room for the work, and give it a
+goal. A worker records progress there; a separate reviewer can use the same
+conversation. Read the Room to continue later, and use Herdr when available to
+inspect running collaborators. Rooms can be organized under a parent when work needs
+that structure. Role definitions and Room assignments can also be changed
+after creation; preparation is not a fixed phase.
+
+The product should make this path understandable without requiring users to
+learn delivery recovery, storage details, or every available tree operation.
+A shipped operation is not automatically a required part of the main journey.
+
+## Concept budget
+
+The product has three entities: Room, Record, and Role. A new need extends one
+of them, or is a view over them; it does not add a fourth entity. A new noun is
+a product decision that must say what it replaces or why the existing three
+cannot carry it. Launch details and integration state are fields, not peers.
 
 ## Invariants
 
 - **Single-parent forward tree.** Each Room records its own parent. A parent's
-  child list is derived by reading, never cached. Rooms are peers; a root is
-  just the Room without a parent.
+  child list is derived by reading, never cached. Cycles are refused. Rooms are
+  peers; a root is just the Room without a parent.
 - **One stream per Room.** Records receive dense increasing sequence numbers
   per Room, assigned by the Store under one serialization boundary. Streams of
   different Rooms are independent.
@@ -63,7 +77,8 @@ Everything else proceeds by reading Rooms.
 - **Signature is a label.** The author field is an unverified string. Nothing
   checks it, blocks on it, or requires joining to use it.
 - **Caller-owned read boundaries.** Reading is repeatable; the caller supplies
-  its boundary. Tearoom stores no cursor, unread marker, or acknowledgement.
+  its boundary. The Room store keeps no reader cursor, unread marker, or
+  acknowledgement; the delivery runtime tracks its own progress separately.
 - **Idempotent retries.** A caller may attach an idempotency key so an
   uncertain retry returns the original record instead of a duplicate.
 - **Durable by default.** Context lives in the workspace, not in any session,
@@ -82,6 +97,12 @@ boundary:
   definition (including its command, working directory, and role instructions)
   and a Room-scoped runtime instance bound to an hc panel. Reusing a definition
   in another Room creates a separate instance there.
+- Each Room should open in its own named Herdr session. Roles assigned to that
+  Room appear as tabs within the session, so viewing one Room does not mix its
+  collaborators with other Rooms. Herdr is an optional view: Room history
+  remains usable if it is unavailable. The intended mapping and current
+  implementation state are in the
+  [integration guide](reference/agent-integration.md#herdr-session-per-room).
 - Room messages are shared by all configured roles. A message may be a
   broadcast or address one or more roles with `@`; addressing asks the runtime
   to route the message through hc and does not hide the record from other
@@ -91,28 +112,29 @@ boundary:
   inspect roles and decide whom to involve. This roster is coordination
   information, not admission: it neither authorizes reads/writes nor validates
   a record signature.
-- Quoting writes `room-name#seq` as plain text; tools do not parse it.
+- Plain-text citations such as `room-name#seq` are not interpreted as delivery
+  instructions; the CLI also supports an explicit reply reference.
 - Closure writes a sentence; reopening writes a sentence. There is no status
   field and no state machine.
-- The executor never verifies its own work; a different Agent instance using
-  a reviewer role reviews the implementation in the same Room and records its
-  evidence-based verdict in that shared stream.
-- Roles working in different Rooms coordinate through a shared ancestor Room.
-  Cross-Room handoffs and decisions are recorded there; the Room tree remains
-  the scope and history boundary.
-- Handoffs write three things: what was done, what is blocked, and what the
-  next person should do first.
+- When independent review is needed, the executor can check its own work but
+  cannot provide that review; a different Agent instance records an
+  evidence-based verdict in the same Room.
+- When work spans Rooms, a shared ancestor Room can hold the decisions and
+  handoffs needed by both branches. The Room tree remains the scope and history
+  boundary; the [cross-Room story](domain/user-stories.md#s9-separate-rooms-coordinate-through-their-common-parent)
+  tests this arrangement.
+- A handoff should make progress, blockers, and the next step clear.
 - Which wake happens, and how, is decided by the collaboration runtime: a
   broadcast starts no panel, and an `@role` is routed to that role's
   Room-scoped panel.
 
 ## Command surface
 
-The CLI must configure collaborators when creating a Room and show the
-configured collaborators so an Agent can decide whom to involve. The [CLI
-reference](reference/cli.md) documents the shipped surface: `room init` (with
-`--parent`), `send`, `read` (a room, a subtree, a tail), `tree`, and the
-`role`/`collab` collaboration commands.
+The CLI must support configuring and discovering collaborators, creating a
+Room, sending and reading messages, and seeing the Room structure. The
+[CLI reference](reference/cli.md) documents what ships, including lower-frequency
+operations; inclusion there does not make an operation essential to the main
+journey.
 
 ## What it refuses
 
@@ -128,16 +150,14 @@ reference](reference/cli.md) documents the shipped surface: `room init` (with
   Serving beyond one trusted machine is a future need and would reuse the
   same Store contract.
 - No workflow engine, scheduler, or launcher in the Tearoom kernel; no hidden
-  compatibility model beside the two concepts. Collaboration routing sits
+  compatibility model beside Room and Record. Collaboration routing sits
   outside the kernel and starts from the record history itself.
 
 ## Persistence direction
 
-One workspace is one `.tearoom` directory of plain files: one JSONL record
-stream per Room, one identity file per Room, one format marker. The layout
-is an ordinary git citizen — appends are new lines, new Rooms are new
-directories — so the tree's memory can travel with the repository that holds
-the work. Details: [architecture/persistence.md](architecture/persistence.md).
+Room history lives in a local workspace and can outlive an Agent session.
+The file layout and its portability limits are in
+[architecture/persistence.md](architecture/persistence.md).
 
 ## Completion standard
 

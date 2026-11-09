@@ -22,7 +22,8 @@ fn cli_delivers_a_room_mention_to_hc() {
             .env("HC_SESSION", &session)
             .env("HC_SOCKET", &socket)
             .env("XDG_CONFIG_HOME", &config)
-            .env("XDG_STATE_HOME", &state);
+            .env("XDG_STATE_HOME", &state)
+            .env("TEAROOM_HERDR_BIN", dir.path().join("missing-herdr"));
         command
     };
     let run = |args: &[&str]| {
@@ -46,15 +47,36 @@ fn cli_delivers_a_room_mention_to_hc() {
         "--arg",
         script.to_str().unwrap(),
     ]);
-    run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
+    run(&[
+        "role",
+        "define",
+        "--name",
+        "builder",
+        "--agent-type",
+        "probe",
+        "--command",
+        "sh",
+        "--arg",
+        script.to_str().unwrap(),
+    ]);
+    run(&[
+        "room",
+        "roles",
+        "--room",
+        "project",
+        "--add",
+        "builder,reviewer",
+    ]);
     run(&[
         "send",
         "--room",
         "project",
         "--as",
         "human",
+        "--to",
+        "@reviewer",
         "--text",
-        "Please review @reviewer",
+        "Please review; @builder will follow up",
     ]);
     let mut dispatcher = build(binary)
         .args(["collab", "run"])
@@ -78,4 +100,12 @@ fn cli_delivers_a_room_mention_to_hc() {
     let _ = build("hc").args(["server", "stop", "--json"]).output();
     let _ = fs::remove_file(socket);
     assert!(delivered, "the reviewer did not record its reply");
+    let state: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.path().join(".tearoom/dispatch.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        state["intents"][0]["deliveries"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(state["intents"][0]["deliveries"][0]["role"], "reviewer");
 }

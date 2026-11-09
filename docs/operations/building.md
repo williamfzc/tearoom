@@ -16,8 +16,8 @@ reproducing release artifacts.
 ```bash
 make build          # bin/tearoom
 make cli            # the shipped binary, built fresh
-make test           # unit, HTTP, and independent-process concurrency tests
-make target-room    # E1: the room-tree contract over the JSONL store and HTTP
+make test           # unit and independent-process concurrency tests
+make target-room    # E1: the room-tree contract through the shipped binary
 make target-replay  # E2: replay across real processes, no read progress
 make check-evals    # the evaluation set stays bidirectionally consistent
 make docs           # the docs bundle stays consistent (frontmatter, links)
@@ -28,7 +28,6 @@ The [evaluation set](../evaluations.md) is the authority for what each suite
 proves; `check-evals` enforces that every shipped evaluation has its script
 marker and its place in `make check`.
 
-Cross-language and real hc integration tests are marked ignored because they
-require external binaries. Run them explicitly with the corresponding test
-environment when validating those boundaries. Agent permission sandboxes may
-also forbid creating Unix sockets or listening on loopback.
+Go compatibility and real hc integration tests are marked ignored because
+they require external binaries. Run them explicitly with the corresponding
+test environment when validating those boundaries.

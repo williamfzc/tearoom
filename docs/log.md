@@ -8,6 +8,73 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-09 — Give each Room its own Herdr session
+
+Each Tearoom Room should open in its own named Herdr session, with that Room's
+role panels as tabs inside it. A shared session becomes cluttered when it
+contains the workspaces for many Rooms, and asking people to navigate opaque
+workspace and tab IDs exposes Herdr's layout instead of the Room they want.
+This is now implemented with separate local sessions. Implementation status and the current contract are
+in [agent-integration.md](reference/agent-integration.md#herdr-session-per-room).
+Revisit the mapping only if real use shows that room-level sessions make
+opening, resuming, or cross-Room work harder.
+
+## 2026-11-09 — Retire unused role definitions safely
+
+Role definitions can be removed after Room assignments and unfinished
+deliveries are resolved. Deleting a definition neither stops an existing Agent
+nor removes Room records. The command and its checks are in
+[reference/cli.md](reference/cli.md).
+
+## 2026-11-09 — Explicit recipients take precedence
+
+When a message supplies explicit recipients, only those roles receive it;
+otherwise body mentions choose recipients. This replaces the earlier union,
+which could wake a person mentioned only as context. The current contract is
+in [reference/cli.md](reference/cli.md). Existing records retain their stored
+recipients; changing the rule does not rewrite history.
+
+## 2026-11-09 — Keep the everyday journey small
+
+The main journey is to prepare reusable roles as needed, create a Room, and
+work and review in its shared conversation. Preparation remains editable.
+Room moves and other lower-frequency operations are not prerequisites for
+that journey; their existing implementation remains documented in the CLI
+reference while their place in a simpler command surface is reconsidered.
+Revisit the choice when a concrete reorganization need is demonstrated.
+
+## 2026-11-09 — Repository work does not require self-hosting
+
+Developing Tearoom no longer requires its own Room workspace. The repository
+and documentation carry the working context; any local workspace is preserved
+but is not a prerequisite. Revisit self-hosting when it has a concrete benefit
+and its workspace can be used safely with the current release.
+
+## 2026-11-09 — Status is not a CLI concept
+
+Three surfaces used "status" for different things: a Room overview, a roster
+flag, and a delivery ledger. The overview command is gone; `room roles
+--observe` asks hc for observed panel state, and `collab deliveries` prints the
+durable delivery ledger. Observation is an explicit flag; a ledger is a noun.
+The command contract is in [reference/cli.md](reference/cli.md).
+
+## 2026-11-09 — Remove the template launch concept
+
+Roles are Tearoom's entity; the optional hc-template field imported a second
+launch concept and duplicated role instructions. A role now launches only its
+`command`; hc's interactive-start-and-wait-for-status path remains. The earlier
+template-based acceptance evidence is withdrawn, and the direct-command
+cross-product rerun is pending.
+
+## 2026-11-09 — Move Rooms without deleting their history
+
+The owner clarified that reorganizing work means moving a Room, not deleting
+it. A move changes only its parent; names, records, descendants, role bindings,
+and quoted `room#seq` references stay intact. Subtree reads follow the new
+position. This settles the earlier open question about moves; renaming remains
+open because it would change quoted addresses. The command contract is in
+[reference/cli.md](reference/cli.md).
+
 ## 2026-11-09 — Keep the project's own workspace local
 
 The project's own `.tearoom/` workspace is no longer committed: the owner

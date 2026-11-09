@@ -8,7 +8,7 @@ timestamp: 2026-08-30
 
 # Operations
 
-Operations records how to build, test, and serve the shipped executable. It is
+Operations records how to build, test, and release the shipped executable. It is
 not a source of product facts or target contracts: consult
 [product.md](../product.md) for scope, [architecture/status.md](../architecture/status.md)
 for implementation state, and [../evaluations.md](../evaluations.md) for proof.
@@ -22,5 +22,4 @@ for implementation state, and [../evaluations.md](../evaluations.md) for proof.
 
 Build and test through `make`, so one pinned Rust toolchain and the full
 suite decide what is green. See [building.md](building.md) for the
-requirements and for the cross-language and hc tests that stay ignored
-until their external binaries are provided.
+requirements and the integration tests that need external binaries.

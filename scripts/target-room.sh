@@ -11,6 +11,8 @@ cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+# This is a contract run, not a user journey: never touch a developer's Herdr.
+export TEAROOM_HERDR_BIN="$WORK/missing-herdr"
 
 pass=0
 fail=0

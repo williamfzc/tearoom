@@ -145,8 +145,47 @@ impl Store {
         sync_dir(&rooms)?;
         Ok(room)
     }
+    /// Changes a Room's parent without moving its identity or stored data.
+    pub fn move_room(&self, name: &str, parent: &str) -> Result<Room> {
+        let name = name.trim();
+        let parent = parent.trim();
+        validate_name(name)?;
+        if !parent.is_empty() {
+            validate_name(parent)?;
+        }
+        let _guard = self.lock(true)?;
+        let rooms = self.rooms_unlocked()?;
+        let mut room = rooms
+            .iter()
+            .find(|room| room.name == name)
+            .cloned()
+            .with_context(|| format!("room {name:?}: not found"))?;
+        if !parent.is_empty() && !rooms.iter().any(|room| room.name == parent) {
+            bail!("room {parent:?}: not found");
+        }
+        let mut ancestor = parent;
+        let mut seen = std::collections::HashSet::new();
+        while !ancestor.is_empty() {
+            if ancestor == name {
+                bail!("cannot move room {name:?} under itself or one of its descendants");
+            }
+            if !seen.insert(ancestor) {
+                bail!("room tree contains a parent cycle at {ancestor:?}");
+            }
+            ancestor = rooms
+                .iter()
+                .find(|room| room.name == ancestor)
+                .map_or("", |room| room.parent.as_str());
+        }
+        room.parent = parent.into();
+        replace(&self.path(name, "room.json"), &go_json_pretty(&room)?)?;
+        Ok(room)
+    }
     pub fn rooms(&self) -> Result<Vec<Room>> {
         let _guard = self.lock(false)?;
+        self.rooms_unlocked()
+    }
+    fn rooms_unlocked(&self) -> Result<Vec<Room>> {
         let mut dirs =
             fs::read_dir(self.root.join("rooms"))?.collect::<std::io::Result<Vec<_>>>()?;
         dirs.sort_by_key(|d| d.file_name());
@@ -370,6 +409,68 @@ mod tests {
         assert_eq!(store.read("child", 0).unwrap().len(), 1);
         assert_eq!(store.read("child", 1).unwrap().len(), 0);
         assert_eq!(Store::open(dir.path()).unwrap().rooms().unwrap().len(), 2);
+    }
+    #[test]
+    fn moving_room_preserves_contents_and_rejects_cycles() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init(dir.path()).unwrap();
+        store.create_room("root", "").unwrap();
+        store.create_room("child", "root").unwrap();
+        store.create_room("grandchild", "child").unwrap();
+        store
+            .append(
+                "child",
+                "agent",
+                AppendRequest {
+                    content: "{\"kept\":true}",
+                    idempotency_key: "saved",
+                },
+            )
+            .unwrap();
+        let records = fs::read(store.path("child", "records.jsonl")).unwrap();
+        let ledger = fs::read(store.path("child", "idempotency.jsonl")).unwrap();
+        let original = store
+            .rooms()
+            .unwrap()
+            .into_iter()
+            .find(|r| r.name == "child")
+            .unwrap();
+
+        assert!(store.move_room("child", "grandchild").is_err());
+        assert!(store.move_room("child", "child").is_err());
+        assert_eq!(
+            store
+                .rooms()
+                .unwrap()
+                .into_iter()
+                .find(|r| r.name == "child")
+                .unwrap(),
+            original
+        );
+
+        let moved = store.move_room("child", "").unwrap();
+        assert_eq!(moved.parent, "");
+        assert_eq!(moved.name, original.name);
+        assert_eq!(moved.created, original.created);
+        assert_eq!(
+            fs::read(store.path("child", "records.jsonl")).unwrap(),
+            records
+        );
+        assert_eq!(
+            fs::read(store.path("child", "idempotency.jsonl")).unwrap(),
+            ledger
+        );
+        assert_eq!(store.read("child", 0).unwrap().len(), 1);
+        assert_eq!(
+            store
+                .rooms()
+                .unwrap()
+                .iter()
+                .find(|r| r.name == "grandchild")
+                .unwrap()
+                .parent,
+            "child"
+        );
     }
     #[test]
     fn corrupt_pending_does_not_truncate_unrelated_tail() {
