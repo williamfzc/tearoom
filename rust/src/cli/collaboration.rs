@@ -122,6 +122,13 @@ fn restart<R: Runtime>(
     if !waiting.is_empty() && !confirm {
         bail!("delivery {} is submitted or uncertain; inspect it, then pass --confirm to replace the panel", waiting.join(", "));
     }
+    let mut state = DispatchState::load(root)?;
+    state
+        .fresh
+        .entry(room.into())
+        .or_default()
+        .insert(role_name.into());
+    state.save(root)?;
     if status != PanelStatus::Missing {
         dispatcher.runtime.stop(&panel)?;
     }
@@ -210,6 +217,7 @@ mod tests {
         DispatchState {
             version: 1,
             cursor: Default::default(),
+            fresh: Default::default(),
             intents: vec![Intent {
                 room: "project".into(),
                 seq: 1,

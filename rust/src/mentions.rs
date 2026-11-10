@@ -1,4 +1,4 @@
-// mentions.rs parses explicit Room-role addresses at the CLI boundary.
+// mentions.rs parses and validates explicit Room-role addresses at the CLI boundary.
 use std::collections::HashSet;
 use unicode_general_category::{get_general_category, GeneralCategory};
 
@@ -23,106 +23,6 @@ pub fn valid_role_name(name: &str) -> bool {
     matches!(chars.next(), Some(ch) if letter_or_digit(ch)) && chars.all(name_char)
 }
 
-// Extract mentions in textual order, ignoring Markdown code and email addresses.
-pub fn extract(text: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut seen = HashSet::new();
-    let mut fence = None;
-    for line in text.split_inclusive('\n') {
-        let trimmed = line.trim_start_matches([' ', '\t']);
-        if let Some(marker) = fence_marker(trimmed) {
-            match fence {
-                None => fence = Some(marker),
-                Some(open) if open == marker => fence = None,
-                _ => {}
-            }
-            continue;
-        }
-        if fence.is_some() {
-            continue;
-        }
-        let bytes = line.as_bytes();
-        let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'`' {
-                let run = backtick_run(bytes, i);
-                let mut end = i + run;
-                while end < bytes.len() {
-                    if bytes[end] != b'`' {
-                        end += 1;
-                        continue;
-                    }
-                    let current = backtick_run(bytes, end);
-                    if current == run {
-                        break;
-                    }
-                    end += current;
-                }
-                i = if end < bytes.len() {
-                    end + run
-                } else {
-                    i + run
-                };
-                continue;
-            }
-            if bytes[i] != b'@' || escaped(bytes, i) || email_local_part(line, i) {
-                i += 1;
-                continue;
-            }
-            let start = i + 1;
-            let mut end = start;
-            for ch in line[start..].chars() {
-                if !name_char(ch) {
-                    break;
-                }
-                end += ch.len_utf8();
-            }
-            if end == start || bytes.get(end) == Some(&b'@') {
-                i += 1;
-                continue;
-            }
-            let name = &line[start..end];
-            if valid_role_name(name) && seen.insert(name.to_owned()) {
-                names.push(name.to_owned());
-            }
-            i = end;
-        }
-    }
-    names
-}
-
-fn fence_marker(line: &str) -> Option<u8> {
-    let bytes = line.as_bytes();
-    let marker = *bytes.first()?;
-    if (marker == b'`' || marker == b'~') && bytes.iter().take_while(|&&b| b == marker).count() >= 3
-    {
-        Some(marker)
-    } else {
-        None
-    }
-}
-
-fn backtick_run(bytes: &[u8], start: usize) -> usize {
-    bytes[start..].iter().take_while(|&&b| b == b'`').count()
-}
-
-fn escaped(bytes: &[u8], index: usize) -> bool {
-    bytes[..index]
-        .iter()
-        .rev()
-        .take_while(|&&b| b == b'\\')
-        .count()
-        % 2
-        == 1
-}
-
-fn email_local_part(text: &str, index: usize) -> bool {
-    text[..index]
-        .chars()
-        .next_back()
-        .is_some_and(|ch| letter_or_digit(ch) || "._%+-".contains(ch))
-}
-
 pub fn parse_explicit(value: &str) -> Result<Vec<String>, String> {
     if value.trim().is_empty() {
         return Ok(Vec::new());
@@ -142,18 +42,14 @@ pub fn parse_explicit(value: &str) -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-// Explicit CLI targets take priority over mentions found in the message body.
+// Message bodies are shared Room text; only explicit CLI targets route delivery.
 pub fn resolve(
-    text: &str,
+    _text: &str,
     to: &str,
     room: &str,
     available: Option<&[String]>,
 ) -> Result<Vec<String>, String> {
-    let names = if to.trim().is_empty() {
-        extract(text)
-    } else {
-        parse_explicit(to)?
-    };
+    let names = parse_explicit(to)?;
     if names.iter().any(|name| name == "all") {
         return Err("@all is not supported; mention a configured role explicitly".into());
     }
@@ -174,26 +70,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prose_ignores_code_email_and_escaped_mentions() {
-        let text = "@builder email me@reviewer.com \\@hidden \\\\@visible `@code` ``@code2``\n```rust\n@fenced\n```\n@审查 @builder";
-        assert_eq!(extract(text), ["builder", "visible", "审查"]);
-    }
-
-    #[test]
-    fn fences_unmatched_backticks_and_email_edges_match_go() {
-        assert_eq!(
-            extract("`unclosed @yes\n~~~\n@no\n```\n@still_no\n~~~\n@after\n@x@y"),
-            ["yes", "after"]
-        );
-    }
-
-    #[test]
     fn role_names_follow_unicode_letter_and_decimal_categories() {
         assert!(valid_role_name("审查١_2"));
         assert!(!valid_role_name("_role"));
         assert!(!valid_role_name("role\u{301}"));
         assert!(!valid_role_name("role²"));
-        assert_eq!(extract("@审查١_2 @role² @bad!"), ["审查١_2", "role", "bad"]);
     }
 
     #[test]
@@ -208,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_uses_explicit_targets_instead_of_body_mentions() {
+    fn resolve_uses_only_explicit_targets() {
         let roles = vec!["alice".to_owned(), "bob".to_owned()];
         assert_eq!(
             resolve("@alice", "@bob,@alice", "work", Some(&roles)).unwrap(),
@@ -218,21 +99,20 @@ mod tests {
             resolve("@alice", "@bob", "work", Some(&roles)).unwrap(),
             ["bob"]
         );
-        assert_eq!(
-            resolve("@alice then @bob", "", "work", Some(&roles)).unwrap(),
-            ["alice", "bob"]
-        );
-        assert!(resolve("@all", "", "work", Some(&roles)).is_err());
+        assert!(resolve("@alice then @bob", "", "work", Some(&roles))
+            .unwrap()
+            .is_empty());
+        assert!(resolve("@all", "", "work", Some(&roles))
+            .unwrap()
+            .is_empty());
         assert_eq!(
             resolve("@all", "@alice", "work", Some(&roles)).unwrap(),
             ["alice"]
         );
         assert!(resolve("@unknown", "", "work", Some(&roles))
-            .unwrap_err()
-            .contains("not configured"));
-        assert!(resolve("@alice", "", "work", None)
-            .unwrap_err()
-            .contains("no collaborator"));
+            .unwrap()
+            .is_empty());
+        assert!(resolve("@alice", "", "work", None).unwrap().is_empty());
         assert!(resolve("ordinary", "", "work", None).unwrap().is_empty());
     }
 }

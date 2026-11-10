@@ -79,7 +79,7 @@ kernel defines reusable roles (command, working directory, and role
 instructions), configures collaborators for a Room, and binds each
 Room's role instance to its own hc panel. All those roles share the Room's one
 record stream; reusing a role definition in another Room creates a separate
-panel instance. `@role` routes through hc to that Room-scoped panel. Different
+panel instance. An explicit recipient routes through hc to that Room-scoped panel. Different
 Rooms can coordinate through a shared ancestor Room; build and review use
 separate Agent instances and roles in the same Room.
 

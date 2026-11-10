@@ -68,7 +68,8 @@ refused with an incompatible-store error.
 - `collaboration.json` stores reusable Role launch definitions and each Room's
   routing roster. The roster routes addressed messages; it does not grant
   access to Room history or writes.
-- `dispatch.json` stores the delivery intents and per-Room read cursors used by
+- `dispatch.json` stores the delivery intents, per-Room scan cursors, and pending
+  explicit-restart markers used by
   the local hc dispatcher. `.dispatcher.lock` admits one running dispatcher;
   `.dispatch.lock` serializes its state changes with manual operations.
 - `herdr.json` stores the local Herdr session, workspace and pane associations,

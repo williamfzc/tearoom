@@ -292,10 +292,7 @@ fn roles_and_room_mentions_are_discoverable() {
         "Please review @reviewer",
     ]))
     .unwrap();
-    assert_eq!(
-        record["content"]["mentions"],
-        serde_json::json!(["reviewer"])
-    );
+    assert_eq!(record["content"], "Please review @reviewer");
     let selected = serde_json::from_slice::<serde_json::Value>(&run(&[
         "send",
         "--room",

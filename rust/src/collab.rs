@@ -194,6 +194,8 @@ pub struct DispatchState {
     pub cursor: BTreeMap<String, u64>,
     #[serde(default, deserialize_with = "null_default")]
     pub intents: Vec<Intent>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fresh: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Default for DispatchState {
@@ -202,6 +204,7 @@ impl Default for DispatchState {
             version: 1,
             cursor: BTreeMap::new(),
             intents: Vec::new(),
+            fresh: BTreeMap::new(),
         }
     }
 }

@@ -126,6 +126,7 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
                     role.directory = directory.into();
                 }
                 if args.values.contains_key("instructions") {
+                    restart_required |= role.instructions != args.get("instructions");
                     role.instructions = args.get("instructions").into();
                 }
                 updated = Some(role.clone());

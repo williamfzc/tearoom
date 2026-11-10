@@ -47,9 +47,10 @@ The current implementation starts a new conversation with each new panel;
 Tearoom does not bind or resume an Agent session identity.
 
 The product requires recovery of the existing conversation when supported,
-and visible reconciliation when its state is uncertain. The current automatic
-missing-panel path instead starts a new conversation; this is an implementation
-gap, not proven continuity. An intentional fresh conversation should be
+and visible reconciliation when its state is uncertain. The current adapter
+cannot resume an identified Agent conversation. If a previously used panel is
+missing, delivery becomes uncertain instead of silently starting a new one.
+An intentional fresh conversation is
 an explicit replacement of the Room-role instance, with the prior outcome and
 any pending delivery reconciled first. Room records remain the durable shared
 history for rebuilding context; conversation and panel identifiers are runtime
@@ -73,14 +74,14 @@ than assumed delivered. See
 All messages remain visible in the Room's single append-only stream. The CLI
 stores target role names in structured message content; the Record contract
 does not gain recipient fields. The [CLI reference](../reference/cli.md)
-defines how text mentions and `--to` targets are selected and
+defines how explicit targets are selected and
 validated. If an unknown role is found in a persisted record, the runtime
 reports an undeliverable target without changing the record or routing to
 another role.
 
-The intended wake carries new Room messages directly; reading more history is
-the Agent's choice. This is not yet the shipped wake behavior: the current
-prompt asks the recipient to read the Room by room and sequence. The Room
+The wake carries Room records since the role's last confirmed delivery through
+the addressed record; the first wake and an explicit restart carry the Room
+history through that record. The Agent may read more history if needed. The Room
 stream remains the shared history. Builder and reviewer work in the same Room; the
 reviewer is a different agent instance. A shared ancestor Room can carry
 coordination across branches, with the relevant roles configured there.
@@ -103,10 +104,10 @@ it is briefly busy, the dispatcher skips that scan and tries again on the next
 iteration. Other lock errors remain failures. Manual operations may still
 report a busy delivery-state lock and can be retried.
 
-For each directed message, resolve the configured role and its panel. Currently
-a missing panel is started with its configured command and the Room and record reference;
+For each directed message, resolve the configured role and its panel. A first
+missing panel is started with its configured command and new Room records;
 the integration checks hc's first-message result, since a created terminal does
-not prove that task was sent. An existing ready panel receives the reference
+not prove that task was sent. An existing ready panel receives new records
 through hc. A busy panel leaves the message pending. Never force input into a
 blocked or unready panel. hc readiness and reported status vary by agent; a tool
 without reliable status cannot be assumed idle or done. When readiness cannot
@@ -120,8 +121,8 @@ an open reliability limit, not an exactly-once or exclusive-use guarantee.
 
 The runtime distinguishes pending, submission in progress, submitted, and
 uncertain delivery. A successful terminal submission is not proof that the
-agent completed the work. A matching Room reply can move a submitted delivery
-to completed, but the reply remains an unverified claim: a signature and
+agent completed the work. A finished Agent turn or a matching Room reply can
+move a submitted delivery to completed, but a reply is an unverified claim: a signature and
 reference do not authenticate the author. Replies cannot complete pending or
 uncertain deliveries, so they cannot suppress work before submission or
 resolve an ambiguous submission. The agent records its result or blocker in the
@@ -137,7 +138,7 @@ another agent or repeating the action. Exactly-once execution is not promised.
 ## First validation
 
 Create a Room containing a builder and an independent reviewer backed by two
-different agent tools. The builder writes progress and @mentions the reviewer;
+different agent tools. The builder writes progress and explicitly addresses the reviewer;
 the reviewer reads that Room, records evidence and a verdict there, and asks
 the builder to revise when needed. Verify roster discovery, per-Room panel
 isolation, busy and unavailable targets, and no human relay. Include an agent

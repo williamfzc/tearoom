@@ -8,6 +8,15 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-10 — Deliver Room updates without directing Agent work
+
+Explicit recipients now wake roles; a name in message text alone does not.
+Wakes carry new Room records, while role instructions are sent on the first
+wake and after explicit replacement. A finished turn releases the next queued
+delivery without requiring a prescribed reply. A missing previously used panel
+requires reconciliation instead of silently creating a new conversation. See
+[collaboration delivery](architecture/collaboration.md).
+
 ## 2026-11-10 — Keep Agent context and decisions with the Agent
 
 Tearoom owns Room routing, delivery and role lifecycle, not an Agent's context
@@ -34,11 +43,10 @@ the per-instance session that `--resume <id>`-style Agents require, and every
 --last`, `pi -c`, bare `dsh tui --resume`) selects by recency in the working
 directory. Several Room-roles share one workspace, so a restarted role could
 attach to another role's conversation while appearing to continue its own.
-That is worse than a fresh start, which at least rebuilds only from Room
-records. Tearoom therefore starts the configured command after a lost panel,
-records the delivery against that new process, and claims no continuity.
-This is a current implementation limitation against the continuing-conversation
-decision below, not a replacement of that product requirement.
+That is worse than a fresh start, which at least has the Room records available.
+At that point Tearoom started the configured command after a lost panel and
+claimed no continuity. The later delivery change above instead leaves a
+previously used missing panel for explicit reconciliation.
 Reopen when an Agent-independent way to bind and verify a conversation
 identity exists and is proven with two roles in one workspace; per-Agent
 session flags alone do not cover every Agent used here. The contract is in

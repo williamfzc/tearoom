@@ -110,14 +110,10 @@ Its place in a simpler command surface is under review; see
   object. Plain text becomes a JSON string; `--json` accepts one valid JSON
   value. `--as` sets the signature — an unverified label; omitting it stores
   an empty signature.
-- An explicit `--to @reviewer` addresses only the listed roles, even if the
-  body mentions other roles. Without `--to`, body mentions address configured
-  Room roles. Addressed text is stored as structured JSON with `text` and
-  `mentions`. Escaped @ signs, email addresses, and Markdown code spans and
-  fences do not address roles. Unknown selected roles and selected `@all` are
-  rejected.
-  An empty or whitespace-only `--to` is rejected rather than falling back to
-  body mentions.
+- Only explicit `--to @reviewer` targets address roles; mentions in message
+  text are ordinary shared Room content. Addressed text is stored as structured
+  JSON with `text` and `mentions`. Unknown selected roles and selected `@all`
+  are rejected. An empty or whitespace-only `--to` is rejected.
   Recipients live in the record's structured content, never in the kernel
   Record. Addressed `--json` content is not supported; raw JSON that parses
   as a message with nonempty `mentions` is rejected. Other raw JSON keeps its
@@ -231,8 +227,7 @@ reaches an already-running role.
 A replaced panel is a new Agent conversation, not a continuation: Tearoom
 stores no session identifier and does not guess one from the Agent's
 "most recent session" flag, because several roles can share a working
-directory. The next wake tells the Agent to read the Room, which is the
-durable history. A newly started terminal UI may also show its own sign-in,
+directory. The next wake includes Room history. A newly started terminal UI may also show its own sign-in,
 setup guide, or session list while hc still reports `idle`; hc then does not
 start a turn and the delivery becomes uncertain. Open the panel and leave it
 at its prompt before relying on the next delivery. See the

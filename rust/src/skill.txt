@@ -41,9 +41,9 @@ How work moves:
   tearoom collab deliveries
 
 An unaddressed message is shared history (broadcast) and does not wake a panel.
-An explicit --to directs the message only to the listed roles; without --to,
-@role in text directs it to that Room's configured role. Each Room-role binding
-maps to its own hc panel; the same role in another
+Only explicit --to directs a message to the listed roles; @role in text is
+ordinary shared Room content. Each Room-role binding maps to its own hc panel;
+the same role in another
 Room has a separate panel. --reply-to room#seq is a reference convention, not
 identity proof. Tearoom does not validate --as: any process can write any
 signature. A reviewer label and separate Room record do not prove the reviewer

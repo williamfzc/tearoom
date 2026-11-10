@@ -1,12 +1,12 @@
 //! Durable Room-to-panel dispatch, serialized by the workspace lock.
+#[path = "dispatch/routing.rs"]
+mod routing;
+
 use super::runtime::{quote, PanelRequest, PanelStatus, Runtime};
-use super::{
-    dispatch_lock, panel_name, Config, Delivery, DeliveryState, DispatchState, Intent, Message,
-};
-use crate::core::Record;
+use super::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState, Intent};
 use crate::store::Store;
 use anyhow::{bail, Context, Result};
-use std::collections::BTreeSet;
+use routing::{head_of_queue, mark_reply, record_intent};
 use std::path::PathBuf;
 
 pub struct Dispatcher<R> {
@@ -47,6 +47,23 @@ impl<R: Runtime> Dispatcher<R> {
                 state.save(root)?;
             }
         }
+        for intent in &mut state.intents {
+            for delivery in &mut intent.deliveries {
+                if delivery.state == DeliveryState::Submitted {
+                    match self.runtime.status(&delivery.panel) {
+                        Ok(PanelStatus::Done) => delivery.state = DeliveryState::Completed,
+                        Ok(PanelStatus::Missing) => {
+                            delivery.state = DeliveryState::Unknown;
+                            delivery.error =
+                                "role panel disappeared during delivery; inspect before resolving"
+                                    .into();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        state.save(root)?;
         for i in 0..state.intents.len() {
             for j in 0..state.intents[i].deliveries.len() {
                 if !head_of_queue(&state, i, j)
@@ -94,6 +111,14 @@ impl<R: Runtime> Dispatcher<R> {
             _ => bail!("unknown resolution {outcome:?} (expected delivered, skip, or retry)"),
         };
         delivery.error.clear();
+        if outcome == "delivered" {
+            if let Some(roles) = state.fresh.get_mut(room) {
+                roles.remove(role);
+                if roles.is_empty() {
+                    state.fresh.remove(room);
+                }
+            }
+        }
         state.save(root)
     }
 
@@ -148,9 +173,46 @@ impl<R: Runtime> Dispatcher<R> {
         };
         let executable = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("tearoom"));
         let cli = quote(&executable.to_string_lossy());
-        let room_arg = quote(&room);
-        let task = format!("You are the {role_name} role only. Do not perform, impersonate, or write under any other role, and do not review your own work. After handing off to another role, end your turn and wait. Use the Tearoom CLI at {cli}. Read Room {room_arg} with {cli} read --room {room_arg}. Handle record e{seq} there. Write your result or blocker into that same Room with --as {role_name} and --reply-to {room_arg}#{seq} (for example: {cli} send --room {room_arg} --as {role_name} --reply-to {room_arg}#{seq} --text 'done: ...'). The author label is a collaboration convention, not authenticated identity.");
-        let task = format!("{}\n\n{task}", role.instructions).trim().to_owned();
+        let previous = state.intents[..i]
+            .iter()
+            .filter(|prior| prior.room == room)
+            .filter(|prior| {
+                prior.deliveries.iter().any(|d| {
+                    d.role == role_name
+                        && matches!(d.state, DeliveryState::Submitted | DeliveryState::Completed)
+                })
+            })
+            .map(|prior| prior.seq)
+            .max()
+            .unwrap_or(0);
+        let fresh = state
+            .fresh
+            .get(&room)
+            .is_some_and(|roles| roles.contains(&role_name));
+        if status == PanelStatus::Missing && previous > 0 && !fresh {
+            state.intents[i].deliveries[j].state = DeliveryState::Unknown;
+            state.intents[i].deliveries[j].error =
+                "role panel disappeared; inspect and explicitly restart before retry".into();
+            return Ok(());
+        }
+        let after = if status == PanelStatus::Missing || fresh {
+            0
+        } else {
+            previous
+        };
+        let records: Vec<_> = self
+            .store
+            .read(&room, after)?
+            .into_iter()
+            .filter(|record| record.seq <= seq)
+            .collect();
+        let history = serde_json::to_string(&records)?;
+        let task = format!("Room {room}, addressed to {role_name} at record {seq}. New Room records (JSON):\n{history}\nTearoom CLI: {cli}");
+        let task = if after == 0 {
+            format!("{}\n\n{task}", role.instructions).trim().to_owned()
+        } else {
+            task
+        };
         let dir = role.directory(root)?;
         state.intents[i].deliveries[j].state = DeliveryState::Submitting;
         state.intents[i].deliveries[j].error.clear();
@@ -180,6 +242,12 @@ impl<R: Runtime> Dispatcher<R> {
             Ok(result) if result.accepted && result.started != Some(false) => {
                 delivery.state = DeliveryState::Submitted;
                 delivery.error.clear();
+                if let Some(roles) = state.fresh.get_mut(&room) {
+                    roles.remove(&role_name);
+                    if roles.is_empty() {
+                        state.fresh.remove(&room);
+                    }
+                }
             }
             Ok(_) => {
                 delivery.state = DeliveryState::Unknown;
@@ -190,109 +258,10 @@ impl<R: Runtime> Dispatcher<R> {
     }
 }
 
-fn mark_reply(state: &mut DispatchState, record: &Record) {
-    let Ok(message) = serde_json::from_str::<Message>(record.content.get()) else {
-        return;
-    };
-    let Some(reply) = message.reply_to else {
-        return;
-    };
-    if record.author.is_empty() || record.room != reply.room {
-        return;
-    }
-    if let Some(delivery) = state
-        .intents
-        .iter_mut()
-        .find(|i| i.room == reply.room && i.seq == reply.seq)
-        .and_then(|i| {
-            i.deliveries
-                .iter_mut()
-                .find(|d| d.role == record.author && d.state == DeliveryState::Submitted)
-        })
-    {
-        delivery.state = DeliveryState::Completed;
-        delivery.error.clear();
-    }
-}
-
-fn record_intent(
-    state: &mut DispatchState,
-    config: &Config,
-    root: &std::path::Path,
-    record: &Record,
-) -> Result<()> {
-    let Ok(message) = serde_json::from_str::<Message>(record.content.get()) else {
-        return Ok(());
-    };
-    if message.text.is_empty()
-        || message.mentions.is_empty()
-        || state
-            .intents
-            .iter()
-            .any(|i| i.room == record.room && i.seq == record.seq)
-    {
-        return Ok(());
-    }
-    let mut deliveries = Vec::new();
-    for role in message
-        .mentions
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .collect::<BTreeSet<_>>()
-    {
-        let allowed = config
-            .rooms
-            .get(&record.room)
-            .is_some_and(|r| r.roles.contains(&role));
-        let error = if !allowed {
-            "target role is not configured in this Room"
-        } else if !config.roles.contains_key(&role) {
-            "target role definition is missing"
-        } else {
-            ""
-        };
-        deliveries.push(Delivery {
-            panel: panel_name(root, &record.room, &role)?,
-            role,
-            state: if error.is_empty() {
-                DeliveryState::Pending
-            } else {
-                DeliveryState::Unknown
-            },
-            error: error.into(),
-        });
-    }
-    if !deliveries.is_empty() {
-        state.intents.push(Intent {
-            room: record.room.clone(),
-            seq: record.seq,
-            text: message.text,
-            deliveries,
-        });
-    }
-    Ok(())
-}
-
-fn head_of_queue(state: &DispatchState, i: usize, j: usize) -> bool {
-    let current = &state.intents[i];
-    let role = &current.deliveries[j].role;
-    !state.intents[..i]
-        .iter()
-        .filter(|prior| prior.room == current.room && prior.seq < current.seq)
-        .flat_map(|prior| &prior.deliveries)
-        .any(|prior| {
-            &prior.role == role
-                && !matches!(
-                    prior.state,
-                    DeliveryState::Completed | DeliveryState::Skipped
-                )
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::runtime::SubmitResult;
-    use super::super::{RecordRef, Role, RoomRoles};
+    use super::super::{Message, RecordRef, Role, RoomRoles};
     use super::*;
     use crate::core::AppendRequest;
     use std::cell::{Cell, RefCell};
@@ -540,13 +509,105 @@ mod tests {
                 }
             );
             for prompt in prompts.iter() {
-                assert!(prompt
-                    .starts_with("Review only; never edit.\n\nYou are the reviewer role only."));
+                assert!(prompt.starts_with(
+                    "Review only; never edit.\n\nRoom project, addressed to reviewer"
+                ));
+                assert!(prompt.contains("review"));
                 assert_eq!(prompt.matches("Review only; never edit.").count(), 1);
             }
             if initial == PanelStatus::Missing {
                 assert_eq!(prompts[0], prompts[1]);
             }
         }
+    }
+
+    #[test]
+    fn done_releases_queue_and_delivers_only_new_records() {
+        struct Trace {
+            status: Cell<PanelStatus>,
+            prompts: RefCell<Vec<String>>,
+        }
+        impl Runtime for Trace {
+            fn status(&self, _: &str) -> Result<PanelStatus> {
+                Ok(self.status.get())
+            }
+            fn launch(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+                _: &Role,
+                _: &std::path::Path,
+            ) -> Result<()> {
+                unreachable!()
+            }
+            fn stop(&self, _: &str) -> Result<()> {
+                unreachable!()
+            }
+            fn ensure(&self, _: &PanelRequest<'_>) -> Result<SubmitResult> {
+                unreachable!()
+            }
+            fn submit(&self, _: &str, task: &str, _: PanelStatus) -> Result<SubmitResult> {
+                self.prompts.borrow_mut().push(task.to_owned());
+                self.status.set(PanelStatus::Working);
+                Ok(SubmitResult {
+                    accepted: true,
+                    started: Some(true),
+                    pending: false,
+                })
+            }
+        }
+        let (_temp, base) = setup(false);
+        let dispatcher = Dispatcher {
+            store: base.store,
+            runtime: Trace {
+                status: Cell::new(PanelStatus::Idle),
+                prompts: RefCell::new(vec![]),
+            },
+        };
+        let addressed = |text: &str| Message {
+            text: text.into(),
+            mentions: vec!["reviewer".into()],
+            reply_to: None,
+        };
+        append(&dispatcher.store, "builder", &addressed("first task"));
+        dispatcher.pump().unwrap();
+        append(
+            &dispatcher.store,
+            "human",
+            &Message {
+                text: "shared update".into(),
+                ..Message::default()
+            },
+        );
+        append(&dispatcher.store, "builder", &addressed("second task"));
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.runtime.prompts.borrow().len(), 1);
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        let prompts = dispatcher.runtime.prompts.borrow();
+        assert_eq!(prompts.len(), 2);
+        assert!(prompts[0].contains("first task"));
+        assert!(!prompts[1].contains("first task"));
+        assert!(prompts[1].contains("shared update"));
+        assert!(prompts[1].contains("second task"));
+        drop(prompts);
+        let mut state = DispatchState::load(dispatcher.store.root()).unwrap();
+        state
+            .fresh
+            .entry("project".into())
+            .or_default()
+            .insert("reviewer".into());
+        state.save(dispatcher.store.root()).unwrap();
+        append(&dispatcher.store, "builder", &addressed("after restart"));
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        let prompts = dispatcher.runtime.prompts.borrow();
+        assert!(prompts[2].contains("first task"));
+        assert!(prompts[2].contains("after restart"));
+        assert!(DispatchState::load(dispatcher.store.root())
+            .unwrap()
+            .fresh
+            .is_empty());
     }
 }

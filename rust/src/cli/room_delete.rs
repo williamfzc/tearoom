@@ -43,6 +43,7 @@ pub(super) fn delete_room_command(args: &[String]) -> Result<()> {
     let mut state = DispatchState::load(root)?;
     state.intents.retain(|intent| intent.room != name);
     state.cursor.remove(name);
+    state.fresh.remove(name);
     state.save(root)?;
     crate::collab::Config::update(root, |config| {
         config.rooms.remove(name);

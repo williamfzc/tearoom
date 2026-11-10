@@ -107,12 +107,11 @@ stale. A visible status or successful attachment does not prove task completion.
 
 An interactive Agent keeps its conversation in its own process. While its panel
 stays alive, every later wake is typed into that same conversation; the
-dispatcher does not restart the Agent per record. Each wake prompt also asks
-the Agent to read the Room, so a conversation that was lost can rebuild its
-context from records.
+dispatcher does not restart the Agent per record. Each wake carries the new
+Room records; the Agent can read more history when needed.
 
-A missing panel is started again with the role's configured command on the
-next delivery. That process starts a fresh Agent conversation. Tearoom does
+A previously used missing panel is reported as uncertain; an operator may
+explicitly restart it. The new process starts a fresh Agent conversation. Tearoom does
 not record or pass a session identifier, and it does not use a "continue the
 most recent conversation" flag on the Agent's behalf: the Agents name
 continuation differently, and with several roles sharing one working directory
@@ -133,7 +132,7 @@ owns these rules.
 
 ## Message routing
 
-Address a configured Room role in message text or with `--to`, then run the
+Address a configured Room role with `--to`, then run the
 dispatcher. Exact mention, message, and reply-reference behavior is in the
 [CLI contract](cli.md#append-and-read):
 
@@ -207,7 +206,7 @@ snapshot, not proof of task completion.
 
 The dispatcher persists delivery intents and serializes work per Room-role.
 `tearoom collab deliveries` displays the ledger. Submitted means hc accepted
-input; completed means a matching Room reply was observed. Inspect the record
+input; completed means the Agent turn finished or a matching Room reply was observed. Inspect the record
 and independent panel evidence to judge the work.
 Agents without a reliable lifecycle signal stay pending rather than being
 assumed idle or done. The current `done` check followed by submission is not

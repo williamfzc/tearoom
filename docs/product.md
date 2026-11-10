@@ -116,7 +116,7 @@ boundary:
   implementation state are in the
   [integration guide](reference/agent-integration.md#herdr-session-per-room).
 - Room messages are shared by all configured roles. A message may be a
-  broadcast or address one or more roles with `@`; addressing asks the runtime
+  broadcast or explicitly address one or more roles; addressing asks the runtime
   to route the message through hc and does not hide the record from other
   readers or grant access. Recipients live in the record's structured content,
   never in the kernel Record itself.
@@ -137,7 +137,7 @@ boundary:
   tests this arrangement.
 - A handoff should make progress, blockers, and the next step clear.
 - Which wake happens, and how, is decided by the collaboration runtime: a
-  broadcast starts no panel, and an `@role` is routed to that role's
+  broadcast starts no panel, and an explicit recipient is routed to that role's
   Room-scoped panel.
 
 ## Command surface
