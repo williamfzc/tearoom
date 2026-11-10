@@ -4,7 +4,7 @@ title: CLI reference
 description: Authoritative command contract for the tearoom binary over the room tree.
 resource: rust/src/cli.rs
 tags: [reference, cli, contract]
-timestamp: 2026-11-09
+timestamp: 2026-11-10
 ---
 
 # CLI reference
@@ -17,11 +17,12 @@ and complete user journeys belong in [evaluations.md](../evaluations.md).
 
 ```text
 tearoom room init --name <name> [--parent <room>] [--role <role,...>]
+tearoom room delete --room <name> [--confirm]
 tearoom room open --room <name>
 tearoom room move --room <name> [--parent <room>]
 tearoom room roles --room <name> [--add <role,...>] [--remove <role,...>] [--observe]
 tearoom room herdr ensure --room <name>
-tearoom role define --name <name> --agent-type <type> --command <program> [--arg <arg>] [--cwd <dir>] [--description <text>] [--instructions <text>]
+tearoom role init --name <name> --agent-type <type> --command <program> [--arg <arg>] [--cwd <dir>] [--description <text>] [--instructions <text>]
 tearoom role update --name <name> [--agent-type <type>] [--command <program> [--arg <arg>]] [--cwd <dir>] [--description <text>] [--instructions <text>]
 tearoom role delete --name <name>
 tearoom role list
@@ -46,6 +47,16 @@ tearoom --version
 - The first `room init` in a directory creates the workspace (`.tearoom`);
   later inits add Rooms to the same tree. There is no join, no admission, and
   no credential step.
+- `room delete --room <name>` removes a leaf Room: its directory and record
+  stream, its roster binding, its dispatch intents and cursor, and its Herdr
+  binding go with it, and its Herdr session is stopped best-effort. Role
+  definitions survive. Running Agent panels are not stopped; the command
+  names each panel and its `hc kill` command. `reply_to` references from
+  surviving Rooms' records become dangling pointers.
+  The command refuses while the Room has child Rooms or unresolved
+  deliveries, and while a dispatcher holds the workspace lock. Without
+  `--confirm` it refuses and states what would be removed; the removal is
+  irreversible.
 - `--role` binds existing reusable role definitions to the new Room.
 - Room creation attempts to prepare an independent local Herdr session.
   `room open --room <name>` opens it in the current terminal. Failure leaves
@@ -60,7 +71,7 @@ tearoom --version
 - A Role is a reusable launch definition. A Room's roster binds selected Role
   definitions for message routing; it is not an access-control list. A given
   Room and Role pair has its own hc panel.
-- `role define` creates a reusable launch definition with an agent type and
+- `role init` creates a reusable launch definition with an agent type and
   an executable with repeatable `--arg` values; it refuses to overwrite an
   existing name. Use `role update` with the same definition fields to change
   selected values; fields not supplied remain unchanged. Changing the agent

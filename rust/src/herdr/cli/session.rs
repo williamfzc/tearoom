@@ -114,6 +114,29 @@ pub(in crate::herdr) fn open_session(session: &str) -> Result<()> {
     Ok(())
 }
 
+/// Stops the session's Herdr server; its panes close and nothing stored is lost.
+/// The stop reply is plain text, so success is the exit status alone.
+pub(in crate::herdr) fn stop_session(session: &str) -> Result<()> {
+    let executable = std::env::var_os("TEAROOM_HERDR_BIN").unwrap_or_else(|| "herdr".into());
+    let output = Command::new(executable)
+        .env_remove("HERDR_SOCKET_PATH")
+        .env("HERDR_SESSION", session)
+        .arg("--session")
+        .arg(session)
+        .args(["session", "stop", session])
+        .stdin(Stdio::null())
+        .output()
+        .context("stop Herdr session")?;
+    if !output.status.success() {
+        bail!(
+            "Herdr session stop failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

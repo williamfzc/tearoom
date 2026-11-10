@@ -1,8 +1,11 @@
 //! Format-4 JSONL workspace and cross-process append serialization.
+//! Record append/read live here; Room lifecycle (create/move/delete/list)
+//! lives in the rooms submodule.
 mod encoding;
 mod recovery;
+mod rooms;
 
-use crate::core::{compact_json, fingerprint, AppendRequest, Record, Room};
+use crate::core::{compact_json, fingerprint, AppendRequest, Record};
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use encoding::*;
@@ -111,101 +114,6 @@ impl Store {
             FileExt::lock_shared(&file)?;
         }
         Ok(file)
-    }
-    pub fn create_room(&self, name: &str, parent: &str) -> Result<Room> {
-        let name = name.trim();
-        let parent = parent.trim();
-        validate_name(name)?;
-        if !parent.is_empty() {
-            validate_name(parent)?;
-        }
-        let _guard = self.lock(true)?;
-        if !parent.is_empty() {
-            self.require_room(parent)?;
-        }
-        let rooms = self.root.join("rooms");
-        if rooms.join(name).exists() {
-            bail!("room {name:?} already exists: conflict");
-        }
-        let room = Room {
-            name: name.into(),
-            parent: parent.into(),
-            created: now(),
-        };
-        let temp = tempfile::Builder::new()
-            .prefix(".tmp-")
-            .tempdir_in(&rooms)?;
-        replace(&temp.path().join("room.json"), &go_json_pretty(&room)?)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o755))?;
-        }
-        fs::rename(temp.path(), rooms.join(name))?;
-        sync_dir(&rooms)?;
-        Ok(room)
-    }
-    /// Changes a Room's parent without moving its identity or stored data.
-    pub fn move_room(&self, name: &str, parent: &str) -> Result<Room> {
-        let name = name.trim();
-        let parent = parent.trim();
-        validate_name(name)?;
-        if !parent.is_empty() {
-            validate_name(parent)?;
-        }
-        let _guard = self.lock(true)?;
-        let rooms = self.rooms_unlocked()?;
-        let mut room = rooms
-            .iter()
-            .find(|room| room.name == name)
-            .cloned()
-            .with_context(|| format!("room {name:?}: not found"))?;
-        if !parent.is_empty() && !rooms.iter().any(|room| room.name == parent) {
-            bail!("room {parent:?}: not found");
-        }
-        let mut ancestor = parent;
-        let mut seen = std::collections::HashSet::new();
-        while !ancestor.is_empty() {
-            if ancestor == name {
-                bail!("cannot move room {name:?} under itself or one of its descendants");
-            }
-            if !seen.insert(ancestor) {
-                bail!("room tree contains a parent cycle at {ancestor:?}");
-            }
-            ancestor = rooms
-                .iter()
-                .find(|room| room.name == ancestor)
-                .map_or("", |room| room.parent.as_str());
-        }
-        room.parent = parent.into();
-        replace(&self.path(name, "room.json"), &go_json_pretty(&room)?)?;
-        Ok(room)
-    }
-    pub fn rooms(&self) -> Result<Vec<Room>> {
-        let _guard = self.lock(false)?;
-        self.rooms_unlocked()
-    }
-    fn rooms_unlocked(&self) -> Result<Vec<Room>> {
-        let mut dirs =
-            fs::read_dir(self.root.join("rooms"))?.collect::<std::io::Result<Vec<_>>>()?;
-        dirs.sort_by_key(|d| d.file_name());
-        let mut rooms = Vec::new();
-        for dir in dirs {
-            let name = dir.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                continue;
-            }
-            let path = dir.path().join("room.json");
-            if !path.is_file() {
-                continue;
-            }
-            let room: Room = serde_json::from_slice(&fs::read(path)?)?;
-            if room.name != name {
-                bail!("room directory {name:?} declares name {:?}", room.name);
-            }
-            rooms.push(room);
-        }
-        Ok(rooms)
     }
     pub fn read(&self, room: &str, after: u64) -> Result<Vec<Record>> {
         let room = room.trim();

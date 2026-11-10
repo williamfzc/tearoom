@@ -463,6 +463,95 @@ fn concurrent_send_and_role_delete_do_not_drop_a_cli_handoff() {
 }
 
 #[test]
+fn room_delete_requires_confirmation_resolves_children_and_unresolved_deliveries() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| command(dir.path()).args(args).output().unwrap();
+    assert!(run(&["room", "init", "--name", "root"]).status.success());
+    assert!(
+        run(&["room", "init", "--name", "child", "--parent", "root"])
+            .status
+            .success()
+    );
+    assert!(run(&[
+        "role",
+        "init",
+        "--name",
+        "reviewer",
+        "--agent-type",
+        "pi",
+        "--command",
+        "pi"
+    ])
+    .status
+    .success());
+    assert!(
+        run(&["room", "roles", "--room", "child", "--add", "reviewer"])
+            .status
+            .success()
+    );
+    for text in ["keep this", "review please"] {
+        assert!(
+            run(&["send", "--room", "child", "--text", text, "--as", "person"])
+                .status
+                .success()
+        );
+    }
+
+    let parent = run(&["room", "delete", "--room", "root"]);
+    assert!(!parent.status.success());
+    assert!(String::from_utf8_lossy(&parent.stderr).contains("child rooms"));
+
+    let unconfirmed = run(&["room", "delete", "--room", "child"]);
+    assert!(!unconfirmed.status.success());
+    assert!(String::from_utf8_lossy(&unconfirmed.stderr).contains("record(s) permanently"));
+
+    std::fs::write(
+        dir.path().join(".tearoom/dispatch.json"),
+        r#"{"version":1,"cursor":{"child":2},"intents":[{"room":"child","seq":2,"text":"review please","deliveries":[{"role":"reviewer","panel":"tr-test","state":"pending","error":""}]}]}"#,
+    )
+    .unwrap();
+    let unresolved = run(&["room", "delete", "--room", "child"]);
+    assert!(!unresolved.status.success());
+    assert!(String::from_utf8_lossy(&unresolved.stderr).contains("unresolved deliveries"));
+
+    std::fs::write(
+        dir.path().join(".tearoom/dispatch.json"),
+        r#"{"version":1,"cursor":{"child":2},"intents":[{"room":"child","seq":2,"text":"review please","deliveries":[{"role":"reviewer","panel":"tr-test","state":"completed","error":""}]}]}"#,
+    )
+    .unwrap();
+    let deleted = run(&["room", "delete", "--room", "child", "--confirm"]);
+    assert!(
+        deleted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&deleted.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&deleted.stdout).unwrap();
+    assert_eq!(report["deleted"], true);
+    assert_eq!(report["records"], 2);
+    let stderr = String::from_utf8_lossy(&deleted.stderr);
+    assert!(stderr.contains("panel tr-"), "{stderr}");
+    assert!(stderr.contains("(role reviewer)"), "{stderr}");
+    assert!(stderr.contains("hc kill"));
+    let tree = String::from_utf8(run(&["tree"]).stdout).unwrap();
+    assert_eq!(tree, "root\n");
+    assert_eq!(run(&["read", "--room", "child"]).status.code(), Some(1));
+    assert!(!run(&["room", "roles", "--room", "child"]).status.success());
+    let listed = String::from_utf8(run(&["role", "list"]).stdout).unwrap();
+    assert!(
+        listed.contains("reviewer"),
+        "role definitions survive: {listed}"
+    );
+    let dispatch = std::fs::read_to_string(dir.path().join(".tearoom/dispatch.json")).unwrap();
+    assert!(!dispatch.contains("\"child\""), "{dispatch}");
+    assert!(
+        !dir.path().join(".tearoom/herdr.json").exists()
+            || !std::fs::read_to_string(dir.path().join(".tearoom/herdr.json"))
+                .unwrap()
+                .contains("\"child\"")
+    );
+}
+
+#[test]
 fn exit_codes_and_signature_follow_the_cli_contract() {
     let dir = tempfile::tempdir().unwrap();
     let run = |args: &[&str]| {

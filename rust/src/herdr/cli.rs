@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 mod inspect;
 mod session;
 use inspect::{collect_panes, has_hc_attach, has_shell, tab_ids, workspace_entries};
-pub(in crate::herdr) use session::{ensure_session, open_session};
+pub(in crate::herdr) use session::{ensure_session, open_session, stop_session};
 
 pub(super) fn verify_workspace(
     session: &str,

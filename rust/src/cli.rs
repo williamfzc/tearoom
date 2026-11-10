@@ -1,6 +1,7 @@
 //! CLI entry point, argument parsing and shared workspace access.
 mod collaboration;
 mod roles;
+mod room_delete;
 mod room_herdr;
 mod rooms;
 

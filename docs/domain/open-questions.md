@@ -3,7 +3,7 @@ type: decision
 title: Open questions
 description: Runtime design questions left open after adopting shared Room conversation and hc-based collaboration.
 tags: [domain, decision, open]
-timestamp: 2026-11-07
+timestamp: 2026-11-10
 ---
 
 # Open questions
@@ -27,9 +27,10 @@ honestly carry.
 
 ## Room organization
 
-The current CLI can move a Room without changing its name or history; see the
-[CLI reference](../reference/cli.md#room-organization). Moving is not part of the
-main journey, and its place in a simpler command surface needs a real
+The CLI can move a Room without changing its name or history, and delete a
+leaf Room under `--confirm`, refusing children and unresolved deliveries (see
+the [CLI reference](../reference/cli.md#room-lifecycle)). Moving is not part of
+the main journey, and its place in a simpler command surface needs a real
 reorganization case. Renaming would also affect quoted `room#seq` references;
 do not add it without a concrete need.
 

@@ -5,7 +5,8 @@
 # refused); per-room dense sequences that start at 1 in a child; concurrent
 # append yields one dense sequence; a missing signature is stored as an empty
 # author; an idempotent retry returns the original record and a key conflict
-# is an error; tails, subtrees, and the skeleton print what the tree holds.
+# is an error; tails, subtrees, and the skeleton print what the tree holds;
+# a confirmed delete removes a leaf room and the tree closes over the gap.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/bin/tearoom"
@@ -120,6 +121,18 @@ check "all six concurrent appends succeed" "$concurrent_rc"
 busy_seqs="$(in_dir "$local_room" "$BIN" read --room busy | seqs_of)"
 rc=0; dense "$busy_seqs" || rc=$?
 check "concurrent appends yield the dense sequence 1..6 ($busy_seqs)" "$rc"
+
+# Deletion is confirmed, leaf-only, and closes the tree over the gap.
+reject "an unconfirmed delete is refused" "$local_room" "$BIN" room delete --room login-page
+reject "a room with children is refused" "$local_room" "$BIN" room delete --room implementation --confirm
+expect "a confirmed leaf delete removes the room" "$local_room" "$BIN" room delete --room login-page --confirm
+reject "a deleted room read is refused" "$local_room" "$BIN" read --room login-page
+reject "a second delete finds nothing" "$local_room" "$BIN" room delete --room login-page --confirm
+tree_after="$(in_dir "$local_room" "$BIN" tree)"
+check "the tree closes over the deleted leaf" "$([ "$tree_after" = "busy
+main-line
+├── implementation
+└── review" ] && echo 0 || echo 1)"
 
 echo
 if [ "$fail" -eq 0 ]; then

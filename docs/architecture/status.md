@@ -25,11 +25,11 @@ executable proof in [../evaluations.md](../evaluations.md).
   through the pending-intent file, and a cross-process flock around every
   append. Legacy format-2/3 (SQLite) workspaces are refused on open — the
   one-time migration belongs to the final Go release (tag `go-final`).
-- `rust/src/cli.rs` and `cli/` expose `room init --name/--parent`, `send`,
-  `read` (`--after`, `--tail`, `--subtree`), `tree`, `skill`, and the
-  `role`/`collab` collaboration surface. Membership, credentials, the hosted
-  profile, and the watch/HTTP faces are deleted (2026-11-09 concept pass;
-  see [../log.md](../log.md)).
+- `rust/src/cli.rs` and `cli/` expose `room init --name/--parent`,
+  `room delete --confirm`, `send`, `read` (`--after`, `--tail`, `--subtree`),
+  `tree`, `skill`, and the `role`/`collab` collaboration surface. Membership,
+  credentials, the hosted profile, and the watch/HTTP faces are deleted
+  (2026-11-09 concept pass; see [../log.md](../log.md)).
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 

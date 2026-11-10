@@ -8,6 +8,15 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-10 — Delete a leaf Room, and say "init" when creating
+
+`room delete --room <name> --confirm` removes a leaf Room with its record
+stream, roster, and Herdr binding, refusing children and unresolved
+deliveries so irreversible loss is always a confirmed act. Creation verbs are
+now uniform: `role define` became `role init` with no alias, per the
+clean-break policy. The contract is in
+[reference/cli.md](reference/cli.md#room-lifecycle).
+
 ## 2026-11-09 — Give each Room its own Herdr session
 
 Each Tearoom Room should open in its own named Herdr session, with that Room's

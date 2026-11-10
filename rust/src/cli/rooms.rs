@@ -1,5 +1,6 @@
 //! Room creation and record commands at the CLI boundary.
 use super::roles::room_roles;
+use super::room_delete::delete_room_command;
 use super::{open, parse, print_json, resolve, room_herdr};
 use crate::collab::{Config, Message, RecordRef, RoomRoles};
 use crate::core::{AppendRequest, Room};
@@ -9,11 +10,11 @@ use anyhow::{anyhow, bail, Result};
 
 pub(super) fn room_command(args: &[String]) -> Result<()> {
     let Some((action, args)) = args.split_first() else {
-        println!("Usage: tearoom room <init|open|herdr|roles> [flags]");
+        println!("Usage: tearoom room <init|delete|move|open|herdr|roles> [flags]");
         return Ok(());
     };
     if action == "--help" || action == "-h" {
-        println!("Usage: tearoom room <init|open|herdr|roles> [flags]");
+        println!("Usage: tearoom room <init|delete|move|open|herdr|roles> [flags]");
         return Ok(());
     }
     if action == "roles" {
@@ -27,6 +28,9 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
     }
     if action == "move" {
         return move_room_command(args);
+    }
+    if action == "delete" {
+        return delete_room_command(args);
     }
     if action != "init" {
         bail!("unknown room command {action:?}");
@@ -52,7 +56,7 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
         Config::update(store.root(), |config| {
             for role in &selected {
                 if !config.roles.contains_key(role) {
-                    bail!("unknown role {role:?}; define it before creating a room with roles");
+                    bail!("unknown role {role:?}; init it first with 'tearoom role init'");
                 }
             }
             let room = store.create_room(args.get("name"), args.get("parent"))?;
