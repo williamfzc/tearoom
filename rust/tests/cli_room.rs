@@ -60,7 +60,7 @@ fn room_move_changes_tree_without_changing_room_history() {
     );
     assert!(run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "reviewer",
         "--agent-type",
@@ -115,7 +115,7 @@ fn roles_and_room_mentions_are_discoverable() {
     run(&["room", "init", "--name", "project"]);
     run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "reviewer",
         "--agent-type",
@@ -136,7 +136,7 @@ fn roles_and_room_mentions_are_discoverable() {
     let duplicate = command(dir.path())
         .args([
             "role",
-            "define",
+            "init",
             "--name",
             "reviewer",
             "--agent-type",
@@ -201,7 +201,7 @@ fn roles_and_room_mentions_are_discoverable() {
     run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
     run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "builder",
         "--agent-type",
@@ -309,7 +309,7 @@ fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
     assert!(run(&["room", "init", "--name", "project"]).status.success());
     assert!(run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "reviewer",
         "--agent-type",
@@ -398,7 +398,7 @@ fn concurrent_send_and_role_delete_do_not_drop_a_cli_handoff() {
     assert!(run(&["room", "init", "--name", "project"]).status.success());
     assert!(run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "reviewer",
         "--agent-type",

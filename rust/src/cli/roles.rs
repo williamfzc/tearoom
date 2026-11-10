@@ -8,11 +8,11 @@ use anyhow::{anyhow, bail, Result};
 
 pub(super) fn role_command(args: &[String]) -> Result<()> {
     let Some((action, rest)) = args.split_first() else {
-        println!("Usage: tearoom role <define|update|delete|list|show>");
+        println!("Usage: tearoom role <init|update|delete|list|show>");
         return Ok(());
     };
     if action == "--help" || action == "-h" {
-        println!("Usage: tearoom role <define|update|delete|list|show>");
+        println!("Usage: tearoom role <init|update|delete|list|show>");
         return Ok(());
     }
     let definition_options = &[
@@ -25,13 +25,13 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
         "instructions",
     ];
     let options: &[&str] = match action.as_str() {
-        "define" | "update" => definition_options,
+        "init" | "update" => definition_options,
         "delete" | "show" => &["name"],
         "list" => &[],
         _ => bail!("unknown role command {action:?}"),
     };
     let args = parse(rest, options, &[])?;
-    if args.help("Usage: tearoom role define --name <name> --agent-type <type> --command <program> [--arg <arg>] [--cwd <dir>] [--description <text>] [--instructions <text>]\n       tearoom role update --name <name> [--agent-type <type>] [--command <program> [--arg <arg>]] [--cwd <dir>] [--description <text>] [--instructions <text>]\n       tearoom role delete --name <name>\n       tearoom role list\n       tearoom role show --name <name>") {
+    if args.help("Usage: tearoom role init --name <name> --agent-type <type> --command <program> [--arg <arg>] [--cwd <dir>] [--description <text>] [--instructions <text>]\n       tearoom role update --name <name> [--agent-type <type>] [--command <program> [--arg <arg>]] [--cwd <dir>] [--description <text>] [--instructions <text>]\n       tearoom role delete --name <name>\n       tearoom role list\n       tearoom role show --name <name>") {
         return Ok(());
     }
     args.no_positional()?;
@@ -46,7 +46,7 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
             eprintln!("role {name:?} deleted; any already-running Agent process is unaffected");
             print_json(&serde_json::json!({"name":name,"deleted":true}))
         }
-        "define" => {
+        "init" => {
             let name = args.get("name");
             if name.trim().is_empty() {
                 bail!("--name is required");
@@ -232,7 +232,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
                 .map_or_else(Default::default, |r| r.roles.iter().cloned().collect());
             for name in &adds {
                 if !config.roles.contains_key(name) {
-                    bail!("unknown role {name:?}; define it first with 'tearoom role define'");
+                    bail!("unknown role {name:?}; init it first with 'tearoom role init'");
                 }
                 roles.insert(name.clone());
             }

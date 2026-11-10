@@ -3,7 +3,7 @@ type: reference
 title: Agent integration guide
 description: Configure Agent roles, hc panels, readiness, and safe handoffs in a Tearoom workspace.
 tags: [reference, agents, integration, cli, hc]
-timestamp: 2026-11-08
+timestamp: 2026-11-10
 ---
 
 # Agent integration guide
@@ -43,13 +43,13 @@ export PI_BIN="${PI_BIN:-pi}"
 test -r "$PI_HC_STATUS_EXTENSION"
 "$PI_BIN" --version
 
-tearoom role define --name builder --description 'Implement the requested change' \
+tearoom role init --name builder --description 'Implement the requested change' \
   --agent-type claude --command claude \
   --arg=--settings --arg="$PWD/.tearoom/claude-settings.json" \
   --arg=--permission-mode --arg=dontAsk \
   --instructions 'Implement and record evidence. If a command is denied, try simpler permitted commands; never disable the sandbox. Record unresolved blockers.'
 
-tearoom role define --name reviewer --description 'Review implementation evidence' \
+tearoom role init --name reviewer --description 'Review implementation evidence' \
   --agent-type pi --command "$PI_BIN" \
   --arg=--extension --arg="$PI_HC_STATUS_EXTENSION" \
   --instructions 'Review the implementation and its evidence. Record a verdict with concrete findings.'

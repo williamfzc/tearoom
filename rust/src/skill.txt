@@ -15,8 +15,8 @@ person, stop and ask. Never bypass sandbox or permission controls to proceed.
 Prepare once, reuse in each Room:
 - In a new project directory, create the first Room with
   tearoom room init --name <name>. This also initializes the workspace.
-- Run tearoom role list and reuse suitable definitions. Define missing roles
-  with tearoom role define --help and explicitly configured local Agent
+- Run tearoom role list and reuse suitable definitions. Init missing roles
+  with tearoom role init --help and explicitly configured local Agent
   commands. Do not assume a particular Agent, executable, or permission mode.
 - Assign existing roles when creating another Room with
   tearoom room init --name <name> --parent <parent> --role <roles>, or add

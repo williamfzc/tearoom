@@ -37,7 +37,7 @@ fn cli_delivers_a_room_mention_to_hc() {
     run(&["room", "init", "--name", "project"]);
     run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "reviewer",
         "--agent-type",
@@ -49,7 +49,7 @@ fn cli_delivers_a_room_mention_to_hc() {
     ]);
     run(&[
         "role",
-        "define",
+        "init",
         "--name",
         "builder",
         "--agent-type",
