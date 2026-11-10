@@ -2,7 +2,7 @@
 type: lesson
 title: Invariants belong under the Store boundary
 description: A rule enforced only by one client disappears as soon as a second client arrives.
-resource: rust/src/store.rs
+resource: src/store.rs
 tags: [lesson, invariants, layering]
 timestamp: 2026-09-09
 ---

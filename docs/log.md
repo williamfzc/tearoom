@@ -8,6 +8,12 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-10 — Put the Rust package at the repository root
+
+Tearoom has one Rust package. Its manifest, source and tests now live at the
+repository root, using the usual Cargo layout. Build, release and documentation
+references follow the move; Room data and behavior are unchanged.
+
 ## 2026-11-10 — Deliver Room updates without directing Agent work
 
 Explicit recipients now wake roles; a name in message text alone does not.

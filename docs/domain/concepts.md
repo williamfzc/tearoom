@@ -28,10 +28,11 @@ parent, and a "project" is an informal name a person gives to some subtree.
 Rooms are identified by name within their workspace.
 
 A Room is also a shared conversation: broadcast and addressed messages are
-visible in the same Room history. Addressing guides runtime delivery; it is not
-privacy or permission. See [the product contract](../product.md) for the
-current boundary and [open questions](open-questions.md) for unresolved
-delivery semantics.
+visible in the same Room history. Only explicitly selected recipients are
+routed to their role panels; a role name in message text does not trigger
+delivery. Addressing is not privacy or permission. See [the product
+contract](../product.md) for the current boundary and
+[open questions](open-questions.md) for unresolved delivery semantics.
 
 A Room can configure several collaboration roles over this one stream. Role
 definitions can be reused, while each Room gets its own runtime instances and

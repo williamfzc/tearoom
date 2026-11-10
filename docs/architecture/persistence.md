@@ -32,9 +32,9 @@ credential files: identity checks do not exist in the kernel.
 
 ## Ownership
 
-- `rust/src/core.rs` owns the Room and Record data, content compaction, and
+- `src/core.rs` owns the Room and Record data, content compaction, and
   idempotency fingerprints.
-- `rust/src/store.rs` and `store/` own the `.tearoom` layout, the format
+- `src/store.rs` and `store/` own the `.tearoom` layout, the format
   gate, the JSONL Store implementation, crash recovery, and the
   cross-process lock.
 - The CLI depends on the Store seam, never on the file layout.

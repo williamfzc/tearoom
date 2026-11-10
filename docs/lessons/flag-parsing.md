@@ -2,7 +2,7 @@
 type: lesson
 title: Accept arguments in the order callers write them
 description: Flag placement must never decide meaning; Tearoom parses flags and positional text in any order.
-resource: rust/src/cli.rs
+resource: src/cli.rs
 tags: [lesson, cli, ergonomics]
 timestamp: 2026-08-30
 ---
@@ -29,4 +29,4 @@ language cutover: the shipped CLI exposes the room-tree commands (`room`,
 `send`, `read`, `tree`, `watch`, `server`, `skill`, `role`, `collab`), with
 no legacy `event` group or flags.
 
-Guarded by `rust/tests/cli_room.rs`.
+Guarded by `tests/cli_room.rs`.

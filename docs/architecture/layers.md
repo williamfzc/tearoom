@@ -2,7 +2,7 @@
 type: architecture
 title: Layers and dependency direction
 description: The package boundaries of the room-tree kernel and its herdr-core collaboration integration.
-resource: rust/src/
+resource: src/
 tags: [architecture, boundaries, layering, clean-break]
 timestamp: 2026-11-07
 ---
@@ -13,11 +13,11 @@ The Rust implementation has these boundaries:
 
 | Layer | Package or owner | Owns |
 |---|---|---|
-| Domain | `rust/src/core.rs` | Room and Record data, content compaction, and idempotency fingerprints |
-| Persistence | `rust/src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
-| Application | `rust/src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
+| Domain | `src/core.rs` | Room and Record data, content compaction, and idempotency fingerprints |
+| Persistence | `src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
+| Application | `src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
 | Outside | `hc.rs`, `herdr/` | hc JSON-RPC and Herdr command adapters |
-| Outside | `rust/src/cli.rs`, `cli/`, `cli/web*`, `main.rs` | Command parsing, output, the optional loopback browser face, and process entry |
+| Outside | `src/cli.rs`, `cli/`, `cli/web*`, `main.rs` | Command parsing, output, the optional loopback browser face, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
 uses the domain types; the CLI translates commands. The kernel never imports a
@@ -27,7 +27,7 @@ admission, and the hosted multi-room service were removed with the v1 model on
 
 ## Foundation boundary
 
-`rust/src/core.rs` defines the shared Room and Record data:
+`src/core.rs` defines the shared Room and Record data:
 
 - Room identity: a name, an optional parent, and a creation time;
 - Record: `seq`, `author`, `at`, `content` — the author is an unverified
@@ -41,7 +41,7 @@ sees is bounded by the tree, not by permissions.
 
 ## Persistence boundary
 
-`rust/src/store.rs` and `store/` own the `.tearoom` layout: one workspace directory holds
+`src/store.rs` and `store/` own the `.tearoom` layout: one workspace directory holds
 the whole room tree as JSONL files behind a format marker, and the JSONL
 Store operates under a cross-process flock. It may not:
 
@@ -57,7 +57,7 @@ receive a dense per-room sequence. The format boundary is specified in
 
 ## Outside boundary
 
-`rust/src/cli.rs` and `cli/` expose the command surface documented in the
+`src/cli.rs` and `cli/` expose the command surface documented in the
 [CLI reference](../reference/cli.md). The CLI owns formatting and
 invocation-local options, not shared invariants. The
 v1 commands `room join`, `room credential`, and the hosted `server` profile

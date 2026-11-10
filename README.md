@@ -1,79 +1,82 @@
 # Tearoom
 
-A long-lived collaborative workspace where people and Agents write, continue,
-and deliver work inside Rooms. Rooms form a single-parent tree; whoever reads
-a Room can pick up the work — across Agents, tools, and process restarts.
+**A local workspace for AI agents to collaborate through shared rooms and explicit handoffs.**
 
-[`docs/product.md`](docs/product.md) is the authoritative product definition.
-Start with the [documentation route](docs/index.md). Implementation state
-lives in [status.md](docs/architecture/status.md); proof lives in
-[evaluations.md](docs/evaluations.md).
+Tearoom gives people and agents a durable shared history for work that spans
+tools and sessions. Send a message to a named role to hand off a task; the room
+keeps that history in order.
 
-## Minimum model
+## Try a room
 
-- **Room** — one span of context: a parent (or none) and one ordered record
-  stream.
-- **Record** — one stream entry: sequence, time, signature, content.
-  Append-only, never edited.
-- **Role** — a reusable launch definition and a Room roster entry. It routes
-  addressed messages; it is not access control.
+Tearoom is a Rust command-line app. Install it from a local checkout with
+[Rust and Cargo](https://www.rust-lang.org/tools/install):
 
-Signatures are unverified labels. There is no admission or credential step: the
-`.tearoom` directory is the trust domain, and a Room's collaborator roster is
-routing configuration, not access control. The
-[storage reference](docs/reference/storage-layout.md) describes portability.
-This repository keeps its own `.tearoom/` workspace local (gitignored);
-working on the repository does not require using it.
-
-## Quick start
-
-```bash
-make build                     # builds ./bin/tearoom
-tearoom_bin="$PWD/bin/tearoom"
-work_dir="$(mktemp -d)"
-cd "$work_dir"
-"$tearoom_bin" room init --name main-line
-"$tearoom_bin" room init --name implementation --parent main-line
-TEAROOM_ACTOR=planner "$tearoom_bin" send --text "goal recorded" --room main-line
-TEAROOM_ACTOR=codex "$tearoom_bin" send --text "started; review will happen here" --room implementation
-TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
-"$tearoom_bin" tree
+```sh
+cargo install --path . --locked
+export TEAROOM_SOURCE="$PWD"
 ```
 
-- `room init --name <name> [--parent <room>]` creates a Room; the first one
-  creates the workspace. Rooms are addressed by name.
-- `send` appends one record and prints it as JSON. `--as` sets the
-  signature; plain text is encoded as a JSON string, `--json` passes raw
-  JSON.
-- `read` prints JSONL, one record per line. `--after e<seq>` sets your own
-  boundary, `--tail 5` limits each selected Room, `--subtree` reads the Room
-  and its descendants. Reading is side-effect free.
-- `tree` prints the skeleton: every root with its descendants.
-- `role` and `collab` configure Room collaborators and run the local hc
-  dispatcher that delivers addressed records to Agent panels.
-- `tearoom web [--port <port>]` starts an optional loopback browser view of the
-  current workspace: Room navigation, history, and messages addressed to
-  configured roles. It prints its URL as JSON and runs until interrupted.
+Create a room and write a few messages:
 
-This example shows Room records only; it does not start an Agent or perform a
-review. For collaborator setup and Herdr visibility, see the
-[integration guide](docs/reference/agent-integration.md).
-
-## Working the tree
-
-When handing work over, record progress, blockers, and what comes next. When
-independent review is needed, a different reviewer cites evidence. Record references use
-`room-name#seq` in plain text. The same-Room role and hc integration is
-specified in [product.md](docs/product.md) and
-[architecture/collaboration.md](docs/architecture/collaboration.md).
-
-## Build and verify
-
-```bash
-make check   # formatting, Clippy, tests, E1/E2 journeys, docs, line budget, release checks
+```sh
+mkdir tearoom-demo && cd tearoom-demo
+tearoom room init --name project
+tearoom send --room project --as human --text "Implement the room list."
+tearoom send --room project --as dev --text "The room list is ready for review."
+tearoom read --room project
 ```
 
-See [operations/building.md](docs/operations/building.md) for the toolchain
-requirements and the ignored cross-language and hc tests, and
-[reference/agent-integration.md](docs/reference/agent-integration.md) for the
-Agent-facing integration path.
+Each message is a permanent record in the room. `read` prints the shared
+history as JSONL. Rooms can form a tree when a project needs separate threads
+of work.
+
+## Hand work to an agent
+
+To deliver work to agents, initialize
+[hc](https://github.com/williamfzc/hc), sign in to Pi, and make sure both
+programs run in your room directory. This example uses two
+[Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
+roles and Tearoom's small Pi lifecycle extension:
+
+```sh
+tearoom role init --name dev --agent-type pi --command pi \
+  --arg=--extension --arg="$TEAROOM_SOURCE/scripts/pi-hc-status.ts" \
+  --instructions 'Implement the request and hand it to reviewer with --to @reviewer.'
+tearoom role init --name reviewer --agent-type pi --command pi \
+  --arg=--extension --arg="$TEAROOM_SOURCE/scripts/pi-hc-status.ts" \
+  --instructions 'Review the change and report a verdict in the room.'
+tearoom room roles --room project --add dev,reviewer
+tearoom collab run
+```
+
+Keep the dispatcher running in one terminal. In another, send a directed task:
+
+```sh
+tearoom send --room project --as human --to @dev \
+  --text 'Implement the room list, then hand it to the reviewer with --to @reviewer.'
+```
+
+Only explicit recipients are woken. A name mentioned in message text is just
+text. Agent commands must already be installed and signed in. Resolve hc's
+first-use prompts in the actual room directory before expecting unattended
+delivery. See the
+[Agent setup guide](docs/reference/agent-integration.md) for the full setup and
+recovery limits.
+
+## What Tearoom owns
+
+- **Rooms** hold one shared, ordered history. Anyone with access to the local
+  workspace can read and write it.
+- **Roles** name agent launch commands and route messages. They do not grant
+  permissions or hide messages from other room readers. Signatures are labels,
+  not verified identities.
+- **The dispatcher** queues messages for a busy role and delivers them through
+  hc. The agent decides how to understand and act on the message.
+
+Tearoom is local first. Its workspace is a trust boundary, not a hosted service
+or an access-control system. The optional `tearoom web` interface is available
+only on the local machine.
+
+For build checks, use `make check`. Read the [CLI reference](docs/reference/cli.md)
+for commands, the [product definition](docs/product.md) for scope, and the
+[evaluation record](docs/evaluations.md) for what has been exercised.

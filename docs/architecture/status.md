@@ -16,16 +16,16 @@ executable proof in [../evaluations.md](../evaluations.md).
 
 ## Shipped boundary
 
-- `rust/src/core.rs` defines the Room and Record data, content compaction,
+- `src/core.rs` defines the Room and Record data, content compaction,
   and the idempotency fingerprint. The room-tree contract is proven by the
   unit tests and the E1/E2 target evaluations through the shipped binary.
-- `rust/src/store.rs` and `store/` implement the tree as JSONL files under
+- `src/store.rs` and `store/` implement the tree as JSONL files under
   `.tearoom` (format 4): one directory and one append-only stream per Room,
   identity in `room.json`, per-(author, key) retry ledgers, crash recovery
   through the pending-intent file, and a cross-process flock around every
   append. Legacy format-2/3 (SQLite) workspaces are refused on open — the
   one-time migration belongs to the final Go release (tag `go-final`).
-- `rust/src/cli.rs` and `cli/` expose `room init --name/--parent`,
+- `src/cli.rs` and `cli/` expose `room init --name/--parent`,
   `room delete --confirm`, `send`, `read` (`--after`, `--tail`, `--subtree`),
   `tree`, `skill`, `web`, and the `role`/`collab` collaboration surface.
   Membership, credentials, the hosted profile, and the watch/HTTP faces are

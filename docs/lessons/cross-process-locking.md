@@ -2,7 +2,7 @@
 type: lesson
 title: Test concurrency with processes, and prove the test can fail
 description: Dense Room order must be verified with independent processes, not only threads.
-resource: rust/src/store.rs
+resource: src/store.rs
 tags: [lesson, concurrency, testing]
 timestamp: 2026-08-30
 ---

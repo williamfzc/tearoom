@@ -2,7 +2,7 @@
 type: reference
 title: Storage layout
 description: Authoritative on-disk workspace representation — JSONL files that travel with git — and the format gate.
-resource: rust/src/store.rs
+resource: src/store.rs
 tags: [reference, storage, jsonl, git, migration]
 timestamp: 2026-11-07
 ---

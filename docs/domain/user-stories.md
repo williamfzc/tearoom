@@ -52,18 +52,18 @@ whether acceptance is met, and the next step.
 
 ### S4: A message reaches its intended collaborator
 
-**When** a Room record explicitly mentions a collaborator, **the collaboration
-runtime can** use hc to notify or start that Agent and provide the Room and
-record to read.
+**When** a Room message explicitly addresses a configured collaborator,
+**the collaboration runtime can** use hc to notify or start that Agent and
+deliver new Room records.
 
-**Accept when:** the intended Agent receives the handoff without a human
-relay, reads the Room as the source of context, and writes its result to the
-Room named by the handoff.
+**Accept when:** only the selected Agent receives the handoff without a human
+relay, and it writes its result to the same Room. Text that merely mentions a
+role does not wake it.
 
 ### S5: An Agent discovers who can help
 
 **When** an Agent needs a reviewer or another skill, **it can** list the roles
-configured in the Room and their descriptions, then choose whom to mention.
+configured in the Room and their descriptions, then choose whom to address.
 
 **Accept when:** the selection can be made from the displayed information,
 and a missing or unavailable role is reported clearly. This
@@ -72,22 +72,21 @@ write a Room.
 
 ### S6: A Room behaves like a group conversation
 
-**Proposed default:** when someone writes a normal message, **all collaborators
-can** read it in the shared Room history. Active collaborators may observe new
-messages; an ordinary message does not start every offline Agent. An explicit
-mention directs a wake to its named collaborator. The interaction needs
-validation with real Agents; the shipped syntax is in the
-[CLI reference](../reference/cli.md).
+When someone writes a normal message, all collaborators can read it in the
+shared Room history, but no Agent is woken. Only roles explicitly selected as
+recipients are woken. A role name in message text is ordinary shared content.
+The shipped syntax is in the [CLI reference](../reference/cli.md).
 
-**Accept when:** broadcast visibility is preserved, mentions reach their
-targets, and ordinary discussion does not create an unbounded wake loop.
+**Accept when:** broadcast visibility is preserved, only selected recipients
+are woken, and ordinary discussion does not wake Agents.
 
 ### S7: Review and revision continue in one Room
 
 **When** a builder asks for review, **the runtime can** start or notify a
 reviewer through hc in the same project Room. The reviewer and builder share
-the Room history and address one another directly with mentions. A failed
-verdict can mention the builder to continue work in that Room.
+the Room history and address one another by explicitly selecting recipients.
+A failed verdict can explicitly address the builder to continue work in that
+Room.
 
 **Accept when:** the reviewer is independent, the evidence and verdict live in
 the shared Room, and a requested revision can continue without a human moving
@@ -151,8 +150,9 @@ once execution of external side effects.
   the [integration](../architecture/collaboration.md).
 - Reusable role definitions and Room role assignments support discovery and
   routing; they do not authenticate a signature or create a permission boundary.
-- Normal messages are visible to roles in the Room. The proposed default is
-  not to start every offline role; a mention expresses an intended wake.
+- Normal messages are visible to roles in the Room, but only explicitly
+  selected recipients are woken; a role name in text is not a routing
+  instruction.
 - Implementation status and remaining evidence are tracked in
   [implementation status](../architecture/status.md).
 

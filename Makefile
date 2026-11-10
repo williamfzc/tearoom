@@ -1,6 +1,6 @@
 CARGO   ?= cargo
 BIN     := bin
-RUST_MANIFEST := rust/Cargo.toml
+RUST_MANIFEST := Cargo.toml
 RELEASE_TAG ?= v0.0.0-dev
 RELEASE_DIR ?= dist/releases/$(RELEASE_TAG)
 RELEASE_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
@@ -12,15 +12,15 @@ all: build
 build: cli
 
 cli:
-	$(CARGO) build --locked --manifest-path $(RUST_MANIFEST) --target-dir rust/target
+	$(CARGO) build --locked --manifest-path $(RUST_MANIFEST)
 	mkdir -p $(BIN)
 	# macOS kills an ad-hoc signed binary overwritten in place; replace by
 	# rename so the executable lands on a fresh inode every build.
-	cp rust/target/debug/tearoom $(BIN)/.tearoom.tmp
+	cp target/debug/tearoom $(BIN)/.tearoom.tmp
 	mv -f $(BIN)/.tearoom.tmp $(BIN)/tearoom
 
 test:
-	$(CARGO) test --locked --manifest-path $(RUST_MANIFEST) --target-dir rust/target
+	$(CARGO) test --locked --manifest-path $(RUST_MANIFEST)
 
 # The evaluation set must stay a bidirectional story<->proof map: a marker
 # removed from a script or a row removed from the registry fails the check.

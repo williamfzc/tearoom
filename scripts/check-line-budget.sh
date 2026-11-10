@@ -14,7 +14,7 @@
 # the same review as a rule change, because it is one.
 #
 # Test batteries grow with the surface they prove and are governed by review.
-# The browser face under rust/src/cli/web is production source too; count its
+# The browser face under src/cli/web is production source too; count its
 # assets so a growing page cannot slip past the same budget.
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -38,7 +38,7 @@ bad = []
 
 over = {}
 FRONTEND = {".css", ".html", ".js", ".svg"}
-for p in sorted(pathlib.Path("rust/src").rglob("*")):
+for p in sorted(pathlib.Path("src").rglob("*")):
     if p.suffix != ".rs" and p.suffix not in FRONTEND:
         continue
     lines = p.read_text(encoding="utf-8").splitlines()
