@@ -58,10 +58,7 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
             if args.get("agent-type").trim().is_empty() {
                 bail!("--agent-type is required");
             }
-            let extra = args.repeated.get("arg").cloned().unwrap_or_default();
-            let argv = std::iter::once(command.to_owned())
-                .chain(extra)
-                .collect::<Vec<_>>();
+            let argv = args.argv("command", "arg");
             let role = Role {
                 description: args.get("description").trim().into(),
                 agent_type: args.get("agent-type").trim().into(),
@@ -84,8 +81,7 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
                 bail!("--name is required");
             }
             let has_command = args.values.contains_key("command");
-            let extra = args.repeated.get("arg").cloned().unwrap_or_default();
-            if !extra.is_empty() && !has_command {
+            if args.repeated.contains_key("arg") && !has_command {
                 bail!("--arg requires --command during role update");
             }
             let updates_definition = [
@@ -120,9 +116,7 @@ pub(super) fn role_command(args: &[String]) -> Result<()> {
                     if command.trim().is_empty() {
                         bail!("--command must not be empty");
                     }
-                    let argv = std::iter::once(command.to_owned())
-                        .chain(extra.clone())
-                        .collect::<Vec<_>>();
+                    let argv = args.argv("command", "arg");
                     restart_required |= role.command != argv;
                     role.command = argv;
                 }

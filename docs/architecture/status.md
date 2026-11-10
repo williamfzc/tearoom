@@ -27,9 +27,14 @@ executable proof in [../evaluations.md](../evaluations.md).
   one-time migration belongs to the final Go release (tag `go-final`).
 - `rust/src/cli.rs` and `cli/` expose `room init --name/--parent`,
   `room delete --confirm`, `send`, `read` (`--after`, `--tail`, `--subtree`),
-  `tree`, `skill`, and the `role`/`collab` collaboration surface. Membership,
-  credentials, the hosted profile, and the watch/HTTP faces are deleted
-  (2026-11-09 concept pass; see [../log.md](../log.md)).
+  `tree`, `skill`, `web`, and the `role`/`collab` collaboration surface.
+  Membership, credentials, the hosted profile, and the watch/HTTP faces are
+  deleted (2026-11-09 concept pass; see [../log.md](../log.md)).
+- `tearoom web` serves an optional loopback browser face for Room navigation,
+  record history, and addressed text append. It uses the same Store and
+  message composition as the CLI and binds only `127.0.0.1`; the `cli_web`
+  black-box test proves loopback host checks, the page token, cross-origin
+  refusal, history reads, and addressed sends under `make test`.
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 
@@ -43,8 +48,12 @@ are tracked below. The delivery contract is in [collaboration.md](collaboration.
 |---|---|
 | Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | One unattended Pi–Claude build-and-review journey passed; next-day resume and the complete acceptance suite remain open. See [../evaluations.md](../evaluations.md) |
 | Wake journey S4 | The hc dispatcher delivers addressed records to Room-role panels; unattended operation requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host. See [agent integration](../reference/agent-integration.md) for setup and [evaluations](../evaluations.md) for evidence |
+| Wake content | The current prompt instructs the Agent to read the Room; direct delivery of new Room messages is not implemented. The intended boundary is in [collaboration delivery](collaboration.md#message-and-addressing). |
+| Agent autonomy | Every wake repeats the role instructions and directs the Agent to end its turn after a handoff and reply to the triggering record. A submitted delivery blocks later deliveries to that Room-role until a matching reply; a panel finishing alone does not release it. This couples queue progress to an Agent's reply convention rather than just delivery and lifecycle. |
+| Wake addressing | Without an explicit `--to`, the CLI treats configured `@role` mentions in message text as recipients. An incidental mention therefore wakes that role; selecting only intentional recipients is not guaranteed. |
 | Group collaboration | Local role definitions, Room rosters, addressed records and an hc dispatcher are implemented; one unattended two-Agent journey passed. Signatures are unverified, so independent review cannot be established from Room records alone; the evidence includes both Agent panels. See [../evaluations.md](../evaluations.md) |
-| Cross-product collaboration | Not yet proven on the current direct-command path: the earlier Pi–Trae run used the template launch concept, which was removed. Claude Code and DSH still lack hc lifecycle status or an interactive profile here. See [../evaluations.md](../evaluations.md) |
+| Conversation continuity and replacement | An existing ready hc panel receives later messages and a busy panel queues them; a native interactive DSH terminal kept one conversation across two dispatched wakes in a Room. `collab restart` replaces a panel explicitly, but a replaced panel is a new conversation: Tearoom stores no session identity and refuses to guess from "most recent session" flags, because several roles can share a working directory and could reach each other's conversation. Recovery is record-based: the wake prompt has the Agent read the Room. A newly started terminal UI can report `idle` before its own setup ends, leaving that delivery uncertain. See [collaboration delivery](collaboration.md#conversation-continuity-and-replacement) |
+| Cross-product collaboration | Not yet proven on the current direct-command path: the earlier Pi–Trae run used the template launch concept, which was removed. Claude Code lacks reliable hc lifecycle status here. A community DSH terminal profile received two Tearoom deliveries in one Room and needed its first-run screens cleared by an operator; other Agents and an unattended journey are unproven. See [../evaluations.md](../evaluations.md) |
 | Herdr visibility | Each Room now uses a separate named local Herdr session, with role panels in tabs. Two real Rooms and DSH roles were checked; Herdr's independently selected remote machine can still obscure the local view. Restart limits are in [agent integration](../reference/agent-integration.md#herdr-session-per-room) and evidence is in [evaluations](../evaluations.md) |
 
 ## Removed with the v1 model (2026-11-07)

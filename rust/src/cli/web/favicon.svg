@@ -1,0 +1,5 @@
+<!-- Local browser face: a plain Tearoom mark for the browser tab. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#17191a"/>
+  <path d="M9 9h14v3.5h-5.2V23h-3.6V12.5H9z" fill="#fff"/>
+</svg>

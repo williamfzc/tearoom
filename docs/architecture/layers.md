@@ -17,7 +17,7 @@ The Rust implementation has these boundaries:
 | Persistence | `rust/src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
 | Application | `rust/src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
 | Outside | `hc.rs`, `herdr/` | hc JSON-RPC and Herdr command adapters |
-| Outside | `rust/src/cli.rs`, `cli/`, `main.rs` | Command parsing, output, and process entry |
+| Outside | `rust/src/cli.rs`, `cli/`, `cli/web*`, `main.rs` | Command parsing, output, the optional loopback browser face, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
 uses the domain types; the CLI translates commands. The kernel never imports a
@@ -64,7 +64,11 @@ v1 commands `room join`, `room credential`, and the hosted `server` profile
 are deleted; no alias keeps them alive. The 2026-11-09 concept pass removed
 the watch and HTTP faces with the notification concept (see
 [../log.md](../log.md)); the loopback `server start` and `TEAROOM_SERVER`
-client mode died with it.
+client mode died with it. The 2026-11-10 browser face is a new optional view,
+not a restoration of that remote-capable server: it binds only loopback,
+carries a page token, and owns no product or storage invariant; its loopback,
+token, and origin rules are transport policy. It reads through the Store and
+appends through the CLI's shared message composition.
 
 ## Collaboration runtime boundary
 

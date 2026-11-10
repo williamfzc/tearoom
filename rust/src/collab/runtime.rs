@@ -49,6 +49,17 @@ pub struct PanelRequest<'a> {
 
 pub trait Runtime {
     fn status(&self, panel: &str) -> Result<PanelStatus>;
+    /// Validate a role launch and start its panel without a task.
+    fn launch(
+        &self,
+        name: &str,
+        room: &str,
+        role_name: &str,
+        role: &Role,
+        directory: &Path,
+    ) -> Result<()>;
+    /// End a live panel; its next delivery starts the configured command again.
+    fn stop(&self, panel: &str) -> Result<()>;
     fn ensure(&self, request: &PanelRequest<'_>) -> Result<SubmitResult>;
     fn submit(&self, panel: &str, task: &str, status: PanelStatus) -> Result<SubmitResult>;
 }
@@ -85,20 +96,42 @@ impl Runtime for HcRuntime {
         })
     }
 
-    fn ensure(&self, request: &PanelRequest<'_>) -> Result<SubmitResult> {
-        let role = request.role;
-        if role.command.is_empty() {
+    fn launch(
+        &self,
+        name: &str,
+        room: &str,
+        role_name: &str,
+        role: &Role,
+        directory: &Path,
+    ) -> Result<()> {
+        let argv = &role.command;
+        if argv.is_empty() {
             bail!("role has no command");
         }
-        if role.agent_type == "codex" && !role.command.iter().any(|a| a == "--no-daemon") {
+        if role.agent_type == "codex" && !argv.iter().any(|a| a == "--no-daemon") {
             bail!("Codex command must include --no-daemon");
         }
-        let argv = role.command.clone();
-        let room_label = stable_label(request.room);
+        let room_label = stable_label(room);
         self.call(
             "terminal.run",
-            json!({"argv":argv,"name":request.name,"cwd":request.directory,"no_parent":true,
-            "labels":{"tearoom.room":room_label,"tearoom.role":request.role_name}}),
+            json!({"argv":argv,"name":name,"cwd":directory,"no_parent":true,
+            "labels":{"tearoom.room":room_label,"tearoom.role":role_name}}),
+        )?;
+        Ok(())
+    }
+
+    fn stop(&self, panel: &str) -> Result<()> {
+        self.call("terminal.kill", json!({"terminal":panel}))?;
+        Ok(())
+    }
+
+    fn ensure(&self, request: &PanelRequest<'_>) -> Result<SubmitResult> {
+        self.launch(
+            request.name,
+            request.room,
+            request.role_name,
+            request.role,
+            request.directory,
         )?;
         let status = self.status(request.name)?;
         if !matches!(status, PanelStatus::Idle | PanelStatus::Done) {

@@ -81,8 +81,9 @@ cannot carry it. Launch details and integration state are fields, not peers.
   acknowledgement; the delivery runtime tracks its own progress separately.
 - **Idempotent retries.** A caller may attach an idempotency key so an
   uncertain retry returns the original record instead of a duplicate.
-- **Durable by default.** Context lives in the workspace, not in any session,
-  process, or tool transcript.
+- **Durable by default.** Shared Room history lives in the workspace and does
+  not depend on any session, process, or tool transcript. An Agent's own
+  conversation and context remain with its tool.
 - **One conversation per Room.** Every collaborator role configured for a Room
   reads and writes the same ordered record stream; roles do not get private
   streams within that Room.
@@ -97,6 +98,17 @@ boundary:
   definition (including its command, working directory, and role instructions)
   and a Room-scoped runtime instance bound to an hc panel. Reusing a definition
   in another Room creates a separate instance there.
+- A Room-role instance continues its existing Agent conversation across wakes;
+  the first wake creates one when none exists. A busy instance queues addressed
+  messages. A panel is a view and transport for that conversation, not proof of
+  its continuity. Recovery and intentional replacement must not silently start
+  a fresh conversation as though it continued the old one. The runtime contract
+  and limitations are in [collaboration delivery](architecture/collaboration.md).
+- Tearoom routes addressed messages, queues delivery, and manages role
+  lifecycles. It does not decide how an Agent interprets work, manages or
+  compresses its context, or reaches a verdict. On a wake, deliver the new
+  Room messages directly; the Agent may read Room history when it needs to.
+  Delivery is not proof that the Agent understood or completed the work.
 - Each Room should open in its own named Herdr session. Roles assigned to that
   Room appear as tabs within the session, so viewing one Room does not mix its
   collaborators with other Rooms. Herdr is an optional view: Room history
@@ -131,7 +143,10 @@ boundary:
 ## Command surface
 
 The CLI must support configuring and discovering collaborators, creating a
-Room, sending and reading messages, and seeing the Room structure. The
+Room, sending and reading messages, and seeing the Room structure. An optional
+local browser face is a view over the same Store and message rules: it
+navigates Rooms, reads history, and appends messages, and it binds only to the
+loopback address. It adds no entity, identity, or remote-serving boundary. The
 [CLI reference](reference/cli.md) documents what ships, including lower-frequency
 operations; inclusion there does not make an operation essential to the main
 journey.

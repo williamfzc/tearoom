@@ -99,7 +99,7 @@ PY
     for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64; do
         os=${target%-*}; arch=${target#*-}; archive=$(archive_name "$os" "$arch")
         [ -f "$output/$archive" ] || { echo "release: missing $archive" >&2; return 1; }
-        entries=$(tar -tzf "$output/$archive" | sed 's#/$##' | sort)
+        entries=$(tar -tzf "$output/$archive" | sed 's#/$##' | LC_ALL=C sort)
         expected=$(printf 'LICENSE\nTHIRD_PARTY_NOTICES\ntearoom\n')
         [ "$entries" = "$expected" ] || { echo "release: $archive must contain exactly LICENSE, THIRD_PARTY_NOTICES, and tearoom" >&2; return 1; }
         python3 - "$output/$archive" "$target" <<'PY' || return 1

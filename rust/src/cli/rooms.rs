@@ -1,7 +1,7 @@
 //! Room creation and record commands at the CLI boundary.
 use super::roles::room_roles;
 use super::room_delete::delete_room_command;
-use super::{open, parse, print_json, resolve, room_herdr};
+use super::{append_text, boundary, open, parse, print_json, resolve, room_herdr, signature};
 use crate::collab::{Config, Message, RecordRef, RoomRoles};
 use crate::core::{AppendRequest, Room};
 use crate::mentions;
@@ -121,84 +121,51 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
     }
     let store = open()?;
     let room = resolve(&store, args.get("room"))?;
-    let author = if args.get("as").trim().is_empty() {
-        std::env::var("TEAROOM_ACTOR")
-            .unwrap_or_default()
-            .trim()
-            .to_owned()
-    } else {
-        args.get("as").trim().into()
-    };
-    let record = Config::with_lock(store.root(), |config| {
-        let content = if !raw.is_empty() {
-            if !args.get("to").is_empty() || !args.get("reply-to").is_empty() {
-                bail!("--to and --reply-to require text content");
-            }
-            if serde_json::from_str::<Message>(raw)
-                .is_ok_and(|message| !message.mentions.is_empty())
-            {
-                bail!("--json cannot address roles; use text with --to");
-            }
-            raw.to_owned()
-        } else {
-            let plain = if !text.is_empty() { text } else { &positional };
-            let roster = config.rooms.get(&room).map(|binding| binding.roles.clone());
-            let names = mentions::resolve(plain, args.get("to"), &room, roster.as_deref())
-                .map_err(|e| anyhow!(e))?;
-            let reply = if args.get("reply-to").is_empty() {
-                None
-            } else {
-                let (name, seq) = args
-                    .get("reply-to")
-                    .split_once('#')
-                    .ok_or_else(|| anyhow!("invalid --reply-to"))?;
-                let seq: u64 = seq.parse().map_err(|_| anyhow!("invalid --reply-to"))?;
-                if name.trim().is_empty() || seq == 0 {
-                    bail!("invalid --reply-to");
-                }
-                Some(RecordRef {
-                    room: name.trim().into(),
-                    seq,
-                })
-            };
-            let json = if names.is_empty() && reply.is_none() {
-                serde_json::to_string(plain)?
-            } else {
-                serde_json::to_string(&Message {
-                    text: plain.into(),
-                    mentions: names,
-                    reply_to: reply,
-                })?
-            };
-            json.replace('&', "\\u0026")
-                .replace('<', "\\u003c")
-                .replace('>', "\\u003e")
-                .replace('\u{2028}', "\\u2028")
-                .replace('\u{2029}', "\\u2029")
-        };
+    let author = signature(args.get("as"));
+    let record = if !raw.is_empty() {
+        if !args.get("to").is_empty() || !args.get("reply-to").is_empty() {
+            bail!("--to and --reply-to require text content");
+        }
+        if serde_json::from_str::<Message>(raw).is_ok_and(|message| !message.mentions.is_empty()) {
+            bail!("--json cannot address roles; use text with --to");
+        }
         store.append(
             &room,
             &author,
             AppendRequest {
-                content: &content,
+                content: raw,
                 idempotency_key: args.get("idempotency-key"),
             },
-        )
-    })?;
-    print_json(&record)
-}
-fn boundary(value: &str) -> Result<u64> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(0);
-    }
-    let Some(rest) = value.strip_prefix('e') else {
-        bail!("invalid --after {value:?}: use e<seq>");
+        )?
+    } else {
+        let plain = if !text.is_empty() { text } else { &positional };
+        let reply = if args.get("reply-to").is_empty() {
+            None
+        } else {
+            let (name, seq) = args
+                .get("reply-to")
+                .split_once('#')
+                .ok_or_else(|| anyhow!("invalid --reply-to"))?;
+            let seq: u64 = seq.parse().map_err(|_| anyhow!("invalid --reply-to"))?;
+            if name.trim().is_empty() || seq == 0 {
+                bail!("invalid --reply-to");
+            }
+            Some(RecordRef {
+                room: name.trim().into(),
+                seq,
+            })
+        };
+        append_text(
+            &store,
+            &room,
+            &author,
+            plain,
+            args.get("to"),
+            reply,
+            args.get("idempotency-key"),
+        )?
     };
-    if rest.is_empty() || !rest.bytes().all(|c| c.is_ascii_digit()) {
-        bail!("invalid --after {value:?}: use e<seq>");
-    }
-    Ok(rest.parse()?)
+    print_json(&record)
 }
 fn subtree(rooms: &[Room], root: &str) -> Result<Vec<String>> {
     if !rooms.iter().any(|r| r.name == root) {

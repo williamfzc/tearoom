@@ -103,6 +103,34 @@ that ambiguous case is currently provided.
 When the dispatcher or Herdr is unavailable, the last displayed status can be
 stale. A visible status or successful attachment does not prove task completion.
 
+## Conversation continuity and panel replacement
+
+An interactive Agent keeps its conversation in its own process. While its panel
+stays alive, every later wake is typed into that same conversation; the
+dispatcher does not restart the Agent per record. Each wake prompt also asks
+the Agent to read the Room, so a conversation that was lost can rebuild its
+context from records.
+
+A missing panel is started again with the role's configured command on the
+next delivery. That process starts a fresh Agent conversation. Tearoom does
+not record or pass a session identifier, and it does not use a "continue the
+most recent conversation" flag on the Agent's behalf: the Agents name
+continuation differently, and with several roles sharing one working directory
+the most recent conversation may belong to another role. A restarted role is
+therefore a new instance that reconstructs its state from Room records.
+
+`tearoom collab restart --room <room> --role <role>` replaces a panel on
+purpose, for example after changing a role command. It refuses while the panel
+is working and, without `--confirm`, while a submitted or uncertain delivery
+still awaits inspection. After the restart, check the new panel: a terminal UI
+can show a sign-in screen, first-run guide, or session list while hc reports
+`idle`. In that state hc does not start a turn and Tearoom records the delivery
+as uncertain. Finish or skip the setup, leave the panel at a chat prompt, then
+retry the delivery as described under [startup and observed
+readiness](#startup-and-observed-readiness). The
+[delivery contract](../architecture/collaboration.md#conversation-continuity-and-replacement)
+owns these rules.
+
 ## Message routing
 
 Address a configured Room role in message text or with `--to`, then run the

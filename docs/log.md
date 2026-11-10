@@ -8,6 +8,96 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-10 — Keep Agent context and decisions with the Agent
+
+Tearoom owns Room routing, delivery and role lifecycle, not an Agent's context
+management or work decisions. Wakes should carry new Room messages directly;
+the Agent can read more history when needed. The current prompt and queue gaps
+are recorded in [status](architecture/status.md#open-work), and the boundary is
+in [product](product.md#conversation-and-runtime-policy).
+
+## 2026-11-10 — Keep dispatch running during a short lock collision
+
+Manual delivery operations and dispatcher scans share a state lock. A scan
+previously treated a busy lock as fatal and stopped the dispatcher, leaving
+later handoffs undelivered. A busy scan now waits for its next iteration;
+other errors still surface. A separate lifetime lock refuses a second
+dispatcher, since the short-lived state lock alone did not establish a single
+running process. The contracts are in [collaboration delivery](architecture/collaboration.md#delivery-and-recovery)
+and [storage layout](reference/storage-layout.md#the-files).
+
+## 2026-11-10 — Refuse unproven conversation recovery
+
+A static continuation command was implemented and then removed. It cannot name
+the per-instance session that `--resume <id>`-style Agents require, and every
+"continue the most recent conversation" flag (`claude -c`, `codex resume
+--last`, `pi -c`, bare `dsh tui --resume`) selects by recency in the working
+directory. Several Room-roles share one workspace, so a restarted role could
+attach to another role's conversation while appearing to continue its own.
+That is worse than a fresh start, which at least rebuilds only from Room
+records. Tearoom therefore starts the configured command after a lost panel,
+records the delivery against that new process, and claims no continuity.
+This is a current implementation limitation against the continuing-conversation
+decision below, not a replacement of that product requirement.
+Reopen when an Agent-independent way to bind and verify a conversation
+identity exists and is proven with two roles in one workspace; per-Agent
+session flags alone do not cover every Agent used here. The contract is in
+[collaboration delivery](architecture/collaboration.md#conversation-continuity-and-replacement)
+and [cli.md](reference/cli.md#delivery-boundary); evidence is in
+[evaluations](evaluations.md).
+
+## 2026-11-10 — Replace a Room-role panel explicitly
+
+`tearoom collab restart` stops one Room-role panel and starts its configured
+command again, refusing while the panel is working and refusing, without
+`--confirm`, while a submitted or uncertain delivery still needs
+reconciliation. It is also how a changed role command reaches a running role.
+Tearoom still stores no conversation identifier and resumes nothing: a
+replacement starts the configured command as a new conversation, and a new
+Agent rebuilds context from Room records. This refuses a hidden panel swap
+during unreconciled work, and it refuses to promise continuity Tearoom cannot
+observe.
+A terminal UI can report `idle` before its own setup ends, so the first
+delivery to a replaced panel may be uncertain; that limit is recorded rather
+than papered over. The contract is in
+[collaboration delivery](architecture/collaboration.md#conversation-continuity-and-replacement)
+and [cli.md](reference/cli.md#delivery-boundary); evidence is in
+[evaluations](evaluations.md).
+
+## 2026-11-10 — Continue a Room-role conversation across wakes
+
+The owner chose a continuing Agent conversation per Room-role instance: the
+first wake creates it, later wakes deliver to it, and busy work queues. A panel
+is not the conversation itself. Replacing a panel must not silently replace
+the conversation; an intentional fresh conversation is explicit and follows
+reconciliation of pending work. This refuses treating every wake or missing
+panel as a fresh conversation. Reopen if a concrete Agent cannot resume or a
+replacement workflow needs a different recovery contract. The intended behavior
+and current gap are in [collaboration delivery](architecture/collaboration.md#conversation-continuity-and-replacement)
+and [status](architecture/status.md#open-work); this decision adds no product entity.
+
+## 2026-11-10 — Add a loopback browser face, not a hosted service
+
+A person asked for a small local browser interface over the existing Room
+tree: navigate Rooms, read their history, and send messages with explicit
+`@role` addresses. `tearoom web` now serves that view from the same binary and
+workspace. The page reads through the Store seam and appends through the same
+message composition as `send`, so address resolution, content encoding, and
+record ownership keep one implementation. It adds no product entity, stored read
+cursor, or write path.
+
+This does not restore the retired hosted HTTP face or reopen the hosted
+control-plane refusal. The listener binds only `127.0.0.1`; requests with a
+non-loopback `Host` are refused, the page carries a per-process random token
+for API calls, and cross-origin writes are refused. The page has a restrictive
+Content Security Policy and no CORS header. The contract is in
+[reference/cli.md](reference/cli.md#local-browser-interface), and the black-box
+`cli_web` test in `make test` proves the room state, history, addressed append,
+and rejected host/origin/token cases. The visual surface is deliberately
+plain: a neutral canvas, system UI type, a room rail, grouped messages, and a
+compact composer. Decorative variants were rejected; conversation remains the
+main surface.
+
 ## 2026-11-10 — Delete a leaf Room, and say "init" when creating
 
 `room delete --room <name> --confirm` removes a leaf Room with its record

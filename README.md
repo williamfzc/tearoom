@@ -51,6 +51,9 @@ TEAROOM_ACTOR=codex "$tearoom_bin" read --room implementation --tail 5
 - `tree` prints the skeleton: every root with its descendants.
 - `role` and `collab` configure Room collaborators and run the local hc
   dispatcher that delivers addressed records to Agent panels.
+- `tearoom web [--port <port>]` starts an optional loopback browser view of the
+  current workspace: Room navigation, history, and messages addressed to
+  configured roles. It prints its URL as JSON and runs until interrupted.
 
 This example shows Room records only; it does not start an Agent or perform a
 review. For collaborator setup and Herdr visibility, see the

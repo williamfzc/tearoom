@@ -21,5 +21,5 @@ realized; it is not a second product fact source. For executable proof, use
 
 The short version: `core` defines Room, Record, and the Store seam;
 persistence holds the tree and streams in workspace files; the CLI is the
-product interface. The [collaboration integration](collaboration.md) connects
+automation interface, with an optional loopback browser view. The [collaboration integration](collaboration.md) connects
 Room records to hc.

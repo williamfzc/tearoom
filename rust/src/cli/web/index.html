@@ -1,0 +1,75 @@
+<!doctype html>
+<!-- Local browser face: room rail, message history, and composer. -->
+<!-- The server replaces {{TOKEN}} with a per-process page token. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="tearoom-token" content="{{TOKEN}}">
+  <title>Tearoom</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/messages.css">
+  <link rel="stylesheet" href="/composer.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="rail" aria-label="Rooms">
+      <header class="rail-head">
+        <h1 class="wordmark">Tearoom</h1>
+        <span class="local">Local</span>
+        <button id="refresh" class="icon-button" type="button"
+                title="Refresh" aria-label="Refresh rooms and messages">↻</button>
+      </header>
+      <div class="rail-heading">
+        <span>Rooms</span>
+        <span id="room-count" class="count"></span>
+      </div>
+      <nav id="rooms" class="room-list" aria-label="Room tree"></nav>
+      <p id="room-status" class="rail-status" role="status" aria-live="polite"></p>
+    </aside>
+
+    <main class="conversation">
+      <section id="empty" class="empty">
+        <p>Select a room</p>
+      </section>
+
+      <section id="room-panel" class="room-panel" hidden>
+        <header class="conversation-head">
+          <button id="back" class="icon-button back" type="button"
+                  aria-label="Back to rooms">←</button>
+          <div class="conversation-title">
+            <h2 id="room-name"></h2>
+            <p id="room-meta"></p>
+          </div>
+          <p id="stream-status" class="stream-status" role="status"
+             aria-live="polite"></p>
+        </header>
+
+        <ol id="records" class="messages" aria-label="Room history"></ol>
+
+        <form id="composer" class="composer" autocomplete="off">
+          <div id="recipients" class="recipients" hidden>
+            <span class="to-label">To</span>
+            <div id="addresses" class="addresses"></div>
+          </div>
+          <label class="sr-only" for="text">Message</label>
+          <textarea id="text" name="text" rows="1" required
+                    placeholder="Message"></textarea>
+          <div class="composer-bar">
+            <label class="as-field">
+              <span>as</span>
+              <input id="author" name="author" type="text"
+                     placeholder="signature" aria-label="Signature, unverified">
+            </label>
+            <p id="compose-error" class="error" role="alert" hidden></p>
+            <button id="send" class="send" type="submit">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

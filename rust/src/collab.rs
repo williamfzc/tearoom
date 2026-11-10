@@ -45,6 +45,22 @@ pub struct Role {
     pub instructions: String,
 }
 
+impl Role {
+    /// The working directory the workspace root implies for this role.
+    pub fn directory(&self, root: &Path) -> Result<PathBuf> {
+        let workspace = fs::canonicalize(root.parent().context("workspace has no parent")?)?;
+        if self.directory.is_empty() {
+            return Ok(workspace);
+        }
+        let path = PathBuf::from(&self.directory);
+        Ok(if path.is_absolute() {
+            path
+        } else {
+            workspace.join(path)
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct RoomRoles {
     #[serde(default, deserialize_with = "null_default")]

@@ -2,6 +2,76 @@
 use std::path::Path;
 use std::process::Command;
 
+#[test]
+fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::tempdir().unwrap();
+    assert!(command(dir.path())
+        .args(["room", "init", "--name", "project"])
+        .status()
+        .unwrap()
+        .success());
+    let root = tearoom::store::Store::find(dir.path()).unwrap();
+    let held = tearoom::collab::dispatch_lock(&root).unwrap();
+    let mut first = command(dir.path())
+        .args(["collab", "run"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !root.join(".dispatcher.lock").exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(700));
+    let survived = first.try_wait().unwrap().is_none();
+    let mut second = command(dir.path())
+        .args(["collab", "run"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while second.try_wait().unwrap().is_none() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if second.try_wait().unwrap().is_none() {
+        let _ = second.kill();
+    }
+    let second = second.wait_with_output().unwrap();
+    drop(held);
+    let append = command(dir.path())
+        .args(["send", "--room", "project", "hello"])
+        .output()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut scanned = false;
+    while Instant::now() < deadline {
+        if let Ok(data) = std::fs::read_to_string(root.join("dispatch.json")) {
+            let state: serde_json::Value = serde_json::from_str(&data).unwrap();
+            if state["cursor"]["project"] == 1 {
+                scanned = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = first.kill();
+    let _ = first.wait();
+    assert!(
+        survived,
+        "dispatcher exited when the delivery lock was busy"
+    );
+    assert!(!second.status.success());
+    assert!(String::from_utf8_lossy(&second.stderr).contains("another Room dispatcher is running"));
+    assert!(append.status.success());
+    assert!(
+        scanned,
+        "dispatcher did not process the record after the lock was released"
+    );
+}
+
 /// A Tearoom command isolated from any Herdr session the developer may have open.
 fn command(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tearoom"));

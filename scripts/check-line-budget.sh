@@ -14,6 +14,8 @@
 # the same review as a rule change, because it is one.
 #
 # Test batteries grow with the surface they prove and are governed by review.
+# The browser face under rust/src/cli/web is production source too; count its
+# assets so a growing page cannot slip past the same budget.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,10 +37,15 @@ baseline_path = pathlib.Path("scripts/line-baseline.txt")
 bad = []
 
 over = {}
-for p in sorted(pathlib.Path("rust/src").rglob("*.rs")):
+FRONTEND = {".css", ".html", ".js", ".svg"}
+for p in sorted(pathlib.Path("rust/src").rglob("*")):
+    if p.suffix != ".rs" and p.suffix not in FRONTEND:
+        continue
     lines = p.read_text(encoding="utf-8").splitlines()
-    # Inline test modules are production-adjacent proof, not production source.
-    n = next((i for i, line in enumerate(lines) if line.strip() == "#[cfg(test)]"), len(lines))
+    n = len(lines)
+    if p.suffix == ".rs":
+        # Inline test modules are production-adjacent proof, not production source.
+        n = next((i for i, line in enumerate(lines) if line.strip() == "#[cfg(test)]"), len(lines))
     if n > BUDGET:
         over[p.as_posix()] = n
 

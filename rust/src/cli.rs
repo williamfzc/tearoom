@@ -4,16 +4,20 @@ mod roles;
 mod room_delete;
 mod room_herdr;
 mod rooms;
+mod web;
 
 use crate::collab::runtime::HcRuntime;
+use crate::collab::{Config, Message, RecordRef};
+use crate::core::{AppendRequest, Record};
 use crate::hc::HcClient;
+use crate::mentions;
 use crate::store::Store;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
+const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n  web       open the local browser interface\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
 
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -63,6 +67,7 @@ fn execute(args: &[String]) -> Result<()> {
         "send" => rooms::send_command(rest),
         "read" => rooms::read_command(rest),
         "tree" => rooms::tree_command(rest),
+        "web" => web::web_command(rest),
         _ => bail!("unknown command {command:?}"),
     }
 }
@@ -148,6 +153,12 @@ impl Args {
         }
         Ok(())
     }
+    fn argv(&self, program: &str, extra: &str) -> Vec<String> {
+        let extra = self.repeated.get(extra).cloned().unwrap_or_default();
+        std::iter::once(self.get(program).to_owned())
+            .chain(extra)
+            .collect()
+    }
     fn help(&self, text: &str) -> bool {
         if self.switches.contains("help") {
             println!("{text}");
@@ -178,4 +189,73 @@ fn resolve(store: &Store, room: &str) -> Result<String> {
             rooms.len()
         ),
     }
+}
+
+pub(super) fn boundary(value: &str) -> Result<u64> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(0);
+    }
+    let Some(rest) = value.strip_prefix('e') else {
+        bail!("invalid --after {value:?}: use e<seq>");
+    };
+    if rest.is_empty() || !rest.bytes().all(|c| c.is_ascii_digit()) {
+        bail!("invalid --after {value:?}: use e<seq>");
+    }
+    Ok(rest.parse()?)
+}
+
+fn signature(explicit: &str) -> String {
+    if explicit.trim().is_empty() {
+        std::env::var("TEAROOM_ACTOR")
+            .unwrap_or_default()
+            .trim()
+            .to_owned()
+    } else {
+        explicit.trim().into()
+    }
+}
+
+fn escape_content(json: String) -> String {
+    json.replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+}
+
+/// Append one text message, resolving explicit or body addresses against the
+/// Room roster. The CLI and the local browser face share this path so message
+/// encoding and roster rules have one owner.
+pub(super) fn append_text(
+    store: &Store,
+    room: &str,
+    author: &str,
+    text: &str,
+    to: &str,
+    reply_to: Option<RecordRef>,
+    idempotency_key: &str,
+) -> Result<Record> {
+    Config::with_lock(store.root(), |config| {
+        let roster = config.rooms.get(room).map(|binding| binding.roles.clone());
+        let names = mentions::resolve(text, to, room, roster.as_deref()).map_err(|e| anyhow!(e))?;
+        let json = if names.is_empty() && reply_to.is_none() {
+            serde_json::to_string(text)?
+        } else {
+            serde_json::to_string(&Message {
+                text: text.into(),
+                mentions: names,
+                reply_to,
+            })?
+        };
+        let content = escape_content(json);
+        store.append(
+            room,
+            author,
+            AppendRequest {
+                content: &content,
+                idempotency_key,
+            },
+        )
+    })
 }

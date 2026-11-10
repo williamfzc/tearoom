@@ -13,6 +13,8 @@ This is the local integration for the product and
 workflow has been exercised; wider acceptance remains open.
 The [implementation status](status.md) records what ships. The kernel owns
 Room history; this integration owns configuration, delivery and recovery.
+The [product boundary](../product.md#conversation-and-runtime-policy) leaves
+Agent context management and work decisions to the Agent and its tool.
 
 ## Roles and Room panels
 
@@ -26,12 +28,45 @@ Room creation may select role definitions; they can also be changed later. The r
 through the CLI and is routing configuration, not permission to read or write.
 One Room-role binding identifies one logical panel and at most one active hc
 terminal at a time. Different Rooms using the same definition have separate
-terminals and conversations. A panel may be created on demand; a lost terminal
-can be replaced without changing the Room-role identity. A CLI view should
+terminals and conversations. A panel may be created on demand; replacing a
+terminal does not itself replace or resume the Agent conversation. A CLI view should
 show the role name, description, agent type and observed availability, including
 unknown or blocked; it must not claim that an absent or unready panel is ready.
 Configuration and commands are documented in the
 [Agent integration guide](../reference/agent-integration.md).
+
+### Conversation continuity and replacement
+
+The [product policy](../product.md#conversation-and-runtime-policy) requires
+one continuing Agent conversation for each Room-role instance. On its first
+wake, start a conversation; later addressed messages go to that conversation,
+queued while it is busy. A persistent panel alone is insufficient if the
+program inside it starts a fresh conversation on each turn. Role definitions
+remain reusable across Rooms, but their conversation histories are separate.
+The current implementation starts a new conversation with each new panel;
+Tearoom does not bind or resume an Agent session identity.
+
+The product requires recovery of the existing conversation when supported,
+and visible reconciliation when its state is uncertain. The current automatic
+missing-panel path instead starts a new conversation; this is an implementation
+gap, not proven continuity. An intentional fresh conversation should be
+an explicit replacement of the Room-role instance, with the prior outcome and
+any pending delivery reconciled first. Room records remain the durable shared
+history for rebuilding context; conversation and panel identifiers are runtime
+integration state, not new product entities or Record fields.
+
+`tearoom collab restart --room <room> --role <role>` is that explicit
+replacement: it stops the live panel and starts the configured command again.
+It refuses while the panel is working and refuses, without `--confirm`, while
+a submitted or uncertain delivery still awaits reconciliation. A replacement
+is a new conversation: Tearoom stores no conversation identifier and does not
+resume one on the Agent's behalf, because the Agents name continuation
+differently and a "most recent" choice can reach another role's conversation.
+A restarted Agent can consult Room records; its context remains its own
+responsibility. A newly started Agent may report `idle` before its own setup is
+finished; the resulting delivery is uncertain and must be inspected rather
+than assumed delivered. See
+[implementation status](status.md#open-work).
 
 ## Message and addressing
 
@@ -43,8 +78,10 @@ validated. If an unknown role is found in a persisted record, the runtime
 reports an undeliverable target without changing the record or routing to
 another role.
 
-The recipient reads the Room record by room and sequence, rather than treating
-the prompt as shared history. Builder and reviewer work in the same Room; the
+The intended wake carries new Room messages directly; reading more history is
+the Agent's choice. This is not yet the shipped wake behavior: the current
+prompt asks the recipient to read the Room by room and sequence. The Room
+stream remains the shared history. Builder and reviewer work in the same Room; the
 reviewer is a different agent instance. A shared ancestor Room can carry
 coordination across branches, with the relevant roles configured there.
 
@@ -60,11 +97,14 @@ and target role. It persists delivery intents before moving its scan boundary;
 each intent then tracks its own outcome. Re-scanning must not create a second
 delivery for that key.
 Room-role dispatch is serialized, with later messages pending while that role
-is busy. A dedicated workspace lock admits one local dispatcher; another
-process must not dispatch until it holds that lock.
+is busy. A workspace lock admits one local dispatcher for its lifetime. A
+separate delivery-state lock serializes each scan with manual operations; when
+it is briefly busy, the dispatcher skips that scan and tries again on the next
+iteration. Other lock errors remain failures. Manual operations may still
+report a busy delivery-state lock and can be retried.
 
-For each directed message, resolve the configured role and its panel. A missing
-panel is started with its configured command and the Room and record reference;
+For each directed message, resolve the configured role and its panel. Currently
+a missing panel is started with its configured command and the Room and record reference;
 the integration checks hc's first-message result, since a created terminal does
 not prove that task was sent. An existing ready panel receives the reference
 through hc. A busy panel leaves the message pending. Never force input into a

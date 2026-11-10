@@ -24,7 +24,8 @@ workspace's local or versioned status is a repository policy; see the
   collaboration.json               reusable Role definitions and Room rosters
   collaboration.lock               serializes collaboration configuration updates
   dispatch.json                    durable hc delivery intents and read cursors
-  .dispatch.lock                   prevents concurrent dispatchers/resolution
+  .dispatcher.lock                 admits one running dispatcher per workspace
+  .dispatch.lock                   serializes delivery state changes
   herdr.json                       local Room-to-Herdr session and pane bindings
   herdr.lock                        serializes Herdr binding updates
   rooms/
@@ -68,8 +69,8 @@ refused with an incompatible-store error.
   routing roster. The roster routes addressed messages; it does not grant
   access to Room history or writes.
 - `dispatch.json` stores the delivery intents and per-Room read cursors used by
-  the local hc dispatcher. `.dispatch.lock` prevents a second dispatcher or a
-  concurrent manual resolution from changing that state.
+  the local hc dispatcher. `.dispatcher.lock` admits one running dispatcher;
+  `.dispatch.lock` serializes its state changes with manual operations.
 - `herdr.json` stores the local Herdr session, workspace and pane associations,
   including prior shared-session bindings when migrated. It is
   optional integration state; Room records remain usable if Herdr is absent.

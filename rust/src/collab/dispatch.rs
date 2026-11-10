@@ -21,7 +21,17 @@ impl<R: Runtime> Dispatcher<R> {
 
     pub fn pump(&self) -> Result<()> {
         let root = self.store.root();
-        let _lock = dispatch_lock(root)?;
+        let _lock = match dispatch_lock(root) {
+            Ok(lock) => lock,
+            Err(error)
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::WouldBlock) =>
+            {
+                return Ok(())
+            }
+            Err(error) => return Err(error),
+        };
         let mut state = DispatchState::load(root)?;
         state.recover_submitting();
         state.save(root)?;
@@ -141,17 +151,7 @@ impl<R: Runtime> Dispatcher<R> {
         let room_arg = quote(&room);
         let task = format!("You are the {role_name} role only. Do not perform, impersonate, or write under any other role, and do not review your own work. After handing off to another role, end your turn and wait. Use the Tearoom CLI at {cli}. Read Room {room_arg} with {cli} read --room {room_arg}. Handle record e{seq} there. Write your result or blocker into that same Room with --as {role_name} and --reply-to {room_arg}#{seq} (for example: {cli} send --room {room_arg} --as {role_name} --reply-to {room_arg}#{seq} --text 'done: ...'). The author label is a collaboration convention, not authenticated identity.");
         let task = format!("{}\n\n{task}", role.instructions).trim().to_owned();
-        let workspace = std::fs::canonicalize(root.parent().context("workspace has no parent")?)?;
-        let dir = if role.directory.is_empty() {
-            workspace
-        } else {
-            let path = PathBuf::from(&role.directory);
-            if path.is_absolute() {
-                path
-            } else {
-                workspace.join(path)
-            }
-        };
+        let dir = role.directory(root)?;
         state.intents[i].deliveries[j].state = DeliveryState::Submitting;
         state.intents[i].deliveries[j].error.clear();
         state.save(root)?; // Durable before any hc side effect.
@@ -306,8 +306,14 @@ mod tests {
         fn status(&self, _: &str) -> Result<PanelStatus> {
             Ok(PanelStatus::Idle)
         }
+        fn launch(&self, _: &str, _: &str, _: &str, _: &Role, _: &std::path::Path) -> Result<()> {
+            unreachable!("dispatch tests reach submit through an idle panel")
+        }
+        fn stop(&self, _: &str) -> Result<()> {
+            unreachable!("dispatch tests do not stop panels")
+        }
         fn ensure(&self, _: &PanelRequest<'_>) -> Result<SubmitResult> {
-            unreachable!()
+            unreachable!("dispatch tests reach submit through an idle panel")
         }
         fn submit(&self, _: &str, _: &str, _: PanelStatus) -> Result<SubmitResult> {
             assert_eq!(
@@ -369,6 +375,13 @@ mod tests {
             fail,
         };
         (temp, Dispatcher { store, runtime })
+    }
+
+    #[test]
+    fn lock_errors_other_than_contention_are_not_ignored() {
+        let (_temp, dispatcher) = setup(false);
+        std::fs::create_dir(dispatcher.store.root().join(".dispatch.lock")).unwrap();
+        assert!(dispatcher.pump().is_err());
     }
 
     #[test]
@@ -450,6 +463,19 @@ mod tests {
         impl Runtime for Trace {
             fn status(&self, _: &str) -> Result<PanelStatus> {
                 Ok(self.status.get())
+            }
+            fn launch(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+                _: &Role,
+                _: &std::path::Path,
+            ) -> Result<()> {
+                unreachable!("the trace overrides ensure")
+            }
+            fn stop(&self, _: &str) -> Result<()> {
+                unreachable!("dispatch tests do not stop panels")
             }
             fn ensure(&self, request: &PanelRequest<'_>) -> Result<SubmitResult> {
                 self.prompts.borrow_mut().push(request.task.to_owned());

@@ -20,6 +20,7 @@ timestamp: 2026-11-07
 Agents should branch on the documented code rather than parse prose. Code `4`
 must never be treated as success because workspace state is unknown.
 
-This CLI has no HTTP interface. Executable proof belongs in
+The local browser face (`tearoom web`) returns HTTP status codes; they do not
+replace these command exit codes. Executable proof belongs in
 [evaluations.md](../evaluations.md). No legacy exit class is reserved for
 compatibility.

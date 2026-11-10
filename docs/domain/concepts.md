@@ -44,8 +44,8 @@ A Record is one immutable entry in a Room's stream:
 - `seq`, the dense position inside its Room and its replay address;
 - `author`, the signature — an unverified label;
 - `at`, assigned when the record is accepted;
-- `content`, arbitrary valid JSON — plain text sent through the CLI is encoded
-  as a JSON string.
+- `content`, arbitrary valid JSON — plain text sent through the CLI or the
+  local browser face is encoded as a JSON string.
 
 Every Room owns its own stream; the streams of different Rooms are
 independent, and a child Room's first record is `seq` 1 regardless of its

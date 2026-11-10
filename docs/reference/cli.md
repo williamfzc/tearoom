@@ -9,7 +9,7 @@ timestamp: 2026-11-10
 
 # CLI reference
 
-The CLI is Tearoom's top-level product interface. This page is its only command
+The CLI is Tearoom's top-level automation interface. This page is its only command
 contract. Implementation gaps belong in [status.md](../architecture/status.md),
 and complete user journeys belong in [evaluations.md](../evaluations.md).
 
@@ -30,11 +30,13 @@ tearoom role show --name <name>
 tearoom collab run
 tearoom collab deliveries
 tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]
+tearoom collab restart --room <room> --role <role> [--confirm]
 tearoom send [--room <room>] <text> [--as <signature>] [--to @role,...] [--reply-to <room>#<seq>] [--idempotency-key <key>]
 tearoom send [--room <room>] --text <text> [--as <signature>] [--to @role,...] [--reply-to <room>#<seq>] [--idempotency-key <key>]
 tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key <key>]
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
+tearoom web [--port <port>]
 tearoom skill
 tearoom --version
 ```
@@ -160,6 +162,30 @@ main-line
 └── review
 ```
 
+### Local browser interface
+
+`tearoom web [--port <port>]` starts a browser interface for the current
+workspace and prints one JSON object with its `url`, for example
+`{"url":"http://127.0.0.1:8787/"}`. The default port is `0`, so the operating
+system chooses an unused port. The command runs until interrupted.
+
+The page has three jobs: navigate the Room tree, read a Room's ordered record
+stream, and append text messages with optional `@role` addresses. It reads
+through the same Store seam and appends through the same message composition
+as `send`; it does not edit records, move Rooms, or persist a read cursor. The
+JSON endpoints under `/api/` are an implementation detail of this local face,
+not a second public contract.
+
+The listener binds only `127.0.0.1`. Every request must carry a loopback
+`Host`; the page carries a per-process random token in a meta tag, and API
+requests must present that token in `X-Tearoom-Token`. Writes also refuse a
+cross-origin `Origin` or `Sec-Fetch-Site` value. The page is served with a
+restrictive Content Security Policy and cannot be framed. There is no CORS
+header and no remote mode; this is not a hosted control plane. The token is a
+browser CSRF boundary, not admission: it does not authenticate a process or a
+signature. Messages remain shared Room history, and the signature remains an
+unverified label.
+
 ### Agent guide
 
 `tearoom skill` prints the orientation guide carried by the binary: the room
@@ -190,6 +216,27 @@ routing; `collab run` starts the dispatcher and `collab deliveries` prints its
 durable delivery intents. They do not wake Agents by themselves. See
 [collaboration delivery](../architecture/collaboration.md) for the delivery
 contract and [status.md](../architecture/status.md) for what ships.
+
+Only one `collab run` may operate in a workspace at a time. A temporary
+collision with a manual delivery operation does not stop it: the dispatcher
+tries the scan again on its next iteration.
+
+`collab restart --room <room> --role <role>` replaces one Room-role panel: it
+stops the live panel, starts the role's configured command again, and prints
+the observed status. It refuses while the panel is working, and it refuses
+while that Room-role has a submitted or uncertain delivery unless `--confirm`
+is given; inspect those records first. It is also how a changed role command
+reaches an already-running role.
+
+A replaced panel is a new Agent conversation, not a continuation: Tearoom
+stores no session identifier and does not guess one from the Agent's
+"most recent session" flag, because several roles can share a working
+directory. The next wake tells the Agent to read the Room, which is the
+durable history. A newly started terminal UI may also show its own sign-in,
+setup guide, or session list while hc still reports `idle`; hc then does not
+start a turn and the delivery becomes uncertain. Open the panel and leave it
+at its prompt before relying on the next delivery. See the
+[continuity and replacement contract](../architecture/collaboration.md#conversation-continuity-and-replacement).
 
 Codex roles must use `--no-daemon`. Agents that do not report a reliable hc
 status remain pending after their first turn; the dispatcher does not infer
