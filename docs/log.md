@@ -8,6 +8,14 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-10 — Simplify the local conversation view
+
+The local browser view now gives the room list and conversation a quieter
+messaging layout. Recipient selection opens on demand, while message details
+and accessible record references remain available. The Store and delivery
+contracts are unchanged. The browser checks are recorded in
+[evaluations](evaluations.md#hand-run-evidence).
+
 ## 2026-11-10 — Put the Rust package at the repository root
 
 Tearoom has one Rust package. Its manifest, source and tests now live at the

@@ -1,173 +1,117 @@
-/* Local browser face: recipients, composer, signature, and send control. */
-/* It composes text only; the same server-side message path as `send` appends. */
+/* A compact message composer with recipient and author controls at hand. */
 
 .composer {
   width: calc(100% - 48px);
-  max-width: 812px;
-  margin: 0 auto 18px;
+  max-width: 760px;
+  margin: 0 auto max(16px, env(safe-area-inset-bottom));
   flex: none;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border: 1px solid #d8d8dd;
+  border-radius: 22px;
   background: var(--canvas);
-  padding: 8px 8px 8px 12px;
-  box-shadow: 0 1px 2px rgba(23, 25, 26, 0.05);
+  padding: 7px 8px 7px 15px;
+  box-shadow: 0 1px 3px rgba(28, 28, 30, .07);
 }
-
-.composer:focus-within {
-  border-color: #cfcfcb;
-}
-
+.composer:focus-within { border-color: #b7b7bf; }
 .recipients {
   display: flex;
   align-items: center;
-  gap: 7px;
-  min-height: 24px;
-  margin: 0 2px 6px 0;
-  padding-bottom: 6px;
+  min-height: 30px;
+  margin: 0 2px 4px 0;
+  padding: 0 0 5px;
   border-bottom: 1px solid var(--line);
 }
-
-.to-label {
-  flex: none;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
-.addresses {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.recipient {
-  position: relative;
-  display: inline-flex;
-}
-
+.to-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.addresses { display: flex; flex-wrap: wrap; gap: 5px; }
+.recipient { position: relative; display: inline-flex; }
 .recipient input {
   position: absolute;
   width: 1px;
   height: 1px;
-  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
-
 .recipient span {
   display: inline-flex;
-  min-height: 24px;
+  min-height: 25px;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 7px;
-  color: var(--muted);
-  font-size: 11px;
+  border-radius: 99px;
+  padding: 2px 9px;
+  color: #696970;
+  font-size: 12px;
   cursor: pointer;
-  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+  transition: background 100ms ease, color 100ms ease;
 }
-
-.recipient span:hover {
-  border-color: #cfcfcb;
-  color: var(--ink);
-}
-
-.recipient input:checked + span {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: #fff;
-}
-
-.recipient input:focus-visible + span {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
+.recipient span:hover { background: #f2f2f7; }
+.recipient input:checked + span { border-color: #dcecff; background: #e8f2ff; color: #0065d5; }
+.recipient input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
 
 #text {
   display: block;
   width: 100%;
-  min-height: 30px;
+  min-height: 34px;
   max-height: 132px;
   border: 0;
   border-radius: 4px;
   background: transparent;
-  padding: 5px 2px;
+  padding: 7px 1px 4px;
   resize: none;
+  line-height: 1.4;
 }
-
-.composer-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-left: 2px;
-}
-
-.as-field {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-}
-
+#text::placeholder { color: #8e8e93; }
+.composer-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 30px; padding-left: 1px; }
+.as-field { display: flex; align-items: center; min-width: 0; margin-right: auto; }
 .as-field input {
-  width: 92px;
-  border: 0;
-  border-bottom: 1px solid transparent;
-  background: transparent;
-  padding: 2px 0;
-  color: var(--muted);
-  font: 11px var(--font-mono);
-}
-
-.as-field input:focus {
-  border-bottom-color: var(--muted);
-}
-
-.error {
-  overflow: hidden;
-  margin: 0 0 0 auto;
-  color: var(--alert);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.send {
-  flex: none;
+  width: 88px;
   border: 0;
   border-radius: 7px;
-  background: var(--ink);
-  color: #fff;
-  padding: 6px 12px;
+  background: transparent;
+  padding: 3px 5px;
+  color: #77777d;
   font-size: 12px;
-  font-weight: 600;
 }
-
-.send:hover {
-  background: #2a2d2e;
+.as-field input:focus { background: #f5f5f7; }
+.recipient-toggle {
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 5px 7px;
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
 }
-
-.send:disabled {
-  cursor: default;
-  opacity: 0.45;
+.recipient-toggle:hover { background: #f2f2f7; }
+.error {
+  min-width: 0;
+  flex: 0 0 100%;
+  order: -1;
+  margin: 0;
+  color: var(--alert);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
-
-.error + .send {
-  margin-left: 0;
+.send {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  padding: 0 0 2px;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1;
 }
+.send:hover { background: #006ee8; }
+.send:disabled { cursor: default; opacity: .36; }
 
 @media (max-width: 700px) {
-  .recipient span {
-    padding: 5px 10px;
-    font-size: 12px;
-  }
-
-  .send {
-    padding: 8px 16px;
-  }
-
-  .composer {
-    width: calc(100% - 20px);
-    margin-bottom: 10px;
-  }
+  .composer { width: calc(100% - 20px); margin-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .recipient span { min-height: 30px; padding: 4px 10px; }
+  .send { width: 32px; height: 32px; }
 }

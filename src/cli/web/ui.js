@@ -28,16 +28,6 @@ export function formatTime(value) {
   return `${day}, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
 }
 
-function initials(author) {
-  const name = (author || "").trim();
-  if (!name) return "·";
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length > 1) {
-    return `${Array.from(parts[0])[0]}${Array.from(parts[1])[0]}`.toUpperCase();
-  }
-  return Array.from(name)[0].toUpperCase();
-}
-
 function messageOf(content) {
   if (typeof content === "string") {
     return { text: content, mentions: [], replyTo: null };
@@ -60,7 +50,7 @@ function byName(a, b) {
   return a.name.localeCompare(b.name);
 }
 
-export function renderRooms(container, countElement, rooms, selected, onSelect) {
+export function renderRooms(container, rooms, selected, onSelect) {
   container.replaceChildren();
   const byParent = new Map();
   for (const room of rooms) {
@@ -84,12 +74,10 @@ export function renderRooms(container, countElement, rooms, selected, onSelect) 
       button.type = "button";
       button.className = "room-link";
       button.dataset.room = room.name;
+      button.append(element("span", "room-mark", Array.from(room.name)[0] || "·"));
       button.append(element("span", "name", room.name));
       const children = (byParent.get(room.name) || []).slice().sort(byName);
       if (children.length) {
-        const count = element("span", "child-count", String(children.length));
-        count.setAttribute("aria-hidden", "true");
-        button.append(count);
         button.setAttribute(
           "aria-label",
           `${room.name}, ${children.length} child room${children.length === 1 ? "" : "s"}`,
@@ -117,7 +105,6 @@ export function renderRooms(container, countElement, rooms, selected, onSelect) 
       ),
     );
   }
-  countElement.textContent = String(rooms.length);
 }
 
 export function renderAddresses(addresses, recipients, room, selected = new Set()) {
@@ -185,20 +172,18 @@ export class MessageView {
 
     const message = messageOf(record.content);
     const item = element("li", grouped ? "message grouped" : "message");
-    const avatar = element("span", "avatar", initials(record.author));
-    avatar.setAttribute("aria-hidden", "true");
-    item.append(avatar);
-
     const main = element("div", "message-main");
     const meta = element("div", "message-meta");
+    if (record.author) meta.append(element("span", "message-author", record.author));
     meta.append(
-      element("span", "message-author", record.author || "unsigned"),
       element(
         "span",
         "message-coordinate",
-        `#${record.seq} · ${formatTime(record.at)}`,
+        formatTime(record.at),
       ),
     );
+    const coordinate = element("span", "sr-only", `Room record ${record.seq}`);
+    meta.append(coordinate);
     const bubble = element("div", "bubble");
     bubble.append(element("p", "message-text", message.text));
     if (message.mentions.length || message.replyTo) {
@@ -207,13 +192,9 @@ export class MessageView {
         addresses.append(element("span", "badge", `@${role}`));
       }
       if (message.replyTo && message.replyTo.room) {
-        addresses.append(
-          element(
-            "span",
-            "badge reply",
-            `↳ ${message.replyTo.room}#${message.replyTo.seq}`,
-          ),
-        );
+        const reply = element("span", "badge reply", "↳ reply");
+        reply.setAttribute("aria-label", `Reply to ${message.replyTo.room} record ${message.replyTo.seq}`);
+        addresses.append(reply);
       }
       bubble.append(addresses);
     }
