@@ -8,6 +8,13 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-11 — Publish binaries through GitHub Releases
+
+GitHub Releases replaces R2 as the sole binary distribution channel, keeping
+source and releases together without a separate artifact service. Checksums
+and the dependency SBOM remain part of each release; the current process is in
+the [release guide](operations/releasing.md).
+
 ## 2026-11-10 — Simplify the local conversation view
 
 The local browser view now gives the room list and conversation a quieter
@@ -345,8 +352,8 @@ Storage moves to format 3: one workspace database holds the whole tree
 per-(room, signature, key) idempotency ledger). The format-2 → 3 migration is
 one-time on open: the old single room becomes a root named by its old
 identifier and every author is kept verbatim; there is no compatibility
-layer after it. The v1 code is frozen at tag `v1-final` on branch
-`archive/v1`; E7 and the Render/Neon deployment files were removed with the
+layer after it. The v1 code is preserved at tag `v1-final`; E7 and the
+Render/Neon deployment files were removed with the
 hosted profile; the PostgreSQL battery stays and must be rerun against the
 format-3 schema.
 

@@ -45,8 +45,9 @@ Ask an agent in your project directory, for example:
 > agent CLI and model for each role, and have the builder hand its changes to
 > the reviewer. Read `tearoom skill` before configuring the room.
 
-To deliver work, initialize [hc](https://github.com/williamfzc/hc), authenticate
-the chosen Agent CLIs, and check that they start in the room directory and
+To deliver work, install [herdr-core (`hc`)](https://github.com/herdrdev/herdr-core#install)
+and follow its setup instructions, authenticate the chosen Agent CLIs, and check
+that they start in the room directory and
 report their lifecycle to hc. Agent and model availability depends on the local
 setup. A custom coding agent with an interactive terminal UI can be used as a
 role when its input and lifecycle reporting work with hc; the agent setup guide

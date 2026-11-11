@@ -61,8 +61,8 @@ readiness evaluation E7, and the Render/Neon deployment files were deleted.
 The SQL backends (SQLite Store, the PostgreSQL adapter, and their gated
 battery) were removed the same day by the JSONL cutover; their validation
 runs are recorded in [../evaluations.md](../evaluations.md). The rationale
-for both moves is in [../log.md](../log.md); the v1 code is frozen at tag
-`v1-final` on branch `archive/v1`.
+for both moves is in [../log.md](../log.md); the v1 code is preserved at tag
+`v1-final`.
 
 ## Clean-break policy
 
