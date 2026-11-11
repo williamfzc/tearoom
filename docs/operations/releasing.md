@@ -51,7 +51,8 @@ convenience pointer, not evidence that an older version changed. Pin an
 immutable version URL for reproducible installation and rollback.
 
 The checked-in workflow is [`.github/workflows/release.yml`](../../.github/workflows/release.yml),
-named `Release`. It runs on a `push` of any `v*` tag, verifies the source,
+named `Release`. It runs on a `push` of a version-shaped `v` tag; packaging
+enforces strict semantic versions. It verifies the source,
 builds each target twice on its native runner, compares the archives, then
 assembles and uploads them to R2. Its concurrency group is
 `tearoom-release-${{ github.ref_name }}` and it does not cancel an in-progress

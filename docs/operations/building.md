@@ -28,6 +28,9 @@ The [evaluation set](../evaluations.md) is the authority for what each suite
 proves; `check-evals` enforces that every shipped evaluation has its script
 marker and its place in `make check`.
 
+The [Test workflow](../../.github/workflows/test.yml) runs `make check` for
+branch pushes and pull requests on Ubuntu using the release toolchain.
+
 Go compatibility and real hc integration tests are marked ignored because
 they require external binaries. Run them explicitly with the corresponding
 test environment when validating those boundaries.
