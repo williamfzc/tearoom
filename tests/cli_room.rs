@@ -3,6 +3,23 @@ use std::path::Path;
 use std::process::Command;
 
 #[test]
+fn installed_skill_exposes_pi_extension_without_a_workspace() {
+    let dir = tempfile::tempdir().unwrap();
+    let output = command(dir.path())
+        .args(["skill", "--pi-extension"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, include_bytes!("../scripts/pi-hc-status.ts"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    let guide = command(dir.path()).arg("skill").output().unwrap();
+    assert!(guide.status.success());
+    assert!(String::from_utf8(guide.stdout)
+        .unwrap()
+        .contains("tearoom agent guide"));
+}
+
+#[test]
 fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
     use std::time::{Duration, Instant};
 
@@ -249,9 +266,9 @@ fn roles_and_room_mentions_are_discoverable() {
             "--command",
             "pi-new",
             "--arg",
-            "one",
+            "--model",
             "--arg",
-            "two",
+            "other-model",
             "--cwd",
             "workdir",
         ])
@@ -267,6 +284,10 @@ fn roles_and_room_mentions_are_discoverable() {
     assert!(warning.contains("newly started processes"));
     let launch_change: serde_json::Value = serde_json::from_slice(&launch_change.stdout).unwrap();
     assert_eq!(launch_change["role"]["agent_type"], "other");
+    assert_eq!(
+        launch_change["role"]["command"],
+        serde_json::json!(["pi-new", "--model", "other-model"])
+    );
     assert_eq!(launch_change["role"]["directory"], "workdir");
     run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
     run(&[
@@ -275,10 +296,20 @@ fn roles_and_room_mentions_are_discoverable() {
         "--name",
         "builder",
         "--agent-type",
-        "pi",
+        "codex",
         "--command",
-        "pi",
+        "codex",
+        "--arg=--no-daemon",
+        "--arg=--model",
+        "--arg=example-model",
     ]);
+    let builder: serde_json::Value =
+        serde_json::from_slice(&run(&["role", "show", "--name", "builder"])).unwrap();
+    assert_eq!(builder["role"]["agent_type"], "codex");
+    assert_eq!(
+        builder["role"]["command"],
+        serde_json::json!(["codex", "--no-daemon", "--model", "example-model"])
+    );
     run(&["room", "roles", "--room", "project", "--add", "builder"]);
     let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
     assert!(roster.contains("reviewer"));

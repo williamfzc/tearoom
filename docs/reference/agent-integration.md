@@ -17,9 +17,10 @@ and behavior are owned by [cli.md](cli.md); validation evidence is in
 The everyday path is to define reusable roles, create a Room and select its
 roles, give the Room a goal, then let the worker and reviewer use its shared
 history. Roles can be assigned or changed later. Herdr shows the running
-panels when available. The setup below is a machine-specific example, not a
-required choice of Agents; it includes readiness and recovery details for
-operators.
+panels when available. Each role may use its own Agent CLI and model, configured
+with the command and arguments supported by that CLI. The setup below is an
+example, not a required choice of Agents; it includes readiness and recovery
+details for operators.
 
 ## Example: configure a Room and its roles
 
@@ -37,8 +38,8 @@ if [ -e .tearoom/claude-settings.json ]; then cat .tearoom/claude-settings.json;
 cat > .tearoom/claude-settings.json <<'JSON'
 {"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}
 JSON
-: "${TEAROOM_SOURCE:?set to the Tearoom source checkout containing scripts/pi-hc-status.ts}"
-export PI_HC_STATUS_EXTENSION="$TEAROOM_SOURCE/scripts/pi-hc-status.ts"
+(set -C; tearoom skill --pi-extension > .tearoom/pi-hc-status.ts)
+export PI_HC_STATUS_EXTENSION="$PWD/.tearoom/pi-hc-status.ts"
 export PI_BIN="${PI_BIN:-pi}"
 test -r "$PI_HC_STATUS_EXTENSION"
 "$PI_BIN" --version
@@ -61,13 +62,12 @@ tearoom collab run
 ```
 
 The example assumes a host with `claude`, `pi`, and a configured Pi provider and
-model. Set `TEAROOM_SOURCE` to the Tearoom source checkout containing the Pi
-extension before running these commands. The `PI_BIN` override selects the Pi
-executable; the version check confirms what it resolves to, while provider and
-model availability still need local verification. On this machine, `pi`
-resolves to a ZCode shim and `pi-real` is the Pi executable, so use
-`PI_BIN=pi-real` here. Replace the command and repeated `--arg` values with the
-local Agent CLI and its configuration.
+model. The shell redirection refuses to overwrite an existing extension file;
+inspect and reuse a suitable file if one already exists. The `PI_BIN` override
+selects the Pi executable; the version check confirms what it resolves to,
+while provider and model availability still need local verification. Replace the
+command and repeated `--arg` values with the local Agent CLI and its
+configuration.
 Role definitions and Room bindings are stored
 in the project's `.tearoom` workspace metadata. Do not put tokens or passwords
 in these records or in role instructions.
@@ -187,7 +187,8 @@ delivery.
 hc needs terminal status to distinguish idle, working, done, and blocked
 panels. Pi does not currently emit hc's OSC status by default in this setup.
 The optional [`scripts/pi-hc-status.ts`](../../scripts/pi-hc-status.ts)
-extension reports Pi lifecycle events to hc. A Pi `done` event means its turn
+extension reports Pi lifecycle events to hc. The installed binary prints it
+with `tearoom skill --pi-extension`. A Pi `done` event means its turn
 ended; it does not mean Tearoom's acceptance criteria passed. Probe results
 and remaining validation are recorded in [evaluations](../evaluations.md).
 

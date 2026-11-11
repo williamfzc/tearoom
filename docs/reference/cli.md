@@ -37,7 +37,7 @@ tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
 tearoom web [--port <port>]
-tearoom skill
+tearoom skill [--pi-extension]
 tearoom --version
 ```
 
@@ -186,7 +186,8 @@ unverified label.
 
 `tearoom skill` prints the orientation guide carried by the binary: the room
 journey, the environment conventions, and the rules that hold at every
-command. It takes no flags and reads no Room.
+command. `tearoom skill --pi-extension` prints the bundled Pi lifecycle
+extension instead. Neither form reads a Room or writes files.
 
 ## Signature selection
 

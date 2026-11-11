@@ -17,13 +17,53 @@ Prepare once, reuse in each Room:
   tearoom room init --name <name>. This also initializes the workspace.
 - Run tearoom role list and reuse suitable definitions. Init missing roles
   with tearoom role init --help and explicitly configured local Agent
-  commands. Do not assume a particular Agent, executable, or permission mode.
+  commands. Each role may use a different Agent CLI and model: put that CLI's
+  model selection and other launch options in its repeated --arg values. Check
+  the installed CLI's supported flags and model availability; do not assume a
+  particular Agent, executable, model, or permission mode.
 - Assign existing roles when creating another Room with
   tearoom room init --name <name> --parent <parent> --role <roles>, or add
   them later with tearoom room roles --room <name> --add <roles>.
 - Start tearoom collab run to deliver addressed messages. Room creation tries
   to prepare its own Herdr session. Open it with tearoom room open --room <name>;
   if preparation fails, retry as instructed.
+
+Reference collaboration patterns:
+Choose and adapt roles, Agent commands, and handoffs to the person's request;
+these are ordinary Role definitions, not fixed workflows. Put the agreed
+responsibilities and handoffs in each role's instructions.
+Include the explicit `tearoom send --to @role` syntax in those instructions,
+substituting the intended recipient's role name.
+
+- Builder and reviewer: for a defined change, the builder implements and checks
+  the work, then addresses the reviewer with the change and evidence. An
+  independent reviewer checks the result and reports a verdict with evidence;
+  address the builder with actionable findings when revision is needed.
+- Planner, generator, and evaluator: for a goal needing definition, the planner
+  clarifies the goal, scope, and acceptance criteria without expanding the
+  request, then addresses the generator. The generator implements and checks
+  the work, then addresses the evaluator with the result and evidence. An
+  independent evaluator checks the result against the goal and criteria, and
+  addresses the generator with findings when revision is needed. Record the
+  final verdict in the Room.
+
+These handoffs use explicit --to @role addresses, not names in message text.
+Use separate Agent instances for implementation and independent review.
+
+Custom Agent TUIs: configure the interactive launch command and its arguments
+as a Role. Read hc --skill, then check startup, input delivery, and lifecycle
+status in the actual working directory. hc observes OSC 7501 status reports;
+if the TUI cannot provide reliable status, it needs a suitable integration
+before unattended delivery can be relied on. Record any blocker rather than
+assuming a quiet terminal is ready or a delivered task is complete.
+
+Optional Pi integration: if a role uses Pi, the installed binary can print its
+hc lifecycle extension with `tearoom skill --pi-extension`. After workspace
+initialization, save its output to a new file, for example:
+  (set -C; tearoom skill --pi-extension > .tearoom/pi-hc-status.ts)
+Do not overwrite an existing file; inspect and reuse it if suitable. Pass its
+absolute path to Pi with --extension. Other Agent CLIs do not need this Pi
+extension. Check each chosen CLI's hc readiness separately.
 
 Use hc get and hc read to inspect a blocked or unknown panel. Resolve an
 authorized first-run trust prompt according to the actual screen; login and

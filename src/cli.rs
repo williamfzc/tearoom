@@ -52,12 +52,16 @@ fn execute(args: &[String]) -> Result<()> {
         return Ok(());
     }
     if command == "skill" {
-        let parsed = parse(rest, &[], &[])?;
-        if parsed.help("Usage: tearoom skill") {
+        let parsed = parse(rest, &[], &["pi-extension"])?;
+        if parsed.help("Usage: tearoom skill [--pi-extension]\n\nPrint the Agent guide, or print the Pi lifecycle extension with --pi-extension.") {
             return Ok(());
         }
         parsed.no_positional()?;
-        print!("{}", include_str!("skill.txt"));
+        if parsed.switches.contains("pi-extension") {
+            print!("{}", include_str!("../scripts/pi-hc-status.ts"));
+        } else {
+            print!("{}", include_str!("skill.txt"));
+        }
         return Ok(());
     }
     match command.as_str() {

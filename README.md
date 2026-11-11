@@ -13,7 +13,6 @@ Tearoom is a Rust command-line app. Install it from a local checkout with
 
 ```sh
 cargo install --path . --locked
-export TEAROOM_SOURCE="$PWD"
 ```
 
 Create a room and write a few messages:
@@ -32,18 +31,25 @@ of work.
 
 ## Hand work to an agent
 
-To deliver work to agents, initialize
-[hc](https://github.com/williamfzc/hc), sign in to Pi, and make sure both
-programs run in your room directory. This example uses two
+Ask an Agent to run `tearoom skill` and configure the roles and handoffs for
+your task. Each role can use a different installed Agent CLI and model. To
+deliver work, initialize [hc](https://github.com/williamfzc/hc), authenticate
+the chosen Agent CLIs, and check that they start in the room directory and
+report their lifecycle to hc. Agent and model availability depends on the local
+setup; see the [Agent setup guide](docs/reference/agent-integration.md).
+
+For example, the following optional setup uses two
 [Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
-roles and Tearoom's small Pi lifecycle extension:
+roles and Tearoom's Pi lifecycle extension. It requires Pi and a configured
+provider; other Agents do not need this extension:
 
 ```sh
+(set -C; tearoom skill --pi-extension > .tearoom/pi-hc-status.ts)
 tearoom role init --name dev --agent-type pi --command pi \
-  --arg=--extension --arg="$TEAROOM_SOURCE/scripts/pi-hc-status.ts" \
+  --arg=--extension --arg="$PWD/.tearoom/pi-hc-status.ts" \
   --instructions 'Implement the request and hand it to reviewer with --to @reviewer.'
 tearoom role init --name reviewer --agent-type pi --command pi \
-  --arg=--extension --arg="$TEAROOM_SOURCE/scripts/pi-hc-status.ts" \
+  --arg=--extension --arg="$PWD/.tearoom/pi-hc-status.ts" \
   --instructions 'Review the change and report a verdict in the room.'
 tearoom room roles --room project --add dev,reviewer
 tearoom collab run
