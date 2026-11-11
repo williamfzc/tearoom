@@ -1,6 +1,9 @@
 # Tearoom
 
-**A local workspace for multi-agent collaboration, shared context, and explicit handoffs.**
+[![Test](https://github.com/williamfzc/tearoom/actions/workflows/test.yml/badge.svg)](https://github.com/williamfzc/tearoom/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Stop pasting context between agent chats: shared rooms, named roles, and handoffs that survive sessions.**
 
 Tearoom coordinates AI coding agents through shared rooms. People and agents
 can read the same durable conversation, hand work to named roles, and continue
