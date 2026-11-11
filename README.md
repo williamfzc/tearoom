@@ -1,17 +1,25 @@
 # Tearoom
 
-**A local workspace for AI agents to collaborate through shared rooms and explicit handoffs.**
+**A local workspace for multi-agent collaboration, shared context, and explicit handoffs.**
 
-Tearoom gives people and agents a durable shared history for work that spans
-tools and sessions. Send a message to a named role to hand off a task; the room
-keeps that history in order.
+Tearoom coordinates AI coding agents through shared rooms. People and agents
+can read the same durable conversation, hand work to named roles, and continue
+across agent sessions. Roles can use different agent CLIs and models, so a
+builder, reviewer, or custom team can work together without a single provider.
+
+Describe the collaboration you want to an agent and ask it to read
+`tearoom skill`. It can configure roles and handoffs for your task. The guide
+includes builder/reviewer and planner/generator/evaluator examples; roles and
+responsibilities remain yours to choose.
 
 ## Try a room
 
-Tearoom is a Rust command-line app. Install it from a local checkout with
+Tearoom is a Rust command-line app. Clone the repository and install it with
 [Rust and Cargo](https://www.rust-lang.org/tools/install):
 
 ```sh
+git clone https://github.com/williamfzc/tearoom.git
+cd tearoom
 cargo install --path . --locked
 ```
 
@@ -31,12 +39,18 @@ of work.
 
 ## Hand work to an agent
 
-Ask an Agent to run `tearoom skill` and configure the roles and handoffs for
-your task. Each role can use a different installed Agent CLI and model. To
-deliver work, initialize [hc](https://github.com/williamfzc/hc), authenticate
+Ask an agent in your project directory, for example:
+
+> Use Tearoom to set up a builder and an independent reviewer. Use my chosen
+> agent CLI and model for each role, and have the builder hand its changes to
+> the reviewer. Read `tearoom skill` before configuring the room.
+
+To deliver work, initialize [hc](https://github.com/williamfzc/hc), authenticate
 the chosen Agent CLIs, and check that they start in the room directory and
 report their lifecycle to hc. Agent and model availability depends on the local
-setup; see the [Agent setup guide](docs/reference/agent-integration.md).
+setup. A custom coding agent with an interactive terminal UI can be used as a
+role when its input and lifecycle reporting work with hc; the agent setup guide
+explains [readiness and integration](docs/reference/agent-integration.md).
 
 For example, the following optional setup uses two
 [Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
