@@ -5,7 +5,7 @@ RELEASE_TAG ?= v0.0.0-dev
 RELEASE_DIR ?= dist/releases/$(RELEASE_TAG)
 RELEASE_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 RELEASE_SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
-.PHONY: all build cli test target-room target-replay check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check release-upload
+.PHONY: all build cli test target-room target-replay check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check
 
 all: build
 
@@ -75,9 +75,6 @@ package-check: release-check
 
 release-check:
 	./scripts/release-package.sh check --tag "$(RELEASE_TAG)" --output "$(RELEASE_DIR)" --commit "$(RELEASE_COMMIT)"
-
-release-upload:
-	./scripts/release-package.sh upload --tag "$(RELEASE_TAG)" --output "$(RELEASE_DIR)" --endpoint "$(R2_ENDPOINT)" --bucket "$(R2_BUCKET)" --public-base-url "$(R2_PUBLIC_BASE_URL)" --commit "$(RELEASE_COMMIT)"
 
 clean:
 	rm -rf $(BIN)

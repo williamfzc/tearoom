@@ -2,7 +2,6 @@
 """Exercise release assembly and corruption checks without publishing."""
 
 import io
-import hashlib
 import json
 import pathlib
 import struct
@@ -52,12 +51,10 @@ class ReleaseAssemblyTests(unittest.TestCase):
             for target in TARGETS:
                 archive(directory, target)
             self.assertEqual(invoke("assemble", directory).returncode, 0)
-            manifest = json.loads((directory / "latest.json").read_text(encoding="utf-8"))
-            self.assertEqual(manifest["storeFormat"], 4)
             self.assertEqual(invoke("check", directory).returncode, 0)
-            manifest_bytes = (directory / "latest.json").read_bytes()
+            manifest_bytes = (directory / "SHA256SUMS").read_bytes()
             self.assertNotEqual(invoke("assemble", directory).returncode, 0)
-            self.assertEqual((directory / "latest.json").read_bytes(), manifest_bytes)
+            self.assertEqual((directory / "SHA256SUMS").read_bytes(), manifest_bytes)
             (directory / "tearoom_v1.2.3_linux_arm64.tar.gz").write_bytes(b"corrupt")
             self.assertNotEqual(invoke("check", directory).returncode, 0)
 
@@ -86,32 +83,16 @@ class ReleaseAssemblyTests(unittest.TestCase):
                 sums = directory / "SHA256SUMS"
                 lines = sums.read_text(encoding="utf-8").splitlines(keepends=True)
                 sums.write_text("".join(lines[1:] if mutation == "missing" else lines + lines[:1]), encoding="utf-8")
-                manifest = json.loads((directory / "latest.json").read_text(encoding="utf-8"))
-                next(item for item in manifest["artifacts"] if item["name"] == "SHA256SUMS")["sha256"] = hashlib.sha256(sums.read_bytes()).hexdigest()
-                (directory / "latest.json").write_text(json.dumps(manifest), encoding="utf-8")
                 self.assertNotEqual(invoke("check", directory).returncode, 0)
 
-    def test_manifest_tampering_and_extra_archive_are_refused(self):
-        for mutation in ("digest", "key", "duplicate", "extra"):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temp:
-                directory = pathlib.Path(temp)
-                for target in TARGETS:
-                    archive(directory, target)
-                self.assertEqual(invoke("assemble", directory).returncode, 0)
-                path = directory / "latest.json"
-                manifest = json.loads(path.read_text(encoding="utf-8"))
-                if mutation == "digest":
-                    manifest["artifacts"][0]["sha256"] = "0" * 64
-                elif mutation == "key":
-                    manifest["artifacts"][0]["key"] = "releases/wrong"
-                elif mutation == "duplicate":
-                    manifest["artifacts"].append(manifest["artifacts"][0])
-                else:
-                    extra = directory / "unexpected.tar.gz"
-                    extra.write_bytes(b"extra")
-                    manifest["artifacts"].append({"name": extra.name, "sha256": hashlib.sha256(extra.read_bytes()).hexdigest(), "key": f"releases/v1.2.3/{extra.name}"})
-                path.write_text(json.dumps(manifest), encoding="utf-8")
-                self.assertNotEqual(invoke("check", directory).returncode, 0)
+    def test_extra_archive_is_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = pathlib.Path(temp)
+            for target in TARGETS:
+                archive(directory, target)
+            self.assertEqual(invoke("assemble", directory).returncode, 0)
+            (directory / "unexpected.tar.gz").write_bytes(b"extra")
+            self.assertNotEqual(invoke("check", directory).returncode, 0)
 
 
 if __name__ == "__main__":

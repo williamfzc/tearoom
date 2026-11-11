@@ -68,6 +68,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -79,12 +81,31 @@ jobs:
           merge-multiple: true
       - name: Assemble and verify artifacts
         run: make package RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/release
-      - name: Publish to Cloudflare R2
+      - name: Publish verified release assets
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
-          R2_ENDPOINT: ${{ vars.R2_ENDPOINT }}
-          R2_BUCKET: ${{ vars.R2_BUCKET }}
-          R2_PUBLIC_BASE_URL: ${{ vars.R2_PUBLIC_BASE_URL }}
-        run: make release-upload RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR=dist/release R2_ENDPOINT="$R2_ENDPOINT" R2_BUCKET="$R2_BUCKET" R2_PUBLIC_BASE_URL="$R2_PUBLIC_BASE_URL"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_tag() {
+            tag_ref="refs/tags/$GITHUB_REF_NAME"
+            refs=$(git ls-remote origin "$tag_ref" "$tag_ref^{}")
+            commit=$(printf '%s\n' "$refs" | awk -v ref="$tag_ref" '$2 == ref {raw = $1} $2 == ref "^{}" {peeled = $1} END {print peeled ? peeled : raw}')
+            if [ "$commit" != "$GITHUB_SHA" ]; then
+              echo "release: remote tag no longer points to the verified commit" >&2
+              exit 1
+            fi
+          }
+          # A pre-existing release is never overwritten, including a draft.
+          verify_tag
+          prerelease=""
+          case "${GITHUB_REF_NAME%%+*}" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "$GITHUB_REF_NAME" --notes "" $prerelease
+          gh release upload "$GITHUB_REF_NAME" dist/release/*
+          verify_dir="$RUNNER_TEMP/tearoom-release-readback"
+          mkdir -p "$verify_dir"
+          gh release download "$GITHUB_REF_NAME" --dir "$verify_dir"
+          for file in dist/release/*; do cmp "$file" "$verify_dir/${file##*/}"; done
+          make release-check RELEASE_TAG="$GITHUB_REF_NAME" RELEASE_COMMIT="$GITHUB_SHA" RELEASE_DIR="$verify_dir"
+          tar -xzf "$verify_dir/tearoom_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C "$verify_dir"
+          test "$("$verify_dir/tearoom" --version)" = "tearoom version=$GITHUB_REF_NAME commit=$GITHUB_SHA store-format=4"
+          verify_tag
+          gh release edit "$GITHUB_REF_NAME" --draft=false
