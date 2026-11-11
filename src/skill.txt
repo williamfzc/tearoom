@@ -53,9 +53,11 @@ Use separate Agent instances for implementation and independent review.
 Custom Agent TUIs: configure the interactive launch command and its arguments
 as a Role. Read hc --skill, then check startup, input delivery, and lifecycle
 status in the actual working directory. hc observes OSC 7501 status reports;
-if the TUI cannot provide reliable status, it needs a suitable integration
-before unattended delivery can be relied on. Record any blocker rather than
-assuming a quiet terminal is ready or a delivered task is complete.
+if they are missing, inspect the TUI's hooks or other reliable lifecycle events
+and map them to hc's status protocol when the integration can do so. Verify
+startup and multiple turns through hc before relying on unattended delivery.
+If no reliable events are available, record the blocker rather than guessing
+from screen text or assuming a delivered task is complete.
 
 Optional Pi integration: if a role uses Pi, the installed binary can print its
 hc lifecycle extension with `tearoom skill --pi-extension`. After workspace
