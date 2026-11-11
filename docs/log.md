@@ -692,8 +692,8 @@ Deployed the real thing for the first time. The service runs on **Render free** 
 
 The live deployment surfaced two real gaps that the runbook had not caught:
 
-1. **A platform service without an explicit start command cannot serve.** The dashboard-created service ran the image's bare entrypoint and exited immediately. Fixed by making the image default to `hosted serve` (`$DATABASE_URL` interpolated at container start) — `6ea8bd6`. A platform start command still overrides it.
-2. **`TEAROOM_CORS_ORIGIN` was never read.** The `--cors-origin` flag defaulted to empty, so an env-driven service silently served without CORS. The flag now defaults to the env var — `2f792a5`.
+1. **A platform service without an explicit start command cannot serve.** The dashboard-created service ran the image's bare entrypoint and exited immediately. Fixed by making the image default to `hosted serve` (`$DATABASE_URL` interpolated at container start) — `54f90f4`. A platform start command still overrides it.
+2. **`TEAROOM_CORS_ORIGIN` was never read.** The `--cors-origin` flag defaulted to empty, so an env-driven service silently served without CORS. The flag now defaults to the env var — `29ef535`.
 
 Operational notes recorded: Render's API types (`web_service`), the env-vars endpoint is a full-replacement `PUT` with a bare array body, the API requires a payment method on file even for free services (dashboard action, no API bypass), and neonctl 4.x auth is `neonctl auth` (browser) or `NEON_API_KEY`. The admin token lives at `~/.tearoom-admin-token` and in the service's `TEAROOM_HOSTED_ADMIN`.
 
@@ -701,10 +701,10 @@ Operational notes recorded: Render's API types (`web_service`), the env-vars end
 
 Shipped all three steps of `architecture/hosted-plan.md`'s implementation queue, each green in `make check` before its commit:
 
-1. **Client-side watch polling** (`refactor: poll event watch from the client instead of the server-held wait`, 4fe77c9). `eventWatch` now reads on an interval for every store, exactly like the local branch; the CLI's waiter interface is gone. Watch's command surface, skill text, and demo semantics are unchanged — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays as the optional LAN optimization.
-2. **Deployment files** (`feat: add the deployment files`, e4c10be). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at `operations/deploy.md` (deleted at the cutover; its deployment
+1. **Client-side watch polling** (`refactor: poll event watch from the client instead of the server-held wait`, 624f09d). `eventWatch` now reads on an interval for every store, exactly like the local branch; the CLI's waiter interface is gone. Watch's command surface, skill text, and demo semantics are unchanged — hosted-demo still proves the handoff matrix, now carried by polls. `transport`'s `wait`/Broadcaster stays as the optional LAN optimization.
+2. **Deployment files** (`feat: add the deployment files`, 1367630). A multi-stage `Dockerfile` (static `CGO_ENABLED=0` build into alpine, non-root user), the `render.yaml` blueprint, and the runbook at `operations/deploy.md` (deleted at the cutover; its deployment
 was never re-adopted): Neon project + pooled DSN → `tearoom hosted init-db` → admin token → Render free-tier web service → end-to-end verification → TLS/domain notes → the 2026 free-tier constraints. The server gained `GET /healthz` (no credentials) for the platform health check.
-3. **Management UI** (`feat: allow a configured CORS origin`, b79e1f0; `feat: list room credentials for the management UI`, c5f2961; `web: build the hosted management UI`, fe0de64). A deliberately thin React + Vite static SPA in `web/` — rooms, credentials, room history — in the recorded Vercel/Claude-style minimal tech, built to `dist/` for Cloudflare Pages (`VITE_API_BASE` + `--cors-origin`). Supporting server work: CORS for one exact configured origin (preflight 204, foreign origins get no headers), and `GET /api/hosted/rooms/<id>/credentials` returning a hash-free `CredentialView` — the at-rest token digest never leaves the server.
+3. **Management UI** (`feat: allow a configured CORS origin`, 00c31aa; `feat: list room credentials for the management UI`, 0cf0344; `web: build the hosted management UI`, c289d1d). A deliberately thin React + Vite static SPA in `web/` — rooms, credentials, room history — in the recorded Vercel/Claude-style minimal tech, built to `dist/` for Cloudflare Pages (`VITE_API_BASE` + `--cors-origin`). Supporting server work: CORS for one exact configured origin (preflight 204, foreign origins get no headers), and `GET /api/hosted/rooms/<id>/credentials` returning a hash-free `CredentialView` — the at-rest token digest never leaves the server.
 
 ## 2026-08-29 — Decide watch's wait moves to the client; settle the free deployment
 
