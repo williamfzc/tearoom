@@ -17,8 +17,9 @@ responsibilities remain yours to choose.
 
 ## Try a room
 
-Tearoom is a Rust command-line app. Clone the repository and install it with
-[Rust and Cargo](https://www.rust-lang.org/tools/install):
+Tearoom is a command-line app. Clone the repository and install it with
+[Rust and Cargo](https://www.rust-lang.org/tools/install) and
+[Zig 0.16](https://ziglang.org/download/):
 
 ```sh
 git clone https://github.com/williamfzc/tearoom.git
@@ -48,13 +49,18 @@ Ask an agent in your project directory, for example:
 > agent CLI and model for each role, and have the builder hand its changes to
 > the reviewer. Read `tearoom skill` before configuring the room.
 
-To deliver work, install [herdr-core (`hc`)](https://github.com/herdrdev/herdr-core#install)
-and follow its setup instructions, authenticate the chosen Agent CLIs, and check
-that they start in the room directory and
-report their lifecycle to hc. Agent and model availability depends on the local
-setup. A custom coding agent with an interactive terminal UI can be used as a
-role when its input and lifecycle reporting work with hc; the agent setup guide
-explains [readiness and integration](docs/reference/agent-integration.md).
+Tearoom includes the herdr-core terminal runtime. Use `tearoom hc` for its
+commands, for example `tearoom hc --skill`; a separate `hc` install is not
+needed. Herdr remains an optional interface for viewing and attaching to
+terminals. Authenticate the chosen Agent CLIs and check that they start in the
+room directory and report their lifecycle to the runtime. Agent and model
+availability depends on the local setup. A custom coding agent with an
+interactive terminal UI can be used as a role when its input and lifecycle
+reporting work with the runtime; remote-machine features are outside Tearoom's
+collaboration guarantees. The agent setup guide explains
+[readiness and integration](docs/reference/agent-integration.md).
+The runtime's built-in guide is upstream text and shows commands as `hc ...`;
+when following those examples, write `tearoom hc ...`.
 
 For example, the following optional setup uses two
 [Pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent)
@@ -81,9 +87,9 @@ tearoom send --room project --as human --to @dev \
 ```
 
 Only explicit recipients are woken. A name mentioned in message text is just
-text. Agent commands must already be installed and signed in. Resolve hc's
-first-use prompts in the actual room directory before expecting unattended
-delivery. See the
+text. Agent commands must already be installed and signed in. Resolve the
+runtime's first-use prompts in the actual room directory before expecting
+unattended delivery. See the
 [Agent setup guide](docs/reference/agent-integration.md) for the full setup and
 recovery limits.
 

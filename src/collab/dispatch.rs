@@ -7,7 +7,35 @@ use super::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState, Int
 use crate::store::Store;
 use anyhow::{bail, Context, Result};
 use routing::{head_of_queue, mark_reply, record_intent};
+use std::collections::HashSet;
 use std::path::PathBuf;
+
+/// Mark interrupted work uncertain after its workspace terminals have stopped.
+pub fn record_stopped_panels(root: &std::path::Path, stopped: &[String]) -> Result<()> {
+    if stopped.is_empty() {
+        return Ok(());
+    }
+    let stopped = stopped.iter().collect::<HashSet<_>>();
+    let _lock = dispatch_lock(root)?;
+    let mut state = DispatchState::load(root)?;
+    for intent in &mut state.intents {
+        for delivery in &mut intent.deliveries {
+            if !stopped.contains(&delivery.panel) {
+                continue;
+            }
+            if delivery.state == DeliveryState::Submitted {
+                delivery.state = DeliveryState::Unknown;
+                delivery.error = "workspace stopped; inspect the Room before resolving this interrupted delivery".into();
+            }
+            state
+                .fresh
+                .entry(intent.room.clone())
+                .or_default()
+                .insert(delivery.role.clone());
+        }
+    }
+    state.save(root)
+}
 
 pub struct Dispatcher<R> {
     pub store: Store,
@@ -261,7 +289,7 @@ impl<R: Runtime> Dispatcher<R> {
 #[cfg(test)]
 mod tests {
     use super::super::runtime::SubmitResult;
-    use super::super::{Message, RecordRef, Role, RoomRoles};
+    use super::super::{Delivery, Message, RecordRef, Role, RoomRoles};
     use super::*;
     use crate::core::AppendRequest;
     use std::cell::{Cell, RefCell};
@@ -344,6 +372,73 @@ mod tests {
             fail,
         };
         (temp, Dispatcher { store, runtime })
+    }
+
+    #[test]
+    fn stopping_panels_marks_submitted_unknown_and_only_their_roles_fresh() {
+        let (_temp, dispatcher) = setup(false);
+        let root = dispatcher.store.root();
+        let panel = panel_name(root, "project", "reviewer").unwrap();
+        let other = panel_name(root, "other", "reviewer").unwrap();
+        DispatchState {
+            version: 1,
+            cursor: Default::default(),
+            fresh: Default::default(),
+            intents: vec![
+                Intent {
+                    room: "project".into(),
+                    seq: 1,
+                    text: "in flight".into(),
+                    deliveries: vec![Delivery {
+                        role: "reviewer".into(),
+                        panel: panel.clone(),
+                        state: DeliveryState::Submitted,
+                        error: String::new(),
+                    }],
+                },
+                Intent {
+                    room: "project".into(),
+                    seq: 2,
+                    text: "already uncertain".into(),
+                    deliveries: vec![Delivery {
+                        role: "reviewer".into(),
+                        panel: panel.clone(),
+                        state: DeliveryState::Unknown,
+                        error: "keep this confirmation".into(),
+                    }],
+                },
+                Intent {
+                    room: "other".into(),
+                    seq: 1,
+                    text: "unrelated".into(),
+                    deliveries: vec![Delivery {
+                        role: "reviewer".into(),
+                        panel: other,
+                        state: DeliveryState::Submitted,
+                        error: String::new(),
+                    }],
+                },
+            ],
+        }
+        .save(root)
+        .unwrap();
+
+        record_stopped_panels(root, &[panel]).unwrap();
+        let state = DispatchState::load(root).unwrap();
+        assert_eq!(state.intents[0].deliveries[0].state, DeliveryState::Unknown);
+        assert!(state.intents[0].deliveries[0]
+            .error
+            .contains("workspace stopped"));
+        assert_eq!(
+            state.intents[1].deliveries[0].error,
+            "keep this confirmation"
+        );
+        assert_eq!(
+            state.intents[2].deliveries[0].state,
+            DeliveryState::Submitted
+        );
+        assert!(state.fresh["project"].contains("reviewer"));
+        assert!(!state.fresh.contains_key("other"));
     }
 
     #[test]

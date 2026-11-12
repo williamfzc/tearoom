@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -22,9 +23,19 @@ def main():
         with open(path, encoding="utf-8") as stream:
             metadata = json.load(stream)
         active = {node["id"] for node in metadata["resolve"]["nodes"]}
+        has_hc = False
         for package in metadata["packages"]:
             if package["id"] in active and package.get("source"):
                 dependencies[(package["name"], package["version"])] = package
+                has_hc |= package["name"] == "herdr-core"
+        ghostty = metadata.get("tearoomReleaseSources", {}).get("ghostty")
+        if has_hc and not ghostty:
+            raise SystemExit("release: Cargo metadata is missing hc's pinned Ghostty revision")
+        if ghostty:
+            commit = ghostty.get("version", "")
+            if not re.fullmatch(r"[0-9a-f]{40}", commit) or ghostty.get("license") != "MIT":
+                raise SystemExit("release: invalid pinned Ghostty revision in Cargo metadata")
+            dependencies[("ghostty", commit)] = ghostty
     if not dependencies:
         raise SystemExit("release: dependency graph is empty")
     root_id = package_id(root, version)
@@ -34,9 +45,11 @@ def main():
     relationships = [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": root_id}]
     for (name, dep_version), package in sorted(dependencies.items()):
         identifier = package_id(name, dep_version)
+        download = package.get("downloadLocation", "NOASSERTION")
+        license_declared = package.get("license", "NOASSERTION")
         packages.append({"SPDXID": identifier, "name": name, "versionInfo": dep_version,
-                         "downloadLocation": "NOASSERTION", "licenseConcluded": "NOASSERTION",
-                         "licenseDeclared": "NOASSERTION", "filesAnalyzed": False})
+                         "downloadLocation": download, "licenseConcluded": "NOASSERTION",
+                         "licenseDeclared": license_declared, "filesAnalyzed": False})
         relationships.append({"spdxElementId": root_id, "relationshipType": "DEPENDS_ON", "relatedSpdxElement": identifier})
     document = {"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXRef-DOCUMENT",
                 "name": f"tearoom-{version}",

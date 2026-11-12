@@ -52,10 +52,17 @@ pub(super) fn has_hc_attach(value: &Value, panel: &str) -> bool {
     visit(value, &mut |object| {
         if let Some(argv) = object.get("argv").and_then(Value::as_array) {
             let args = argv.iter().filter_map(Value::as_str).collect::<Vec<_>>();
-            found |= args.len() >= 3
-                && args[args.len() - 2] == "attach"
-                && args[args.len() - 1] == panel
-                && (args[args.len() - 3] == "hc" || args[args.len() - 3].ends_with("/hc"));
+            if args.len() < 3 || args[args.len() - 2] != "attach" || args[args.len() - 1] != panel {
+                return;
+            }
+            let command = args[args.len() - 3];
+            found |= command == "hc" || command.ends_with("/hc");
+            found |= command == "tearoom-hc-internal"
+                || command.ends_with("/tearoom-hc-internal")
+                || object
+                    .get("argv0")
+                    .and_then(Value::as_str)
+                    .is_some_and(|argv0| argv0 == "tearoom-hc-internal");
         }
     });
     found

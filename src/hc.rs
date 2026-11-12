@@ -75,6 +75,20 @@ impl HcClient {
         &self.socket
     }
 
+    /// Use an existing runtime without starting a new one.
+    pub fn call_existing(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, HcError> {
+        let client = Self {
+            socket: self.socket.clone(),
+            autostart: false,
+        };
+        client.call(method, params, timeout)
+    }
+
     /// The caller chooses a timeout appropriate to the method; no retry occurs here.
     #[cfg(unix)]
     pub fn call(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, HcError> {
@@ -146,13 +160,14 @@ fn start_hc(timeout: Duration) -> Result<(), HcError> {
     use std::process::{Command, Stdio};
     use std::time::Instant;
     // Let hc resolve its own core startup and mismatched-session safeguards.
-    let mut child = Command::new("hc")
-        .args(["ls", "--json"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| HcError::Startup(error.to_string()))?;
+    let mut child =
+        Command::new(std::env::current_exe().map_err(|error| HcError::Startup(error.to_string()))?)
+            .args(["hc", "ls", "--json"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| HcError::Startup(error.to_string()))?;
     let start = Instant::now();
     loop {
         match child.try_wait() {

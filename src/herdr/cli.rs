@@ -131,7 +131,7 @@ pub(super) fn attach(session: &str, pane: &str, panel: &str) -> Result<()> {
     if !has_shell(&info) {
         bail!("Herdr pane {pane} has an unexpected foreground process; refusing to send input");
     }
-    let command = shell_join(&attach_args(panel));
+    let command = shell_join(&attach_args(panel)?);
     run(session, &["pane", "run", pane, &command]).map(|_| ())
 }
 
@@ -277,7 +277,7 @@ fn shell_join(args: &[String]) -> String {
         .join(" ")
 }
 
-fn attach_args(panel: &str) -> Vec<String> {
+fn attach_args(panel: &str) -> Result<Vec<String>> {
     let mut args = vec!["env".into()];
     for name in [
         "HC_SESSION",
@@ -290,8 +290,12 @@ fn attach_args(panel: &str) -> Vec<String> {
         let value = std::env::var_os(name).unwrap_or_default();
         args.push(format!("{name}={}", value.to_string_lossy()));
     }
-    args.extend(["hc".into(), "attach".into(), panel.into()]);
-    args
+    let tearoom = std::env::current_exe()
+        .context("resolve Tearoom executable for Herdr pane")?
+        .to_string_lossy()
+        .into_owned();
+    args.extend([tearoom, "hc".into(), "attach".into(), panel.into()]);
+    Ok(args)
 }
 
 #[cfg(test)]
@@ -349,6 +353,15 @@ mod tests {
     }
 
     #[test]
+    fn herdr_attach_uses_the_current_tearoom_executable() {
+        let args = attach_args("panel").unwrap();
+        assert_eq!(args[args.len() - 3], "hc");
+        assert_eq!(args[args.len() - 2], "attach");
+        assert_eq!(args[args.len() - 1], "panel");
+        assert!(std::path::Path::new(&args[args.len() - 4]).is_absolute());
+    }
+
+    #[test]
     fn requires_the_attached_hc_terminal_for_that_panel() {
         let matching = serde_json::json!({"result":{"process_info":{"foreground_processes":[
             {"argv":["/opt/bin/hc","attach","tr-abc"],"argv0":"hc","name":"herdr-core"}
@@ -359,6 +372,12 @@ mod tests {
         assert!(has_hc_attach(&matching, "tr-abc"));
         assert!(!has_hc_attach(&matching, "tr-other"));
         assert!(!has_hc_attach(&shell, "tr-abc"));
+
+        let embedded = serde_json::json!({"result":{"process_info":{"foreground_processes":[
+            {"argv":["tearoom-hc-internal","attach","tr-abc"],"argv0":"tearoom-hc-internal","name":"tearoom"}
+        ]}}});
+        assert!(has_hc_attach(&embedded, "tr-abc"));
+        assert!(!has_hc_attach(&embedded, "tr-other"));
     }
 
     #[test]

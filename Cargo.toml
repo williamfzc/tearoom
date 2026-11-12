@@ -19,3 +19,5 @@ tempfile = "3"
 toml = "0.8"
 libc = "0.2"
 unicode-general-category = "0.6"
+
+herdr-core = { git = "https://github.com/herdrdev/herdr-core.git", rev = "7edc5dfbe3f54ac23ad22313ce32f552f219ff44" }

@@ -8,7 +8,7 @@ timestamp: 2026-11-10
 
 # Agent integration guide
 
-This guide covers local Agent setup, hc panel visibility, and recovery limits.
+This guide covers local Agent setup, terminal visibility, and recovery limits.
 The binary carries a short setup path in `tearoom skill`. Command names, flags,
 and behavior are owned by [cli.md](cli.md); validation evidence is in
 [evaluations](../evaluations.md) and implementation gaps are in
@@ -86,7 +86,13 @@ Run `tearoom room open --room <name>` from the workspace to open it. Room
 creation prepares the session when Herdr is available; if that fails, Room
 history remains usable and `tearoom room herdr ensure --room <name>` retries.
 A role panel appears when an addressed message starts it; its displayed state
-comes from hc. Existing panels in the former shared session are not closed.
+comes from Tearoom's built-in terminal runtime. Run runtime commands through
+`tearoom hc`; `tearoom hc update` is disabled because it could replace Tearoom
+itself. Update the embedded runtime with a new Tearoom release. Existing panels
+in the former shared session are not closed.
+The passthrough exposes upstream commands; Tearoom's collaboration behavior
+and recovery guarantees cover its local Room panels, not every upstream remote
+machine feature.
 
 Herdr 0.9.5 also remembers a separate selected machine for its interface.
 If it opens on a previously selected remote machine, select Local in the
@@ -95,8 +101,9 @@ saved machine selection or disable machines.
 
 If Herdr restarts and a pane becomes a shell, Tearoom marks the state unknown
 and does not type into that pane. Inspect the pane and the panel name from
-`tearoom collab deliveries`, then reconnect it with `hc attach <panel>` in that
-pane, using the same hc session as the dispatcher. If a pane creation outcome
+`tearoom collab deliveries`, then reconnect it with
+`tearoom hc attach <panel>` in that pane, using the same runtime session as the
+dispatcher. If a pane creation outcome
 is uncertain, Tearoom refuses to create another automatically. Inspect the
 workspace and the local `.tearoom/herdr.json` binding; no recovery command for
 that ambiguous case is currently provided.
@@ -194,11 +201,13 @@ and remaining validation are recorded in [evaluations](../evaluations.md).
 
 ## Startup and observed readiness
 
-Before `tearoom collab run`, install hc, read `hc --skill`, initialize hc, and
-authenticate the Agent CLIs. Resolve one-time trust, hooks, update, and login
-prompts in the actual working directory. A terminal that is blocked on a first
-run dialog is not ready. The Agent setting up the Room checks readiness and
+Before `tearoom collab run`, read `tearoom hc --skill` and authenticate the
+Agent CLIs. Resolve one-time trust, hooks, and login prompts in the actual
+working directory. A terminal that is blocked on a first-run dialog is not
+ready. The Agent setting up the Room checks readiness and
 handles authorized trust prompts; unresolved login or approval needs a person.
+The built-in guide is unmodified upstream text and prints commands beginning
+with `hc`; prefix those examples with `tearoom hc` when using Tearoom's binary.
 
 Codex direct launches require `--no-daemon` so the dispatcher controls the
 panel it observes. Use `--observe` as defined in the [CLI

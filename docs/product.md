@@ -109,6 +109,12 @@ boundary:
   compresses its context, or reaches a verdict. On a wake, deliver the new
   Room messages directly; the Agent may read Room history when it needs to.
   Delivery is not proof that the Agent understood or completed the work.
+- The intended local experience uses short-lived CLI commands and one
+  background collaboration service per user for active workspaces. Closing a
+  command or optional view leaves work running; explicitly stopping the service
+  ends its managed Agent terminals. The target lifecycle and its limits are in
+  [collaboration delivery](architecture/collaboration.md#target-local-collaboration-service);
+  [implementation status](architecture/status.md) records what ships today.
 - Each Room should open in its own named Herdr session. Roles assigned to that
   Room appear as tabs within the session, so viewing one Room does not mix its
   collaborators with other Rooms. Herdr is an optional view: Room history

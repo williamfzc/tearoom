@@ -61,7 +61,7 @@ pub(super) fn delete_room_command(args: &[String]) -> Result<()> {
     let records = store.delete_room(name)?;
     for role in &roster {
         if let Ok(panel) = panel_name(root, name, role) {
-            eprintln!("panel {panel} (role {role}) keeps its running Agent; stop it with: hc kill {panel}");
+            eprintln!("panel {panel} (role {role}) keeps its running Agent; stop it with: tearoom hc kill {panel}");
         }
     }
     eprintln!("room {name:?} deleted; {records} record(s) removed");

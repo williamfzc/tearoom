@@ -14,15 +14,15 @@ struct HcSession {
 }
 impl Drop for HcSession {
     fn drop(&mut self) {
-        let _ = Command::new("hc")
-            .args(["server", "stop", "--json"])
+        let _ = Command::new(env!("CARGO_BIN_EXE_tearoom"))
+            .args(["hc", "server", "stop", "--json"])
             .output();
         let _ = fs::remove_file(&self.socket);
     }
 }
 
 #[test]
-#[ignore = "starts an isolated hc core and terminal; requires hc in PATH"]
+#[ignore = "starts an isolated hc core and terminal"]
 fn direct_rpc_and_delivery_use_an_isolated_core() {
     let temp = tempfile::tempdir().unwrap();
     let socket = PathBuf::from(format!("/tmp/tearoom-hc-{}.sock", std::process::id()));
@@ -31,6 +31,16 @@ fn direct_rpc_and_delivery_use_an_isolated_core() {
     std::env::set_var("XDG_CONFIG_HOME", temp.path().join("config"));
     std::env::set_var("XDG_STATE_HOME", temp.path().join("state"));
     let _session = HcSession { socket };
+
+    let start = Command::new(env!("CARGO_BIN_EXE_tearoom"))
+        .args(["hc", "ls", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        start.status.success(),
+        "{}",
+        String::from_utf8_lossy(&start.stderr)
+    );
 
     let script = temp.path().join("agent.sh");
     fs::write(&script, "#!/bin/sh\nprintf '\\033]7501;state=idle\\007'\nwhile IFS= read -r line; do\n  printf '\\033]7501;state=working\\007'\n  sleep 1\n  printf '\\033]7501;state=done\\007'\ndone\n").unwrap();
@@ -49,7 +59,11 @@ fn direct_rpc_and_delivery_use_an_isolated_core() {
         Err(HcError::Remote(_))
     ));
 
-    let runtime = HcRuntime { client, timeout };
+    let runtime = HcRuntime {
+        client,
+        timeout,
+        workspace_label: None,
+    };
     let role = Role {
         agent_type: "probe".into(),
         command: vec!["sh".into(), script.to_string_lossy().into_owned()],

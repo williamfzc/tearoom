@@ -53,7 +53,7 @@ tearoom --version
   stream, its roster binding, its dispatch intents and cursor, and its Herdr
   binding go with it, and its Herdr session is stopped best-effort. Role
   definitions survive. Running Agent panels are not stopped; the command
-  names each panel and its `hc kill` command. `reply_to` references from
+  names each panel and its `tearoom hc kill` command. `reply_to` references from
   surviving Rooms' records become dangling pointers.
   The command refuses while the Room has child Rooms or unresolved
   deliveries, and while a dispatcher holds the workspace lock. Without
@@ -213,10 +213,19 @@ routing; `collab run` starts the dispatcher and `collab deliveries` prints its
 durable delivery intents. They do not wake Agents by themselves. See
 [collaboration delivery](../architecture/collaboration.md) for the delivery
 contract and [status.md](../architecture/status.md) for what ships.
+The [planned local service](../architecture/collaboration.md#target-local-collaboration-service)
+has not replaced this foreground command yet.
 
 Only one `collab run` may operate in a workspace at a time. A temporary
 collision with a manual delivery operation does not stop it: the dispatcher
 tries the scan again on its next iteration.
+
+On Unix, Ctrl-C, SIGTERM, a dispatcher error, or a normal return stops that
+workspace's live Agent terminals. The shared hc service and terminals from
+other workspaces keep running. Any submitted delivery interrupted by shutdown
+is marked uncertain; inspect the Room and delivery record before resolving it.
+Forced termination such as SIGKILL or machine loss cannot run this cleanup.
+Programs that deliberately detach from their Agent terminal may remain running.
 
 `collab restart --room <room> --role <role>` replaces one Room-role panel: it
 stops the live panel, starts the role's configured command again, and prints

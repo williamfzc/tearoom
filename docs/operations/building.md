@@ -9,9 +9,10 @@ timestamp: 2026-09-09
 
 # Building and testing
 
-Requires Rust with Cargo, Clippy and rustfmt, and a Unix-like OS. The release
-workflow pins the Rust toolchain version; build with the same version when
-reproducing release artifacts.
+Requires Rust with Cargo, Clippy and rustfmt, Zig 0.16, and a Unix-like OS.
+Cargo fetches herdr-core and its pinned Ghostty terminal component from Git
+when needed. The release workflow pins the Rust toolchain version; build with
+the same version when reproducing release artifacts.
 
 ```bash
 make build          # bin/tearoom
@@ -31,6 +32,7 @@ marker and its place in `make check`.
 The [Test workflow](../../.github/workflows/test.yml) runs `make check` for
 branch pushes and pull requests on Ubuntu using the release toolchain.
 
-Go compatibility and real hc integration tests are marked ignored because
-they require external binaries. Run them explicitly with the corresponding
-test environment when validating those boundaries.
+Go compatibility tests are marked ignored because they require external
+binaries. The hc runtime is built into Tearoom; real-Agent integration journeys
+still require an installed and authenticated Agent CLI. Run ignored integration
+tests explicitly when validating those boundaries.

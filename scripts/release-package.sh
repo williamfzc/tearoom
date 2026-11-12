@@ -161,7 +161,7 @@ build_target() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/tearoom-release.XXXXXX")
     trap 'rm -rf "$work"' EXIT HUP INT TERM
     "$cargo_bin" metadata --locked --format-version 1 --filter-platform "$triple" --manifest-path Cargo.toml > "$work/metadata.json"
-    python3 scripts/release-notices.py < "$work/metadata.json" > "$work/THIRD_PARTY_NOTICES"
+    python3 scripts/release-notices.py "$work/metadata.json" > "$work/THIRD_PARTY_NOTICES"
     echo "release: building $target ($triple)"
     TEAROOM_BUILD_VERSION="$tag" TEAROOM_BUILD_COMMIT="$commit" \
         "$cargo_bin" build --locked --release --target "$triple" --target-dir "$work/target" --manifest-path Cargo.toml

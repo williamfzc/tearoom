@@ -6,7 +6,7 @@ mod room_herdr;
 mod rooms;
 mod web;
 
-use crate::collab::runtime::HcRuntime;
+use crate::collab::runtime::{workspace_label, HcRuntime};
 use crate::collab::{Config, Message, RecordRef};
 use crate::core::{AppendRequest, Record};
 use crate::hc::HcClient;
@@ -17,7 +17,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n  web       open the local browser interface\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
+const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n  web       open the local browser interface\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  hc        inspect or manage embedded terminals\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
 
 pub fn run() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -77,9 +77,11 @@ fn execute(args: &[String]) -> Result<()> {
 }
 
 fn hc_runtime() -> Result<HcRuntime> {
+    let store = Store::open(std::env::current_dir()?)?;
     Ok(HcRuntime {
         client: HcClient::from_env()?,
         timeout: Duration::from_secs(30),
+        workspace_label: Some(workspace_label(store.root())?),
     })
 }
 

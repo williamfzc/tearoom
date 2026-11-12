@@ -16,7 +16,7 @@ The Rust implementation has these boundaries:
 | Domain | `src/core.rs` | Room and Record data, content compaction, and idempotency fingerprints |
 | Persistence | `src/store.rs` and `store/` | The `.tearoom` JSONL layout, Store operations, recovery, and the cross-process lock |
 | Application | `src/collab.rs` and `collab/` | Roles, delivery state, and Room-to-panel coordination |
-| Outside | `hc.rs`, `herdr/` | hc JSON-RPC and Herdr command adapters |
+| Outside | `hc.rs`, `herdr/` | Embedded herdr-core runtime client and Herdr command adapters |
 | Outside | `src/cli.rs`, `cli/`, `cli/web*`, `main.rs` | Command parsing, output, the optional loopback browser face, and process entry |
 
 Dependencies point inward. `core` imports no project package. Persistence
@@ -69,13 +69,16 @@ not a restoration of that remote-capable server: it binds only loopback,
 carries a page token, and owns no product or storage invariant; its loopback,
 token, and origin rules are transport policy. It reads through the Store and
 appends through the CLI's shared message composition.
+The planned per-user local collaboration service is a new lifecycle boundary,
+not the removed hosted profile or HTTP face; its target and current status are
+separately identified in [collaboration.md](collaboration.md#target-local-collaboration-service).
 
 ## Collaboration runtime boundary
 
-`herdr-core` (`hc`) is the intended runtime foundation for Agent terminals,
-prompt delivery, parent-child execution, and lifecycle events. It has no
-native Tearoom board or role-routing policy. An integration outside the
-kernel defines reusable roles (command, working directory, and role
+`herdr-core` (`hc`) is compiled into Tearoom and runs as a separate background
+process for Agent terminals, prompt delivery, parent-child execution, and
+lifecycle events. It has no native Tearoom board or role-routing policy. An
+integration outside the kernel defines reusable roles (command, working directory, and role
 instructions), configures collaborators for a Room, and binds each
 Room's role instance to its own hc panel. All those roles share the Room's one
 record stream; reusing a role definition in another Room creates a separate
@@ -83,8 +86,11 @@ panel instance. An explicit recipient routes through hc to that Room-scoped pane
 Rooms can coordinate through a shared ancestor Room; build and review use
 separate Agent instances and roles in the same Room.
 
-The integration also exposes the configured collaborators to the CLI and
-reconciles Room records with hc snapshots/events after interruption. The
+The `tearoom hc` command exposes the embedded runtime CLI. The integration also
+exposes configured collaborators and reconciles Room records with hc
+snapshots/events after interruption. `tearoom hc update` is disabled so the
+embedded runtime cannot replace the Tearoom executable; updates arrive through
+Tearoom releases. The
 collaborator roster is discovery and routing data, not admission; it does not
 affect who can read or write a local Room. Role instructions are an initial message, not a native system prompt. Panel-failure handling and reliable
 recovery are not existing hc guarantees. The delivery contract is in

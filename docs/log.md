@@ -8,6 +8,15 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-12 — Set a local service lifecycle target
+
+The intended collaboration lifecycle is one local service per user with
+short-lived CLI commands, replacing one foreground dispatcher per workspace.
+Room history remains workspace-owned and Herdr remains optional. The removed
+hosted service is not restored. Process ownership, recovery limits, and the
+unimplemented cutover are in [collaboration.md](architecture/collaboration.md#target-local-collaboration-service);
+[status.md](architecture/status.md) distinguishes the shipped behavior.
+
 ## 2026-11-11 — Publish binaries through GitHub Releases
 
 GitHub Releases replaces R2 as the sole binary distribution channel, keeping

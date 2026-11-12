@@ -51,11 +51,12 @@ These handoffs use explicit --to @role addresses, not names in message text.
 Use separate Agent instances for implementation and independent review.
 
 Custom Agent TUIs: configure the interactive launch command and its arguments
-as a Role. Read hc --skill, then check startup, input delivery, and lifecycle
-status in the actual working directory. hc observes OSC 7501 status reports;
+as a Role. Read `tearoom hc --skill`, then check startup, input delivery, and
+lifecycle status in the actual working directory. hc observes OSC 7501 status reports;
 if they are missing, inspect the TUI's hooks or other reliable lifecycle events
 and map them to hc's status protocol when the integration can do so. Verify
-startup and multiple turns through hc before relying on unattended delivery.
+startup and multiple turns through the built-in runtime before relying on
+unattended delivery.
 If no reliable events are available, record the blocker rather than guessing
 from screen text or assuming a delivered task is complete.
 
@@ -65,15 +66,16 @@ initialization, save its output to a new file, for example:
   (set -C; tearoom skill --pi-extension > .tearoom/pi-hc-status.ts)
 Do not overwrite an existing file; inspect and reuse it if suitable. Pass its
 absolute path to Pi with --extension. Other Agent CLIs do not need this Pi
-extension. Check each chosen CLI's hc readiness separately.
+extension. Check each chosen CLI readiness separately.
 
-Use hc get and hc read to inspect a blocked or unknown panel. Resolve an
-authorized first-run trust prompt according to the actual screen; login and
+Use `tearoom hc get` and `tearoom hc read` to inspect a blocked or unknown
+panel. Resolve an authorized first-run trust prompt according to the actual screen; login and
 trust are separate checks. If login, approval, or readiness cannot be resolved,
 record the blocker without claiming completion. Do not blindly resend: inspect
-the panel, Room, and delivery state first. hc --skill is hc's canonical runtime
-guide. Codex launches need --no-daemon so the dispatcher controls the panel it
-observes. Agents that do not report hc status stay pending; do not infer
+the panel, Room, and delivery state first. `tearoom hc --skill` prints the
+upstream runtime guide; its `hc ...` examples should be run as `tearoom hc ...`.
+Codex launches need --no-daemon so the dispatcher controls the panel it
+observes. Agents that do not report lifecycle status stay pending; do not infer
 readiness from a quiet terminal.
 
 How work moves:

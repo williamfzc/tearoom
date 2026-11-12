@@ -6,8 +6,37 @@ use crate::collab::{dispatch_lock, panel_name, Config, DeliveryState, DispatchSt
 use crate::store::Store;
 use anyhow::{anyhow, bail, Context, Result};
 use fs2::FileExt;
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
+use std::path::Path;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+#[cfg(unix)]
+static STOP_DISPATCHER: AtomicBool = AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn request_dispatcher_stop(_: libc::c_int) {
+    STOP_DISPATCHER.store(true, Ordering::Relaxed);
+}
+
+#[cfg(unix)]
+fn install_dispatcher_signals() -> Result<()> {
+    STOP_DISPATCHER.store(false, Ordering::Relaxed);
+    unsafe {
+        for signal in [libc::SIGINT, libc::SIGTERM] {
+            if libc::signal(
+                signal,
+                request_dispatcher_stop as *const () as libc::sighandler_t,
+            ) == libc::SIG_ERR
+            {
+                bail!("cannot handle dispatcher shutdown signal {signal}");
+            }
+        }
+    }
+    Ok(())
+}
 
 pub(super) fn collab_command(args: &[String]) -> Result<()> {
     let Some((action, rest)) = args.split_first() else {
@@ -44,11 +73,40 @@ pub(super) fn collab_command(args: &[String]) -> Result<()> {
             owner
                 .try_lock_exclusive()
                 .context("another Room dispatcher is running")?;
-            loop {
-                dispatcher.pump()?;
-                let intents = dispatcher.deliveries()?;
-                crate::collab::herdr::enqueue(dispatcher.store.root(), &intents);
-                std::thread::sleep(Duration::from_millis(500));
+            #[cfg(unix)]
+            install_dispatcher_signals()?;
+            let root = dispatcher.store.root().to_path_buf();
+            let panels = known_workspace_panels(&root)?;
+            let run_result = (|| -> Result<()> {
+                loop {
+                    #[cfg(unix)]
+                    if STOP_DISPATCHER.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    dispatcher.pump()?;
+                    let intents = dispatcher.deliveries()?;
+                    crate::collab::herdr::enqueue(dispatcher.store.root(), &intents);
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+                Ok(())
+            })();
+            let cleanup_result = (|| -> Result<()> {
+                let result = dispatcher.runtime.stop_workspace(&panels)?;
+                crate::collab::dispatch::record_stopped_panels(&root, &result.stopped)?;
+                if !result.failed.is_empty() {
+                    bail!(
+                        "could not stop workspace terminals: {}",
+                        result.failed.join("; ")
+                    );
+                }
+                Ok(())
+            })();
+            match (run_result, cleanup_result) {
+                (Ok(()), result) => result,
+                (Err(error), Ok(())) => Err(error),
+                (Err(error), Err(cleanup)) => {
+                    Err(error.context(format!("workspace terminal cleanup failed: {cleanup:#}")))
+                }
             }
         }
         "resolve" => {
@@ -78,6 +136,24 @@ pub(super) fn collab_command(args: &[String]) -> Result<()> {
     }
 }
 
+fn known_workspace_panels(root: &Path) -> Result<Vec<String>> {
+    let config = Config::load(root)?;
+    let mut panels = BTreeSet::new();
+    for (room, binding) in config.rooms {
+        for role in binding.roles {
+            panels.insert(panel_name(root, &room, &role)?);
+        }
+    }
+    for intent in crate::collab::DispatchState::load(root)?.intents {
+        for delivery in intent.deliveries {
+            if delivery.panel == panel_name(root, &intent.room, &delivery.role)? {
+                panels.insert(delivery.panel);
+            }
+        }
+    }
+    Ok(panels.into_iter().collect())
+}
+
 /// Replace one Room-role panel without claiming its Agent conversation survived.
 fn restart<R: Runtime>(
     dispatcher: &Dispatcher<R>,
@@ -102,7 +178,7 @@ fn restart<R: Runtime>(
     let panel = panel_name(root, room, role_name)?;
     let status = dispatcher.runtime.status(&panel)?;
     if status == PanelStatus::Working {
-        bail!("panel {panel} is working; wait for its turn to end, or stop it directly with hc kill {panel}");
+        bail!("panel {panel} is working; wait for its turn to end, or stop it directly with tearoom hc kill {panel}");
     }
     let waiting: Vec<String> = DispatchState::load(root)?
         .intents

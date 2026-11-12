@@ -6,6 +6,21 @@ use serde_json::{json, Value};
 use std::path::Path;
 use std::time::Duration;
 
+/// Stable identifier used to limit runtime cleanup to one workspace.
+pub fn workspace_label(workspace: &Path) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let canonical = std::fs::canonicalize(workspace).context("resolve workspace root")?;
+    let mut hash = Sha256::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        hash.update(canonical.as_os_str().as_bytes());
+    }
+    #[cfg(not(unix))]
+    hash.update(canonical.to_string_lossy().as_bytes());
+    Ok(hex::encode(&hash.finalize()[..12]))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PanelStatus {
     Missing,
@@ -67,11 +82,67 @@ pub trait Runtime {
 pub struct HcRuntime {
     pub client: HcClient,
     pub timeout: Duration,
+    pub workspace_label: Option<String>,
+}
+
+#[derive(Default)]
+pub struct WorkspaceStop {
+    pub stopped: Vec<String>,
+    pub failed: Vec<String>,
 }
 
 impl HcRuntime {
     fn call(&self, method: &str, params: Value) -> Result<Value> {
         Ok(self.client.call(method, params, self.timeout)?)
+    }
+
+    /// Stop this workspace's live terminals, plus known terminals created before workspace labels.
+    pub fn stop_workspace(&self, known: &[String]) -> Result<WorkspaceStop> {
+        use std::collections::BTreeSet;
+        let Some(label) = self.workspace_label.as_deref() else {
+            bail!("workspace identity is unavailable; refusing broad terminal cleanup");
+        };
+        let listed =
+            match self
+                .client
+                .call_existing("terminal.list", json!({"all":false}), self.timeout)
+            {
+                Ok(listed) => listed,
+                Err(crate::hc::HcError::Connect(error))
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                    ) =>
+                {
+                    return Ok(WorkspaceStop::default())
+                }
+                Err(error) => return Err(error.into()),
+            };
+        let terminals = listed["terminals"]
+            .as_array()
+            .context("invalid hc terminal list during workspace shutdown")?;
+        let known = known.iter().collect::<BTreeSet<_>>();
+        let names = terminals
+            .iter()
+            .filter_map(|terminal| {
+                let name = terminal["name"].as_str()?;
+                let owned = terminal["labels"]["tearoom.workspace"].as_str() == Some(label)
+                    || known.contains(&name.to_owned());
+                owned.then(|| name.to_owned())
+            })
+            .collect::<BTreeSet<_>>();
+        let mut result = WorkspaceStop::default();
+        for panel in names {
+            match self.client.call_existing(
+                "terminal.kill",
+                json!({"terminal":panel}),
+                self.timeout,
+            ) {
+                Ok(_) => result.stopped.push(panel),
+                Err(error) => result.failed.push(format!("{panel}: {error}")),
+            }
+        }
+        Ok(result)
     }
 }
 
@@ -112,10 +183,14 @@ impl Runtime for HcRuntime {
             bail!("Codex command must include --no-daemon");
         }
         let room_label = stable_label(room);
+        let mut labels = json!({"tearoom.room":room_label,"tearoom.role":role_name});
+        if let Some(workspace) = &self.workspace_label {
+            labels["tearoom.workspace"] = json!(workspace);
+        }
         self.call(
             "terminal.run",
             json!({"argv":argv,"name":name,"cwd":directory,"no_parent":true,
-            "labels":{"tearoom.room":room_label,"tearoom.role":role_name}}),
+            "labels":labels}),
         )?;
         Ok(())
     }

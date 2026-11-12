@@ -45,6 +45,68 @@ def invoke(command, directory):
 
 
 class ReleaseAssemblyTests(unittest.TestCase):
+    def test_hc_notices_include_its_third_party_text_and_pinned_ghostty(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = pathlib.Path(temp)
+            core = workspace / "crates/herdr-core"
+            ghostty = workspace / "vendor/ghostty"
+            core.mkdir(parents=True)
+            ghostty.mkdir(parents=True)
+            (workspace / "LICENSE").write_text("Apache license\n", encoding="utf-8")
+            (core / "THIRD-PARTY-NOTICES").write_text("hc and bundled notices\n", encoding="utf-8")
+            (ghostty / "LICENSE").write_text("Ghostty MIT license\n", encoding="utf-8")
+            subprocess.run(["git", "init", "--quiet"], cwd=ghostty, check=True)
+            subprocess.run(["git", "config", "user.name", "Release test"], cwd=ghostty, check=True)
+            subprocess.run(["git", "config", "user.email", "release-test@example.invalid"], cwd=ghostty, check=True)
+            subprocess.run(["git", "add", "LICENSE"], cwd=ghostty, check=True)
+            subprocess.run(["git", "commit", "--quiet", "-m", "fixture"], cwd=ghostty, check=True)
+            ghostty_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ghostty, text=True).strip()
+            subprocess.run(["git", "init", "--quiet"], cwd=workspace, check=True)
+            subprocess.run(["git", "config", "user.name", "Release test"], cwd=workspace, check=True)
+            subprocess.run(["git", "config", "user.email", "release-test@example.invalid"], cwd=workspace, check=True)
+            subprocess.run(["git", "add", "LICENSE", "crates"], cwd=workspace, check=True)
+            subprocess.run(
+                ["git", "update-index", "--add", "--cacheinfo", f"160000,{ghostty_commit},vendor/ghostty"],
+                cwd=workspace, check=True,
+            )
+            subprocess.run(["git", "commit", "--quiet", "-m", "fixture"], cwd=workspace, check=True)
+            commit = subprocess.check_output(["git", "rev-parse", "HEAD:vendor/ghostty"], cwd=workspace, text=True).strip()
+            package = {
+                "id": "herdr-core-id", "name": "herdr-core", "version": "0.1.20",
+                "source": "git+https://github.com/herdrdev/herdr-core.git#fixture",
+                "license": "Apache-2.0", "license_file": None,
+                "manifest_path": str(core / "Cargo.toml"),
+            }
+            metadata = {"packages": [package], "resolve": {"nodes": [{"id": package["id"]}]}}
+            metadata_path = workspace / "metadata.json"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            notices = subprocess.run(
+                ["python3", str(ROOT / "scripts/release-notices.py"), str(metadata_path)],
+                capture_output=True, text=True, check=True,
+            ).stdout
+            self.assertIn("hc and bundled notices", notices)
+            self.assertIn("Ghostty MIT license", notices)
+            metadata["tearoomReleaseSources"] = json.loads(metadata_path.read_text(encoding="utf-8"))["tearoomReleaseSources"]
+            package["manifest_path"] = "/unavailable/build/runner/crates/herdr-core/Cargo.toml"
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+            sbom = subprocess.run(
+                ["python3", str(ROOT / "scripts/release-sbom.py"), "v1.2.3", "0", str(metadata_path)],
+                capture_output=True, text=True, check=True,
+            )
+            packages = json.loads(sbom.stdout)["packages"]
+            ghostty_package = next(item for item in packages if item["name"] == "ghostty")
+            self.assertEqual(ghostty_package["versionInfo"], commit)
+            self.assertEqual(ghostty_package["licenseDeclared"], "MIT")
+            metadata.pop("tearoomReleaseSources")
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            missing = subprocess.run(
+                ["python3", str(ROOT / "scripts/release-sbom.py"), "v1.2.3", "0", str(metadata_path)],
+                capture_output=True, text=True, check=False,
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("missing hc's pinned Ghostty revision", missing.stderr)
+
     def test_assembly_and_checksum_validation(self):
         with tempfile.TemporaryDirectory() as temp:
             directory = pathlib.Path(temp)
