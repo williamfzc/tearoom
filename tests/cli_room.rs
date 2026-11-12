@@ -5,14 +5,14 @@ use std::process::Command;
 #[test]
 fn installed_skill_exposes_pi_extension_without_a_workspace() {
     let dir = tempfile::tempdir().unwrap();
-    let output = command(dir.path())
+    let output = skill_command(dir.path())
         .args(["skill", "--pi-extension"])
         .output()
         .unwrap();
     assert!(output.status.success());
     assert_eq!(output.stdout, include_bytes!("../scripts/pi-hc-status.ts"));
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
-    let guide = command(dir.path()).arg("skill").output().unwrap();
+    let guide = skill_command(dir.path()).arg("skill").output().unwrap();
     assert!(guide.status.success());
     assert!(String::from_utf8(guide.stdout)
         .unwrap()
@@ -20,10 +20,11 @@ fn installed_skill_exposes_pi_extension_without_a_workspace() {
 }
 
 #[test]
-fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
+fn dispatcher_survives_a_busy_delivery_lock_and_duplicate_registration() {
     use std::time::{Duration, Instant};
 
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     assert!(command(dir.path())
         .args(["room", "init", "--name", "project"])
         .status()
@@ -31,32 +32,32 @@ fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
         .success());
     let root = tearoom::store::Store::find(dir.path()).unwrap();
     let held = tearoom::collab::dispatch_lock(&root).unwrap();
-    let mut first = command(dir.path())
+    let first = command(dir.path())
         .args(["collab", "run"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+        .output()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !root.join(".dispatcher.lock").exists() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    std::thread::sleep(Duration::from_millis(700));
-    let survived = first.try_wait().unwrap().is_none();
-    let mut second = command(dir.path())
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let second = command(dir.path())
         .args(["collab", "run"])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
+        .output()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(3);
-    while second.try_wait().unwrap().is_none() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    if second.try_wait().unwrap().is_none() {
-        let _ = second.kill();
-    }
-    let second = second.wait_with_output().unwrap();
+    assert!(
+        second.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second.stderr)
+    );
+    let status = command(dir.path())
+        .args(["service", "status"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["running"], true);
+    assert_eq!(status["workspaces"].as_array().unwrap().len(), 1);
     drop(held);
     let append = command(dir.path())
         .args(["send", "--room", "project", "hello"])
@@ -74,14 +75,6 @@ fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    let _ = first.kill();
-    let _ = first.wait();
-    assert!(
-        survived,
-        "dispatcher exited when the delivery lock was busy"
-    );
-    assert!(!second.status.success());
-    assert!(String::from_utf8_lossy(&second.stderr).contains("another Room dispatcher is running"));
     assert!(append.status.success());
     assert!(
         scanned,
@@ -92,10 +85,52 @@ fn dispatcher_survives_a_busy_delivery_lock_and_rejects_a_second_runner() {
 /// A Tearoom command isolated from any Herdr session the developer may have open.
 fn command(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tearoom"));
+    let runtime = dir.join(".test-runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let session = format!("tearoom-test-{}", std::process::id());
+    command
+        .current_dir(dir)
+        .env("HC_SESSION", session)
+        .env("HC_SOCKET", runtime.join("hc.sock"))
+        .env("TEAROOM_SERVICE_DIR", dir.join(".test-service"))
+        .env("XDG_RUNTIME_DIR", runtime)
+        .env("XDG_CONFIG_HOME", dir.join(".test-config"))
+        .env("XDG_STATE_HOME", dir.join(".test-state"))
+        .env("HOME", dir.join(".test-home"))
+        .env("PATH", "/usr/bin:/bin")
+        .env("TEAROOM_HERDR_BIN", dir.join("missing-herdr"));
+    command
+}
+
+fn skill_command(dir: &Path) -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_tearoom"));
     command
         .current_dir(dir)
         .env("TEAROOM_HERDR_BIN", dir.join("missing-herdr"));
     command
+}
+
+struct ServiceCleanup {
+    workspace: std::path::PathBuf,
+}
+
+impl ServiceCleanup {
+    fn new(workspace: &Path) -> Self {
+        Self {
+            workspace: workspace.to_path_buf(),
+        }
+    }
+}
+
+impl Drop for ServiceCleanup {
+    fn drop(&mut self) {
+        let _ = command(&self.workspace).args(["service", "stop"]).output();
+        let _ = command(&self.workspace)
+            .args(["hc", "server", "stop", "--json"])
+            .output();
+    }
 }
 
 #[test]
@@ -190,6 +225,7 @@ fn room_move_changes_tree_without_changing_room_history() {
 #[test]
 fn roles_and_room_mentions_are_discoverable() {
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     let run = |args: &[&str]| {
         let output = command(dir.path()).args(args).output().unwrap();
         assert!(
@@ -388,10 +424,26 @@ fn roles_and_room_mentions_are_discoverable() {
     assert!(String::from_utf8_lossy(&addressed_json.stderr).contains("cannot address roles"));
     let history = String::from_utf8(run(&["read", "--room", "project"])).unwrap();
     assert_eq!(history.lines().count(), 3, "invalid --to must not append");
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&run(&["collab", "deliveries"])).unwrap(),
-        serde_json::json!([])
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let deliveries = loop {
+        let output = run(&["collab", "deliveries"]);
+        let deliveries: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        if deliveries
+            .as_array()
+            .is_some_and(|intents| intents.len() == 2)
+        {
+            break deliveries;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "addressed sends were not dispatched: {deliveries}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    assert_eq!(deliveries[0]["seq"], 2);
+    assert_eq!(deliveries[0]["deliveries"][0]["role"], "reviewer");
+    assert_eq!(deliveries[1]["seq"], 3);
+    assert_eq!(deliveries[1]["deliveries"][0]["role"], "builder");
     run(&["room", "roles", "--room", "project", "--remove", "reviewer"]);
     let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
     assert!(!roster.contains("reviewer"));
@@ -403,6 +455,7 @@ fn roles_and_room_mentions_are_discoverable() {
 #[test]
 fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     let run = |args: &[&str]| command(dir.path()).args(args).output().unwrap();
     assert!(run(&["room", "init", "--name", "project"]).status.success());
     assert!(run(&[
@@ -433,18 +486,6 @@ fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
             .status
             .success()
     );
-    assert!(run(&[
-        "send",
-        "--room",
-        "project",
-        "--text",
-        "Please review this",
-        "--to",
-        "@reviewer"
-    ])
-    .status
-    .success());
-
     let bound = run(&["role", "delete", "--name", "reviewer"]);
     assert!(!bound.status.success());
     assert!(String::from_utf8_lossy(&bound.stderr).contains("assigned to a Room"));
@@ -466,6 +507,17 @@ fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
         r#"{"version":1,"cursor":{},"intents":[]}"#,
     )
     .unwrap();
+    let workspace_store = tearoom::store::Store::open(dir.path()).unwrap();
+    workspace_store
+        .append(
+            "project",
+            "person",
+            tearoom::core::AppendRequest {
+                content: r#"{"text":"Please review this","mentions":["reviewer"]}"#,
+                idempotency_key: "unscanned-role-delete-check",
+            },
+        )
+        .unwrap();
     let unresolved = run(&["role", "delete", "--name", "reviewer"]);
     assert!(!unresolved.status.success());
     assert!(String::from_utf8_lossy(&unresolved.stderr).contains("unscanned messages"));
@@ -492,6 +544,7 @@ fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
 #[test]
 fn concurrent_send_and_role_delete_do_not_drop_a_cli_handoff() {
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     let run = |args: &[&str]| command(dir.path()).args(args).output().unwrap();
     assert!(run(&["room", "init", "--name", "project"]).status.success());
     assert!(run(&[

@@ -69,9 +69,9 @@ not a restoration of that remote-capable server: it binds only loopback,
 carries a page token, and owns no product or storage invariant; its loopback,
 token, and origin rules are transport policy. It reads through the Store and
 appends through the CLI's shared message composition.
-The planned per-user local collaboration service is a new lifecycle boundary,
-not the removed hosted profile or HTTP face; its target and current status are
-separately identified in [collaboration.md](collaboration.md#target-local-collaboration-service).
+The per-user local collaboration service is a new lifecycle boundary, not the
+removed hosted profile or HTTP face; its contract and limits are in
+[collaboration.md](collaboration.md#local-collaboration-service).
 
 ## Collaboration runtime boundary
 

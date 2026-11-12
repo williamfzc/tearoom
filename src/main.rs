@@ -7,7 +7,7 @@ fn main() {
     if internal
         || args
             .get(1)
-            .is_some_and(|arg| arg == "serve" || arg == "hold")
+            .is_some_and(|arg| arg == "serve" || arg == "hold" || arg == "--hc-launchd")
     {
         std::process::exit(herdr_core::cli::main());
     }

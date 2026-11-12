@@ -31,7 +31,6 @@ import {
     send: document.getElementById("send"),
     refresh: document.getElementById("refresh"),
   };
-
   const state = {
     rooms: [],
     selected: null,
@@ -65,16 +64,13 @@ import {
     }
     return payload;
   }
-
   function setRoomStatus(text) {
     ui.roomStatus.textContent = text;
   }
-
   function setError(text) {
     ui.error.textContent = text || "";
     ui.error.hidden = !text;
   }
-
   function roomByName(name) {
     return state.rooms.find((room) => room.name === name) || null;
   }
@@ -237,7 +233,7 @@ import {
     setError("");
     messages.status("Sending…");
     try {
-      await api(`/api/rooms/${encodeURIComponent(state.selected)}/messages`, {
+      const result = await api(`/api/rooms/${encodeURIComponent(state.selected)}/messages`, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -245,6 +241,10 @@ import {
       resizeText();
       updateSendState();
       await loadHistory(false);
+      if (result.service_error) {
+        setError(`Message saved, but collaboration did not start: ${result.service_error}`);
+        messages.status("Saved; collaboration did not start");
+      }
       ui.text.focus();
     } catch (error) {
       setError(error instanceof TypeError ? "Could not send. Check the connection." : error.message);

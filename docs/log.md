@@ -8,14 +8,25 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-12 — Implement the local collaboration service
+
+Addressed CLI and web messages now activate one per-user Tearoom service,
+which registers and dispatches multiple workspaces. `service status`,
+`service stop`, and confirmed `service forget` expose its lifecycle. hc owns a
+service terminal and its Agent children; the service is bound to the hc socket
+selected at first activation. The canonical contract, identity limits, and unverified platform
+cases are in [collaboration delivery](architecture/collaboration.md#local-collaboration-service)
+and the [evidence record](evaluations.md).
+
 ## 2026-11-12 — Set a local service lifecycle target
 
-The intended collaboration lifecycle is one local service per user with
-short-lived CLI commands, replacing one foreground dispatcher per workspace.
-Room history remains workspace-owned and Herdr remains optional. The removed
-hosted service is not restored. Process ownership, recovery limits, and the
-unimplemented cutover are in [collaboration.md](architecture/collaboration.md#target-local-collaboration-service);
-[status.md](architecture/status.md) distinguishes the shipped behavior.
+The initial design chose one local service per user with short-lived CLI
+commands, replacing one foreground dispatcher per workspace. Room history
+remains workspace-owned and Herdr remains optional. The removed hosted service
+is not restored. The design and its implementation are now described in
+[collaboration.md](architecture/collaboration.md#local-collaboration-service);
+[status.md](architecture/status.md) distinguishes shipped behavior from
+remaining verification.
 
 ## 2026-11-11 — Publish binaries through GitHub Releases
 

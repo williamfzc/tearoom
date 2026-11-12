@@ -63,6 +63,7 @@ fn direct_rpc_and_delivery_use_an_isolated_core() {
         client,
         timeout,
         workspace_label: None,
+        caller: None,
     };
     let role = Role {
         agent_type: "probe".into(),

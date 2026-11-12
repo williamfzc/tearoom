@@ -83,6 +83,7 @@ pub struct HcRuntime {
     pub client: HcClient,
     pub timeout: Duration,
     pub workspace_label: Option<String>,
+    pub caller: Option<String>,
 }
 
 #[derive(Default)]
@@ -187,11 +188,12 @@ impl Runtime for HcRuntime {
         if let Some(workspace) = &self.workspace_label {
             labels["tearoom.workspace"] = json!(workspace);
         }
-        self.call(
-            "terminal.run",
-            json!({"argv":argv,"name":name,"cwd":directory,"no_parent":true,
-            "labels":labels}),
-        )?;
+        let mut params = json!({"argv":argv,"name":name,"cwd":directory,
+            "no_parent":self.caller.is_none(),"labels":labels});
+        if let Some(caller) = &self.caller {
+            params["caller"] = json!(caller);
+        }
+        self.call("terminal.run", params)?;
         Ok(())
     }
 

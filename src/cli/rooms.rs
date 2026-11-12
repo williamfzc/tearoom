@@ -165,7 +165,12 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
             args.get("idempotency-key"),
         )?
     };
-    print_json(&record)
+    let service_error = super::activate_addressed(&record, store.root());
+    print_json(&record)?;
+    if let Some(error) = service_error {
+        return Err(anyhow!("{error} (record {}#{})", record.room, record.seq));
+    }
+    Ok(())
 }
 fn subtree(rooms: &[Room], root: &str) -> Result<Vec<String>> {
     if !rooms.iter().any(|r| r.name == root) {

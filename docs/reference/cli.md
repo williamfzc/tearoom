@@ -31,6 +31,9 @@ tearoom collab run
 tearoom collab deliveries
 tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]
 tearoom collab restart --room <room> --role <role> [--confirm]
+tearoom service status
+tearoom service stop
+tearoom service forget <workspace-root> --confirm
 tearoom send [--room <room>] <text> [--as <signature>] [--to @role,...] [--reply-to <room>#<seq>] [--idempotency-key <key>]
 tearoom send [--room <room>] --text <text> [--as <signature>] [--to @role,...] [--reply-to <room>#<seq>] [--idempotency-key <key>]
 tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key <key>]
@@ -206,26 +209,58 @@ conflict is a request failure (exit 1).
 
 ## Delivery boundary
 
-The collaboration dispatcher
-reads the addressed Record, resolves the Room-role binding, and uses hc to
-start or notify that role's panel. Role and Room roster commands configure
-routing; `collab run` starts the dispatcher and `collab deliveries` prints its
-durable delivery intents. They do not wake Agents by themselves. See
-[collaboration delivery](../architecture/collaboration.md) for the delivery
-contract and [status.md](../architecture/status.md) for what ships.
-The [planned local service](../architecture/collaboration.md#target-local-collaboration-service)
-has not replaced this foreground command yet.
+The collaboration dispatcher reads the addressed Record, resolves the
+Room-role binding, and uses hc to start or notify that role's panel. An
+addressed CLI send or web append starts the background service after saving the
+Room record. If CLI activation fails, the error says the record was saved. A
+message without recipients does not activate collaboration. `read` and
+`room init` never start the service. `collab run` is a short-lived manual
+command that registers the current workspace and ensures the service is
+running. `collab deliveries` prints durable delivery intents; it does not wake
+Agents by itself.
 
-Only one `collab run` may operate in a workspace at a time. A temporary
-collision with a manual delivery operation does not stop it: the dispatcher
-tries the scan again on its next iteration.
+`service status` prints whether the service is running, whether it is stopping,
+and its registered workspaces with any paused-workspace errors. `service stop`
+stops the service and attempts to stop the Agent terminals managed for its
+registered workspaces. It records stopped panels, reports cleanup failures,+preserves Room history, and leaves the shared hc service and unrelated
+registered workspaces. It records stopped panels, reports cleanup failures,
+preserves Room history, and leaves the shared hc service and unrelated
+terminals running. If cleanup fails, dispatch stays stopped and `service stop`
+must be retried. After a successful stop, a later addressed send or `collab
+run` can start collaboration again. The first activation selects the hc socket
+for the user service; activation from a different hc session is refused until
+the service is stopped. See
+[collaboration delivery](../architecture/collaboration.md#local-collaboration-service)
+for service ownership and recovery limits, and [status.md](../architecture/status.md)
+for verification evidence.
 
-On Unix, Ctrl-C, SIGTERM, a dispatcher error, or a normal return stops that
-workspace's live Agent terminals. The shared hc service and terminals from
-other workspaces keep running. Any submitted delivery interrupted by shutdown
-is marked uncertain; inspect the Room and delivery record before resolving it.
-Forced termination such as SIGKILL or machine loss cannot run this cleanup.
-Programs that deliberately detach from their Agent terminal may remain running.
+The first service terminal uses the hc session and environment selected at its
+startup. Later CLI commands do not refresh its environment; changes to `PATH`
+or Agent credentials in a later shell are not guaranteed to reach the running
+service. The current interface has no environment-refresh operation.
+
+`service forget <workspace-root> --confirm` removes a paused registration when
+the recorded workspace identity no longer matches or its marker is missing.
+Use the absolute path shown by `service status`. It does not stop Agent
+terminals. Inspect and clean any remaining terminals before forgetting a moved,
+replaced, or missing workspace. The service uses an identity-derived owner
+label for cleanup; older terminals labeled only by their path are reported but
+never killed automatically.
+
+The service pumps registered workspaces sequentially, then waits 500 ms before
+the next pass. A slow dispatch in one workspace delays work and control requests
+for the others. Ordinary control requests wait up to 10 seconds; `service stop`
+waits up to 300 seconds. Delivery-state locks shared with manual operations
+serialize scans; a busy scan is retried on a later pass. When the service starts
+after an interruption, previously submitted deliveries are marked unknown.
+Inspect the Room and delivery record before resolving them; the service does
+not automatically replay them.
+
+Normal stop attempts to end terminals identified by the recorded identity-bound
+workspace label. Agent terminals are children of the Tearoom service terminal.
+See [evaluations](../evaluations.md) for what the scripted tests establish.
+Linux, hc-server failure, real Agent processes, detached descendants, and the
+race between identity checks and workspace replacement remain unverified.
 
 `collab restart --room <room> --role <role>` replaces one Room-role panel: it
 stops the live panel, starts the role's configured command again, and prints

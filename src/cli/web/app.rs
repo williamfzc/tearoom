@@ -173,7 +173,13 @@ impl App {
             None,
             "",
         ) {
-            Ok(record) => json_reply(201, &json!({ "record": record })),
+            Ok(record) => {
+                let service_error = super::super::activate_addressed(&record, self.store.root());
+                json_reply(
+                    201,
+                    &json!({ "record": record, "service_error": service_error }),
+                )
+            }
             Err(error) => from_error(error),
         }
     }

@@ -4,6 +4,7 @@ mod roles;
 mod room_delete;
 mod room_herdr;
 mod rooms;
+mod service;
 mod web;
 
 use crate::collab::runtime::{workspace_label, HcRuntime};
@@ -15,6 +16,7 @@ use crate::store::Store;
 use anyhow::{anyhow, bail, Result};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::time::Duration;
 
 const HELP: &str = "tearoom — a durable room tree for agents\n\nUsage: tearoom <command> [flags]\n\nEveryday work:\n  room      create or organize rooms and collaborators\n  send      write a message to a room\n  read      read a room or subtree\n  tree      see how rooms are organized\n  web       open the local browser interface\n\nSetup and recovery:\n  role      configure reusable collaborators\n  collab    run or inspect delivery\n  hc        inspect or manage embedded terminals\n  skill     print the agent guide\n\nOptions:\n  --version show build and store format information\n\nEnvironment:\n  TEAROOM_ACTOR   default signature for --as\n\nUse \"tearoom <command> --help\" for more information.\n";
@@ -34,13 +36,17 @@ pub fn run() -> i32 {
         }
     }
 }
+fn print_help() {
+    print!("{HELP}");
+    println!("  service   inspect or stop the local collaboration service");
+}
 fn execute(args: &[String]) -> Result<()> {
     let Some((command, rest)) = args.split_first() else {
-        print!("{HELP}");
+        print_help();
         return Ok(());
     };
     if command == "--help" || command == "-h" {
-        print!("{HELP}");
+        print_help();
         return Ok(());
     }
     if command == "--version" {
@@ -68,6 +74,8 @@ fn execute(args: &[String]) -> Result<()> {
         "room" => rooms::room_command(rest),
         "role" => roles::role_command(rest),
         "collab" => collaboration::collab_command(rest),
+        "service" => service::service_command(rest),
+        "__service" => service::run_service(),
         "send" => rooms::send_command(rest),
         "read" => rooms::read_command(rest),
         "tree" => rooms::tree_command(rest),
@@ -82,6 +90,7 @@ fn hc_runtime() -> Result<HcRuntime> {
         client: HcClient::from_env()?,
         timeout: Duration::from_secs(30),
         workspace_label: Some(workspace_label(store.root())?),
+        caller: None,
     })
 }
 
@@ -177,6 +186,14 @@ impl Args {
 fn print_json(value: &impl Serialize) -> Result<()> {
     println!("{}", serde_json::to_string(value)?);
     Ok(())
+}
+
+pub(super) fn activate_addressed(record: &Record, root: &Path) -> Option<String> {
+    serde_json::from_str::<Message>(record.content.get())
+        .ok()
+        .filter(|message| !message.mentions.is_empty())
+        .and_then(|_| service::activate(root).err())
+        .map(|error| format!("record saved, but background collaboration did not start: {error:#}"))
 }
 fn open() -> Result<Store> {
     Store::open(std::env::current_dir()?)

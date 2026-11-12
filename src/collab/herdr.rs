@@ -185,6 +185,7 @@ fn synchronize(job: &Job) -> Result<()> {
             client,
             timeout: Duration::from_secs(30),
             workspace_label: None,
+            caller: None,
         },
         Err(error) => {
             return Err(anyhow!("hc configuration unavailable: {error}"));

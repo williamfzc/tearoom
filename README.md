@@ -76,15 +76,18 @@ tearoom role init --name reviewer --agent-type pi --command pi \
   --arg=--extension --arg="$PWD/.tearoom/pi-hc-status.ts" \
   --instructions 'Review the change and report a verdict in the room.'
 tearoom room roles --room project --add dev,reviewer
-tearoom collab run
 ```
 
-Keep the dispatcher running in one terminal. In another, send a directed task:
+Send a directed task to start collaboration:
 
 ```sh
 tearoom send --room project --as human --to @dev \
   --text 'Implement the room list, then hand it to the reviewer with --to @reviewer.'
 ```
+
+The send command exits while the background service continues delivery. Check
+the service with `tearoom service status`, or stop it with
+`tearoom service stop`.
 
 Only explicit recipients are woken. A name mentioned in message text is just
 text. Agent commands must already be installed and signed in. Resolve the

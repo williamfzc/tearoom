@@ -6,11 +6,12 @@ The CLI is the product's automation interface; tearoom web is an optional local 
 
 The Agent setting up a Room owns the setup below. Prefer a known, stable
 project directory so each Agent CLI can reuse its own trust decision.
-Before dispatch, install and initialize hc, authenticate each Agent CLI, and
-check startup in the actual working directory. Trust only a directory whose
-contents are known and whose use is authorized; inspect first, then resolve
-the tool's trust prompt. For an unfamiliar directory or a decision requiring a
-person, stop and ask. Never bypass sandbox or permission controls to proceed.
+Before dispatch, authenticate each Agent CLI and check startup in the actual
+working directory; Tearoom starts its embedded hc runtime on demand. Trust
+only a directory whose contents are known and whose use is authorized; inspect
+first, then resolve the tool's trust prompt. For an unfamiliar directory or a
+decision requiring a person, stop and ask. Never bypass sandbox or permission
+controls to proceed.
 
 Prepare once, reuse in each Room:
 - In a new project directory, create the first Room with
@@ -24,7 +25,9 @@ Prepare once, reuse in each Room:
 - Assign existing roles when creating another Room with
   tearoom room init --name <name> --parent <parent> --role <roles>, or add
   them later with tearoom room roles --room <name> --add <roles>.
-- Start tearoom collab run to deliver addressed messages. Room creation tries
+- An addressed tearoom send starts the background collaboration service after
+  saving the Room record. `tearoom collab run` is an optional manual way to
+  register the current workspace and start the service. Room creation tries
   to prepare its own Herdr session. Open it with tearoom room open --room <name>;
   if preparation fails, retry as instructed.
 
@@ -125,10 +128,13 @@ Core commands:
   tearoom read --room <room> [--after e<N>] [--tail N] [--subtree]
   tearoom send --room <room> --text <text> [--as <label>] [--to @role,...]
   tearoom collab run | deliveries | resolve ...
+  tearoom service status | stop
 
 Records are ordered and append-only; the store assigns sequence numbers. Reads
 are repeatable and save no cursor. Empty read succeeds with no output. If a send
 may have succeeded, retry the exact content with the same --idempotency-key.
-collab run is the local hc dispatcher; stop it with Ctrl-C.
+collab run is a short-lived workspace activation command. The background
+service continues after the CLI exits; inspect it with `tearoom service status`
+and stop it with `tearoom service stop`.
 
 Detailed integration notes: docs/reference/agent-integration.md (when available).

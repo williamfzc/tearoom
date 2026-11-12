@@ -98,154 +98,19 @@ and target role. It persists delivery intents before moving its scan boundary;
 each intent then tracks its own outcome. Re-scanning must not create a second
 delivery for that key.
 Room-role dispatch is serialized, with later messages pending while that role
-is busy. A workspace lock admits one local dispatcher for its lifetime. A
-separate delivery-state lock serializes each scan with manual operations; when
-it is briefly busy, the dispatcher skips that scan and tries again on the next
-iteration. Other lock errors remain failures. Manual operations may still
-report a busy delivery-state lock and can be retried.
-
-## Target: local collaboration service
-
-The desired lifecycle is one background Tearoom service per local user, serving
-multiple workspaces. The CLI makes a request and exits; closing the CLI or an
-optional view does not stop collaboration. The service replaces manually
-running a long-lived `collab run` in each workspace. This is a target design,
-not a shipped command or a claim that the service exists today. The current
-implementation and its limits are below.
-
-```mermaid
-flowchart TD
-    cli[Short-lived CLI] -->|collaboration| service[Local Tearoom service]
-    cli -->|Room reads and writes| records[Workspace Room records]
-    service --> workspaceA[Workspace A collaboration]
-    service --> workspaceB[Workspace B collaboration]
-    workspaceA --> hc[hc runtime session]
-    workspaceB --> hc
-    hc --> agents[Workspace-scoped Agent terminals]
-    herdr[Optional Herdr view] -.-> agents
-```
-
-The service owns Room routing and delivery policy. hc owns terminal execution;
-Herdr remains an optional separate view. The arrows express responsibility and
-access, not verified process ancestry or a claim that hc runs in the service
-process. Workspaces, Rooms, Records, and Roles
-retain their existing meanings. Service bookkeeping is not a new product
-entity, a Room store, or an authorization boundary. The service is local to
-the user and does not expose a remote hosting interface or grant access beyond
-the operating-system permissions of that user.
-
-### Lifecycle contract
-
-- Collaboration starts the local service on demand. Starting it concurrently
-  must yield one active service for the user, not competing dispatchers for a
-  workspace. Read-only Room access must not require a running service. The
-  user must be able to inspect whether the service is running, which workspaces
-  it manages, and any unresolved recovery or cleanup failures.
-- A workspace becomes known when collaboration is activated there. The
-  service must retain enough local bookkeeping to find active workspaces after
-  a restart; Room records and delivery state remain in their workspace. A
-  missing, moved, or inaccessible workspace must be reported, not recreated or
-  silently treated as another workspace. The service must not discover
-  workspaces by scanning unrelated directories. It must retain ownership of a
-  running terminal even if its Room or role binding is removed, until that
-  terminal is stopped or its ownership is explicitly resolved.
-- Closing a CLI or Herdr view leaves the service and Agent terminals running.
-  An explicit service stop ends its managed Agent terminals across its active
-  workspaces, preserves Room history, and reports incomplete cleanup. It must
-  not stop independent hc terminals or another user's work. These are cutover
-  requirements, not guarantees established by the current implementation.
-- Stopping or losing the service can interrupt a delivery. The service must
-  preserve or recover that uncertainty and require reconciliation when an
-  action may already have happened; it must not silently replay such work or
-  claim that a new Agent conversation resumed the old one.
-- Explicit stop remains effective until a later collaboration operation starts
-  the service again; merely reading Room history, logging in, or an automatic
-  crash-restart mechanism must not override an explicit stop. The
-  precise command names and which collaboration operation activates a
-  workspace are implementation work, not current CLI promises.
-- Service restart must reconcile registered workspaces and any identifiable
-  terminals left by the prior run before dispatching more work. It must not
-  assume a path identifies the same workspace after a move or replacement, or
-  kill an unverified terminal. Pause dispatch for an unverified workspace
-  until its identity is resolved. The identity and registration update rules
-  are unresolved; a path hash alone is not a durable workspace identity.
-
-### Process ownership and recovery limits
-
-The service needs an explicit way to distinguish its terminals from other hc
-users and to coordinate workspace activation, stop, and concurrent restart.
-A Tearoom-owned hc session is the preferred isolation boundary; its startup,
-ownership, and integration with existing hc sessions must be verified before
-it can be used as the basis for whole-session cleanup. Stopping a shared hc
-session wholesale is unsafe; if ownership cannot be established, the service
-must report the problem rather than attempt broad cleanup. Ownership evidence
-must survive removing Room or role configuration; its exact storage and
-recovery design remain open. A possible design is to run the service as an hc-owned
-parent terminal and attach its Agent terminals to it, allowing hc to notice a
-service process exit; the current integration explicitly opts out of that
-parent relation. This mechanism and its behavior across hc restart, startup
-races, upgrades, and both supported operating systems require implementation
-and tests before they become a guarantee.
-
-Normal stop must attempt to end all managed terminals and report failures. A
-service killed immediately cannot execute its own cleanup, and programs that
-deliberately detach from their terminal may outlive it. Recovery after an
-unexpected service or hc failure must identify remaining managed work without
-killing unrelated processes or retrying uncertain deliveries. Whether and how
-the service is restarted automatically after a crash, and how to contain
-detached descendants on each platform, remain open until proven by boundary
-tests; the design does not promise universal cleanup.
-
-Before replacing the foreground dispatcher, exercise concurrent first starts;
-multiple workspaces sharing one service; CLI exit while Agents continue;
-explicit stop during a delivery; a simultaneous activation or restart; service
-and hc interruption; recovery of an uncertain delivery; a missing or replaced
-workspace; and independent hc terminals. Check both supported operating systems.
-Prove which owned terminals and child processes actually stop, including a
-detached-process probe, and report remaining cleanup failures. These are target
-acceptance cases, not evidence that the service already passes them.
-
-## Dispatcher lifecycle
-
-The runtime has one dispatcher per active workspace and one hc core per hc
-session. Workspaces using the same session share its core and terminal holder.
-hc is compiled into the Tearoom executable, but its core and holder run as
-separate long-lived processes. Herdr is an optional, separately installed
-view; Room delivery does not require it.
-
-```mermaid
-flowchart TD
-    user[User] -->|starts| dispatcher[Workspace dispatcher]
-    dispatcher <-->|requests and observations| core[hc core]
-    core <-->|terminal management| holder[hc terminal holder]
-    holder -->|runs| agentA[Room role Agent A]
-    holder -->|runs| agentB[Room role Agent B]
-    agentA -->|may start| child[Agent child process]
-    herdr[Optional Herdr view] -.->|attaches through hc| holder
-```
-
-The arrows show startup or management, not necessarily operating-system
-parentage. The same hc session can contain other workspaces' terminals and
-independently created terminals; stopping the whole hc core would affect them.
-
-On Unix, when `collab run` returns or receives SIGINT/SIGTERM, it stops the
-live Agent terminals owned by that workspace. It leaves the shared hc service
-running so other workspaces keep their terminals. Submitted work interrupted
-by this shutdown becomes uncertain and requires inspection before retrying.
-This cleanup cannot run after SIGKILL, power loss, or a machine crash. Programs
-that deliberately detach from their terminal can also outlive its stop; Tearoom
-does not promise to find arbitrary detached processes. Shutdown is not serialized
-with a concurrent manual panel restart, so a panel started during cleanup may
-survive it. Inspect cleanup errors before assuming every terminal stopped.
+is busy. Each service pump pass holds the workspace dispatch lock, as do
+manual recovery operations. If the lock is busy, a pump pass skips the scan
+and tries again on its next iteration. Other lock errors remain failures.
+Manual operations may still report a busy dispatch lock and can be retried.
 
 For each directed message, resolve the configured role and its panel. A first
 missing panel is started with its configured command and new Room records;
-the integration checks hc's first-message result, since a created terminal does
-not prove that task was sent. An existing ready panel receives new records
-through hc. A busy panel leaves the message pending. Never force input into a
-blocked or unready panel. hc readiness and reported status vary by agent; a tool
-without reliable status cannot be assumed idle or done. When readiness cannot
-be established, the delivery remains pending or is escalated.
+creating a terminal does not prove that the task was sent. An existing ready
+panel receives new records through hc. A busy panel leaves the message pending.
+Never force input into a blocked or unready panel. hc readiness and reported
+status vary by agent; a tool without reliable status cannot be assumed idle or
+done. When readiness cannot be established, the delivery remains pending or is
+escalated.
 
 hc 0.1.18 accepts an atomic `--if idle` guard but has no `--if done`. For a
 panel reporting `done`, the current adapter rechecks its status and then sends
@@ -255,19 +120,126 @@ an open reliability limit, not an exactly-once or exclusive-use guarantee.
 
 The runtime distinguishes pending, submission in progress, submitted, and
 uncertain delivery. A successful terminal submission is not proof that the
-agent completed the work. A finished Agent turn or a matching Room reply can
-move a submitted delivery to completed, but a reply is an unverified claim: a signature and
-reference do not authenticate the author. Replies cannot complete pending or
-uncertain deliveries, so they cannot suppress work before submission or
-resolve an ambiguous submission. The agent records its result or blocker in the
-Room and references the triggering record; inspect that evidence when deciding
-whether the claimed work is complete.
+Agent completed the work. A finished turn or matching Room reply can move a
+submitted delivery to completed, but a reply is an unverified claim: a
+signature and reference do not authenticate its author. Replies cannot
+complete pending or uncertain deliveries. The Agent records its result or
+blocker in the Room and references the triggering record; inspect that evidence
+when deciding whether the claimed work is complete.
+
 On interruption, refresh hc's terminal snapshot and inspect the Room before
 deciding what to do. hc event sequence numbers restart and missed events yield
 a snapshot, not a complete replay. A spawn or send timeout can mean the action
-already happened: reconcile the panel and Room first. If delivery or an external
-effect remains ambiguous, expose it for resolution instead of blindly starting
-another agent or repeating the action. Exactly-once execution is not promised.
+already happened: reconcile the panel and Room first. If delivery or an
+external effect remains ambiguous, expose it for resolution instead of
+blindly starting another Agent or repeating the action. Exactly-once execution
+is not promised.
+
+## Local collaboration service
+
+Tearoom runs one background collaboration service for the local user and can
+register multiple workspaces with it. The service starts on demand: an
+addressed CLI send or web append starts it only after the Room record has been
+saved, and `collab run` remains a short-lived way to register the current
+workspace and ensure the service is running. If an addressed send cannot
+activate the service, it reports that the record is already saved. `read` and
+`room init` do not start the service. The CLI exits after the request; closing
+it or Herdr does not stop ongoing collaboration.
+
+The first activation chooses the hc socket for this per-user service. Further
+workspace activations must use that same hc socket; a different session is
+rejected with instructions to stop the service before switching. The service
+does not change its hc session to match each later CLI command.
+The service process also keeps the environment established when its hc
+terminal starts. A later CLI's `PATH` or Agent credentials do not automatically
+refresh the running service, and no environment-refresh operation is defined.
+
+Use `service status` to inspect the running service and registered workspaces.
+`service stop` asks it to stop its Tearoom-managed Agent terminals across the
+registered workspaces. It does not stop the shared hc service or unrelated
+terminals. If cleanup fails, dispatch stays stopped and `service stop` must be
+retried before another activation. After a successful stop, the persistent
+registry lets a later activation recover registered workspaces. On service
+startup, submitted deliveries are changed to unknown and require inspection;
+the service does not replay them automatically.
+
+```mermaid
+flowchart TD
+    cli[Short-lived CLI] -->|ensures terminal through hc| service[Tearoom service terminal]
+    cli -->|Room reads and writes| records[Workspace Room records]
+    service --> workspaceA[Workspace A collaboration]
+    service --> workspaceB[Workspace B collaboration]
+    service <-->|terminal requests| hc[hc runtime session]
+    workspaceA --> hc
+    workspaceB --> hc
+    hc --> agents[Workspace-scoped Agent terminals]
+    herdr[Optional Herdr view] -.-> agents
+```
+
+The service owns Room routing and delivery policy. hc owns terminal execution;
+Herdr remains an optional separate view. hc starts Tearoom as a named,
+long-lived terminal, independently of the short-lived CLI. Agent terminals use
+that service terminal as their hc parent. Workspaces, Rooms, Records, and Roles
+retain their existing meanings. Service bookkeeping is not a new product
+entity, a Room store, or an authorization boundary. The service is local to the
+user and does not expose a remote hosting interface or grant access beyond the
+operating-system permissions of that user.
+
+### Lifecycle contract
+
+- Only a successfully appended addressed record activates its workspace
+  automatically, whether written through the CLI or web view. Broadcasts,
+  reads, workspace initialization, and optional views do not. `collab run` is
+  also an explicit activation command.
+- The service keeps a per-user registration file and checks each workspace's
+  identity before dispatching. Its identity evidence combines filesystem
+  device and inode values with the workspace marker's device, inode, and
+  content hash. This helps distinguish a replaced workspace at the same path,
+  but is not permanent proof of identity and cannot make filesystem checks
+  atomic. If the recorded path is missing or identity changes, dispatch pauses
+  rather than recreating or silently replacing the registration. The service
+  does not scan unrelated directories. Room records and delivery state stay
+  in the workspace.
+- If a workspace moved, inspect and clean any Agent terminals from its old
+  registration, then run `service forget <absolute-old-path> --confirm` and
+  activate from the new path. `forget` only removes a stale or missing
+  registration; it does not stop terminals. Stop is restricted to an
+  identity-derived owner label. Older terminals labeled only by their path are
+  reported for manual review and are never killed by the service.
+- The service processes registered workspaces serially, sleeping 500
+  milliseconds after each pass. One slow workspace can delay delivery and
+  control requests for every other registered workspace. Control requests
+  wait up to 10 seconds; `service stop` allows up to 300 seconds for cleanup.
+  Each workspace's dispatch lock still serializes delivery against manual
+  recovery operations.
+- Closing a CLI or Herdr view leaves the service and Agent terminals running.
+  A normal `service stop` attempts to end terminals carrying the recorded
+  identity-derived owner label, records stopped panels, and reports cleanup failures. On
+  success, hc ends the service terminal and its children; on cleanup failure,
+  dispatch is disabled and the stop must be retried. It preserves Room history
+  and does not stop independent hc terminals or another user's work. The
+  workspace registry is retained for later activation.
+- A service restart changes submitted deliveries to unknown before resuming
+  dispatch. The operator must inspect and resolve them; the service does not
+  silently replay possibly submitted work or claim that an Agent conversation
+  resumed.
+- The per-user state directory and Unix socket use user-only permissions. The
+  service protocol is local to the user's account; it is not a remote hosting
+  interface or a separate workspace authorization boundary.
+
+### Process ownership and recovery limits
+
+The service stops terminals by a recorded identity-derived owner label; it
+does not stop the shared hc core. Agent terminals are also children of the
+service terminal, so hc can close those children when that parent terminal
+ends. The scripted cases and their results are recorded in
+[evaluations](../evaluations.md) and remain ignored in the regular test suite
+because they start an isolated hc service. Linux,
+hc-server failure, real Agent processes, detached descendants, and the race
+between identity checks and workspace replacement have not been verified. The
+service starts on a later activation; there is no independent login-time
+supervisor that restarts it after a crash. An incomplete normal stop leaves
+dispatch disabled until cleanup is retried.
 
 ## First validation
 

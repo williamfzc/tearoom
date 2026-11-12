@@ -9,10 +9,42 @@ use std::time::Duration;
 
 fn command(dir: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_tearoom"));
+    let runtime = dir.join(".test-runtime");
+    std::fs::create_dir_all(&runtime).unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
     command
         .current_dir(dir)
+        .env(
+            "HC_SESSION",
+            format!("tearoom-web-test-{}", std::process::id()),
+        )
+        .env("HC_SOCKET", runtime.join("hc.sock"))
+        .env("TEAROOM_SERVICE_DIR", dir.join(".test-service"))
+        .env("XDG_RUNTIME_DIR", runtime)
+        .env("XDG_CONFIG_HOME", dir.join(".test-config"))
+        .env("XDG_STATE_HOME", dir.join(".test-state"))
+        .env("HOME", dir.join(".test-home"))
+        .env("PATH", "/usr/bin:/bin")
         .env("TEAROOM_HERDR_BIN", dir.join("missing-herdr"));
     command
+}
+
+struct ServiceCleanup(std::path::PathBuf);
+
+impl ServiceCleanup {
+    fn new(workspace: &Path) -> Self {
+        Self(workspace.to_path_buf())
+    }
+}
+
+impl Drop for ServiceCleanup {
+    fn drop(&mut self) {
+        let _ = command(&self.0).args(["service", "stop"]).output();
+        let _ = command(&self.0)
+            .args(["hc", "server", "stop", "--json"])
+            .output();
+    }
 }
 
 fn run(dir: &Path, args: &[&str]) -> std::process::Output {
@@ -219,6 +251,7 @@ fn setup(dir: &Path) {
 #[test]
 fn web_serves_rooms_reads_history_and_sends_addressed_messages() {
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     setup(dir.path());
     let web = Web::start(dir.path());
 
@@ -244,6 +277,9 @@ fn web_serves_rooms_reads_history_and_sends_addressed_messages() {
     let history = web.api("/api/rooms/project/records?after=e0");
     assert_eq!(history["records"].as_array().unwrap().len(), 1);
     assert_eq!(history["records"][0]["content"], "existing history");
+    let status = run(dir.path(), &["service", "status"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(status["running"], false, "reads must not start the service");
 
     let body = serde_json::json!({
         "text": "@builder please inspect; @reviewer this is for you",
@@ -266,6 +302,13 @@ fn web_serves_rooms_reads_history_and_sends_addressed_messages() {
         record["record"]["content"]["mentions"],
         serde_json::json!(["reviewer"])
     );
+    let status = run(dir.path(), &["service", "status"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(
+        status["running"], true,
+        "addressed browser send should start the service"
+    );
+    assert_eq!(status["workspaces"].as_array().unwrap().len(), 1);
 
     let after = web.api("/api/rooms/project/records?after=e1");
     assert_eq!(after["records"].as_array().unwrap().len(), 1);
@@ -281,6 +324,7 @@ fn web_serves_rooms_reads_history_and_sends_addressed_messages() {
 #[test]
 fn web_refuses_other_hosts_origins_and_missing_tokens() {
     let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
     setup(dir.path());
     let web = Web::start(dir.path());
     let path = "/api/rooms/project/messages";
@@ -335,6 +379,12 @@ fn web_refuses_other_hosts_origins_and_missing_tokens() {
         &serde_json::json!({"text": "valid", "to": ["reviewer"]}).to_string(),
     ));
     assert_eq!(response.status, 201, "{}", response.body);
+    let status = run(dir.path(), &["service", "status"]);
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(
+        status["running"], true,
+        "valid addressed browser send should activate"
+    );
 }
 
 #[test]
