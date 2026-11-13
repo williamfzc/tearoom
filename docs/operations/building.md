@@ -4,12 +4,14 @@ title: Building and testing
 description: Build the single Tearoom binary and run its verification suites.
 resource: Makefile
 tags: [runbook, build, testing]
-timestamp: 2026-09-09
+timestamp: 2026-11-14
 ---
 
 # Building and testing
 
-Requires Rust with Cargo, Clippy and rustfmt, Zig 0.16, and a Unix-like OS.
+Requires Rust with Cargo, Clippy and rustfmt, and a Unix-like OS. The Linux
+release targets additionally need the musl cross toolchain (the release
+workflow installs `musl-tools`).
 Cargo fetches herdr-core and its pinned Ghostty terminal component from Git
 when needed. The release workflow pins the Rust toolchain version; build with
 the same version when reproducing release artifacts.

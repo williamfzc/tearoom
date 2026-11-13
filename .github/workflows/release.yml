@@ -21,9 +21,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: clippy,rustfmt
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
       - run: make check
 
   build:
@@ -52,9 +49,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: ${{ matrix.triple }}
-      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.16.0
       - name: Install musl compiler
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
