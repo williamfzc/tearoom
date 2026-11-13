@@ -32,7 +32,8 @@ tar --extract --gzip --file "$artifact"
 
 Verify the checksum before installing; the artifact contract and rollback
 boundary are in the [release runbook](docs/operations/releasing.md). To build
-from source instead, install [Rust and Cargo](https://www.rust-lang.org/tools/install):
+from source instead, install [Rust and Cargo](https://www.rust-lang.org/tools/install)
+and [Zig 0.16](https://ziglang.org/download/):
 
 ```sh
 git clone https://github.com/williamfzc/tearoom.git
