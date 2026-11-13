@@ -17,9 +17,22 @@ responsibilities remain yours to choose.
 
 ## Try a room
 
-Tearoom is a command-line app. Clone the repository and install it with
-[Rust and Cargo](https://www.rust-lang.org/tools/install) and
-[Zig 0.16](https://ziglang.org/download/):
+Tearoom is a command-line app. Install a pinned prebuilt binary from
+[GitHub Releases](https://github.com/williamfzc/tearoom/releases):
+
+```sh
+version=v0.2.0
+artifact=tearoom_${version}_darwin_arm64.tar.gz  # also darwin-amd64, linux-amd64, linux-arm64
+base_url="https://github.com/williamfzc/tearoom/releases/download/$version"
+curl --fail --location --output "$artifact" "$base_url/$artifact"
+curl --fail --location --output SHA256SUMS "$base_url/SHA256SUMS"
+grep "  $artifact$" SHA256SUMS | shasum -a 256 --check -
+tar --extract --gzip --file "$artifact"
+```
+
+Verify the checksum before installing; the artifact contract and rollback
+boundary are in the [release runbook](docs/operations/releasing.md). To build
+from source instead, install [Rust and Cargo](https://www.rust-lang.org/tools/install):
 
 ```sh
 git clone https://github.com/williamfzc/tearoom.git
