@@ -1,0 +1,64 @@
+/* Tearoom desktop face: the bubble conversation, in the native-Messages shape. */
+/* Received: dark gray on the left with a name label per run; sent: blue on the right. */
+
+.messages {
+  flex: 1; overflow-y: auto; margin: 0; padding: 16px 18px 10px;
+  list-style: none;
+}
+
+.messages .empty-line {
+  color: var(--muted); text-align: center; margin: 40px 0; font-size: 13px;
+}
+
+.msg { max-width: min(72%, 560px); margin-top: 12px; --sender-h: 260; }
+
+/* Later bubbles of one author's run sit closer and square off at the join. */
+.msg.run { margin-top: 3px; }
+.msg.run .bubble { border-top-left-radius: 7px; }
+.msg.mine.run .bubble { border-top-left-radius: 18px; border-top-right-radius: 7px; }
+
+.msg .meta {
+  font-size: 11px; color: var(--muted);
+  margin: 0 2px 3px; letter-spacing: 0.01em;
+}
+.msg .meta .author {
+  font-weight: 600;
+  color: hsl(var(--sender-h) 45% 62%);
+}
+
+.bubble {
+  display: inline-block;
+  background: hsl(var(--sender-h) 12% 22%); color: var(--ink);
+  border-radius: 18px; padding: 7px 12px;
+  overflow-wrap: anywhere; white-space: pre-wrap;
+}
+
+@media (prefers-color-scheme: light) {
+  .msg .bubble { background: hsl(var(--sender-h) 28% 91%); }
+  .msg .meta .author { color: hsl(var(--sender-h) 55% 36%); }
+}
+
+.msg.data .bubble,
+.bubble.data {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.msg.mine { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
+.msg.mine .bubble {
+  background: var(--bubble-out); color: var(--bubble-out-ink);
+}
+
+.mention { color: var(--accent); font-weight: 600; }
+.msg.mine .mention { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
+.reply-ref {
+  display: inline-block; font-size: 11px; opacity: 0.75;
+  border: 1px solid currentColor; border-radius: 6px;
+  padding: 0 6px; margin-bottom: 3px;
+}
+
+.routes { margin: 3px 4px 0; font-size: 11px; color: var(--faint); }
+.msg.mine .routes { text-align: right; }
+.routes .route { color: var(--accent); font-weight: 600; }
+.msg.mine .routes .route { color: var(--accent); }

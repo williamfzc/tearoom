@@ -8,6 +8,19 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-14 — The browser face becomes a desktop app
+
+The optional `tearoom web` loopback browser face is removed and replaced by a
+Tauri desktop app under `app/`. The app is the same kind of view — navigate
+Rooms, read history, append addressed messages — hosted in a native window
+instead of an HTTP server; the loopback binding, page token, and origin rules
+were transport policy for the browser and die with it. The app reads through
+the Store and sends through the CLI `send` command, keeping message
+composition and service activation under one owner instead of moving the
+service machinery down a layer. Refused: a second send implementation inside
+the app, and keeping both faces alive side by side (the clean-break policy).
+The app's contract is in [reference/app.md](reference/app.md).
+
 ## 2026-11-14 — Rooms separate identity from labels
 
 A Room now has an immutable id — its birth directory name — while its name

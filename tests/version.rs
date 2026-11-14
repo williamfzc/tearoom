@@ -20,15 +20,19 @@ fn version_reports_build_metadata_and_store_format() {
 }
 
 #[test]
-fn help_lists_the_local_browser_command() {
+fn help_lists_the_everyday_commands() {
     let output = Command::new(env!("CARGO_BIN_EXE_tearoom"))
         .arg("--help")
         .output()
         .unwrap();
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    assert!(
-        help.contains("web       open the local browser interface"),
-        "{help}"
-    );
+    for line in [
+        "room      create or organize rooms and collaborators",
+        "send      write a message to a room",
+        "read      read a room or subtree",
+        "tree      see how rooms are organized",
+    ] {
+        assert!(help.contains(line), "{help}");
+    }
 }

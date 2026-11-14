@@ -139,7 +139,8 @@ is not promised.
 
 Tearoom runs one background collaboration service for the local user and can
 register multiple workspaces with it. The service starts on demand: an
-addressed CLI send or web append starts it only after the Room record has been
+addressed CLI send — including one issued by the desktop app, which sends
+through the CLI — starts it only after the Room record has been
 saved, and `collab run` remains a short-lived way to register the current
 workspace and ensure the service is running. If an addressed send cannot
 activate the service, it reports that the record is already saved. `read` and
@@ -188,7 +189,8 @@ operating-system permissions of that user.
 ### Lifecycle contract
 
 - Only a successfully appended addressed record activates its workspace
-  automatically, whether written through the CLI or web view. Broadcasts,
+  automatically, whether written through the CLI directly or through the
+  desktop app's CLI send. Broadcasts,
   reads, workspace initialization, and optional views do not. `collab run` is
   also an explicit activation command.
 - The service keeps a per-user registration file and checks each workspace's

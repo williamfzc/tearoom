@@ -121,8 +121,8 @@ recovery limits.
   hc. The agent decides how to understand and act on the message.
 
 Tearoom is local first. Its workspace is a trust boundary, not a hosted service
-or an access-control system. The optional `tearoom web` interface is available
-only on the local machine.
+or an access-control system. The optional desktop app is available only on the
+local machine.
 
 For build checks, use `make check`. Read the [CLI reference](docs/reference/cli.md)
 for commands, the [product definition](docs/product.md) for scope, and the

@@ -1,11 +1,12 @@
 CARGO   ?= cargo
 BIN     := bin
 RUST_MANIFEST := Cargo.toml
+APP_MANIFEST := app/Cargo.toml
 RELEASE_TAG ?= v0.0.0-dev
 RELEASE_DIR ?= dist/releases/$(RELEASE_TAG)
 RELEASE_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 RELEASE_SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
-.PHONY: all build cli test target-room target-replay check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check
+.PHONY: all build cli app-build app-test app-fmt app-vet test target-room target-replay check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check
 
 all: build
 
@@ -21,6 +22,20 @@ cli:
 
 test:
 	$(CARGO) test --locked --manifest-path $(RUST_MANIFEST)
+
+# The desktop app is an Outside face over the same Store; its command-layer
+# tests join the check chain like the CLI's.
+app-build:
+	$(CARGO) build --locked --manifest-path $(APP_MANIFEST)
+
+app-test:
+	$(CARGO) test --locked --manifest-path $(APP_MANIFEST)
+
+app-fmt:
+	$(CARGO) fmt --manifest-path $(APP_MANIFEST) -- --check
+
+app-vet:
+	$(CARGO) clippy --locked --manifest-path $(APP_MANIFEST) --all-targets -- -D warnings
 
 # The evaluation set must stay a bidirectional story<->proof map: a marker
 # removed from a script or a row removed from the registry fails the check.
@@ -45,10 +60,10 @@ target-room: cli
 target-replay: cli
 	@./scripts/target-replay.sh
 
-fmt:
+fmt: app-fmt
 	$(CARGO) fmt --manifest-path $(RUST_MANIFEST) -- --check
 
-vet:
+vet: app-vet
 	$(CARGO) clippy --locked --manifest-path $(RUST_MANIFEST) --all-targets -- -D warnings
 
 # Documentation rot is silent: a moved file leaves a link that still looks fine in
@@ -59,7 +74,7 @@ docs:
 release-test:
 	python3 scripts/test-release-package.py
 
-check: fmt vet test target-room target-replay check-evals line-budget docs release-test
+check: fmt vet test app-test target-room target-replay check-evals line-budget docs release-test
 
 # Each target must be built on a matching native runner, then assembled.
 release-target:

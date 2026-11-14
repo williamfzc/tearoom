@@ -41,7 +41,6 @@ tearoom send [--room <room>] --text <text> [--as <signature>] [--to @role,...] [
 tearoom send [--room <room>] --json <json> [--as <signature>] [--idempotency-key <key>]
 tearoom read [--room <room>] [--after e<seq>] [--tail <n>] [--subtree]
 tearoom tree
-tearoom web [--port <port>]
 tearoom skill [--pi-extension]
 tearoom --version
 ```
@@ -183,29 +182,16 @@ main-line
 └── review
 ```
 
-### Local browser interface
+### Local desktop app
 
-`tearoom web [--port <port>]` starts a browser interface for the current
-workspace and prints one JSON object with its `url`, for example
-`{"url":"http://127.0.0.1:8787/"}`. The default port is `0`, so the operating
-system chooses an unused port. The command runs until interrupted.
-
-The page has three jobs: navigate the Room tree, read a Room's ordered record
-stream, and append text messages with optional `@role` addresses. It reads
-through the same Store seam and appends through the same message composition
-as `send`; it does not edit records, move Rooms, or persist a read cursor. The
-JSON endpoints under `/api/` are an implementation detail of this local face,
-not a second public contract.
-
-The listener binds only `127.0.0.1`. Every request must carry a loopback
-`Host`; the page carries a per-process random token in a meta tag, and API
-requests must present that token in `X-Tearoom-Token`. Writes also refuse a
-cross-origin `Origin` or `Sec-Fetch-Site` value. The page is served with a
-restrictive Content Security Policy and cannot be framed. There is no CORS
-header and no remote mode; this is not a hosted control plane. The token is a
-browser CSRF boundary, not admission: it does not authenticate a process or a
-signature. Messages remain shared Room history, and the signature remains an
-unverified label.
+The optional desktop app (`app/`) is a separate application, not a CLI
+command. It has three jobs: navigate the Room tree, read a Room's ordered
+record stream, and append text messages with optional `@role` addresses. It
+reads through the same Store seam and sends through the CLI's `send` command,
+so message composition and delivery activation keep one owner; it does not
+edit records, move Rooms, or persist a read cursor. It opens only local
+workspaces and serves nothing over the network; this is not a hosted control
+plane. Its contract is in [app.md](app.md).
 
 ### Agent guide
 
@@ -233,7 +219,8 @@ conflict is a request failure (exit 1).
 
 The collaboration dispatcher reads the addressed Record, resolves the
 Room-role binding, and uses hc to start or notify that role's panel. An
-addressed CLI send or web append starts the background service after saving the
+addressed CLI send — including one issued by the desktop app — starts the
+background service after saving the
 Room record. If CLI activation fails, the error says the record was saved. A
 message without recipients does not activate collaboration. `read` and
 `room init` never start the service. `collab run` is a short-lived manual

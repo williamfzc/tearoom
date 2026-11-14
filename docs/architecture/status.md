@@ -28,18 +28,19 @@ executable proof in [../evaluations.md](../evaluations.md).
 - `src/cli.rs` and `cli/` expose `room init --name/--parent/--description`,
   `room update` (edits the display name and description labels), `room show`,
   `room delete --confirm`, `send`, `read` (`--after`, `--tail`, `--subtree`),
-  `tree`, `skill`, `web`, and the `role`/`collab` collaboration surface,
+  `tree`, `skill`, and the `role`/`collab` collaboration surface,
   including the per-user `service status|stop|forget` commands. Rooms carry
   an immutable id (their birth directory name) that references and state
   anchor to; label editing cannot break history (see
   [storage layout](../reference/storage-layout.md)).
   Membership, credentials, the hosted profile, and the watch/HTTP faces are
   deleted (2026-11-09 concept pass; see [../log.md](../log.md)).
-- `tearoom web` serves an optional loopback browser face for Room navigation,
-  record history, and addressed text append. It uses the same Store and
-  message composition as the CLI and binds only `127.0.0.1`; the `cli_web`
-  black-box test proves loopback host checks, the page token, cross-origin
-  refusal, history reads, and addressed sends under `make test`.
+- The `app/` Tauri desktop app is the optional local face for Room
+  navigation, record history, and addressed text append. It reads through the
+  same Store as the CLI and sends through the CLI `send` command; command
+  behavior is tested under `make test` and the UI journey is hand-run
+  evidence (see [../evaluations.md](../evaluations.md)). The 2026-11-10
+  loopback browser face was removed with it (see [../log.md](../log.md)).
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 

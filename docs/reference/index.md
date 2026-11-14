@@ -18,6 +18,7 @@ contract; validation evidence belongs in [evaluations](../evaluations.md).
 | Document | Contract |
 |---|---|
 | [cli.md](cli.md) | The only command contract |
+| [app.md](app.md) | The optional desktop face |
 | [exit-codes.md](exit-codes.md) | Machine-readable outcomes |
 | [storage-layout.md](storage-layout.md) | Workspace storage and the one-time format migration |
 | [agent-integration.md](agent-integration.md) | Agent setup, hc panels, Herdr visibility, and handoff limits |

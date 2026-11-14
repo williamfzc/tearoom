@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Tearoom desktop face: room rail, group-chat conversation, and composer. -->
+<!-- A view over the Room store; sends go through the tearoom CLI. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tearoom</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="chat.css">
+</head>
+<body>
+  <div id="gate" class="gate" hidden>
+    <div class="gate-card">
+      <h1>Tearoom</h1>
+      <p id="gate-hint">Choose the folder that holds your Tearoom workspace.</p>
+      <p id="gate-error" class="error" role="alert" hidden></p>
+      <button id="pick" type="button" class="primary">Choose folder…</button>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <aside class="rail" aria-label="Rooms">
+      <header class="rail-head">
+        <h1 class="wordmark">Tearoom</h1>
+        <button id="refresh" class="icon-button" type="button"
+                title="Refresh" aria-label="Refresh rooms and messages">↻</button>
+      </header>
+      <nav id="rooms" class="room-list" aria-label="Room tree"></nav>
+      <footer class="rail-foot">
+        <p id="workspace" class="workspace-path"></p>
+        <button id="switch" type="button" class="linklike">Change workspace…</button>
+      </footer>
+    </aside>
+
+    <main class="conversation">
+      <section id="empty" class="empty">
+        <p>Select a room</p>
+      </section>
+
+      <section id="room-panel" class="room-panel" hidden>
+        <header class="chat-head">
+          <span id="room-avatar" class="head-avatar" aria-hidden="true"></span>
+          <div class="chat-title">
+            <h2 id="room-name"></h2>
+            <p id="room-roles" class="roster" aria-label="Collaborators in this room"></p>
+          </div>
+          <p id="stream-status" class="stream-status" role="status" aria-live="polite"></p>
+        </header>
+
+        <ol id="records" class="messages" aria-label="Room history"></ol>
+
+        <form id="composer" class="composer" autocomplete="off">
+          <div id="recipients" class="recipients" hidden>
+            <div id="addresses" class="addresses"></div>
+          </div>
+          <div class="input-shell">
+            <label class="sr-only" for="text">Message</label>
+            <textarea id="text" name="text" rows="1" required
+                      placeholder="Message"></textarea>
+            <button id="send" class="send" type="submit"
+                    aria-label="Send message">↑</button>
+          </div>
+          <div class="compose-meta">
+            <label class="as-field">as
+              <input id="author" name="author" type="text"
+                     placeholder="name" aria-label="Your name">
+            </label>
+            <button id="recipient-toggle" class="recipient-toggle" type="button"
+                    aria-controls="recipients" aria-expanded="false">To</button>
+            <p id="compose-error" class="error" role="alert" hidden></p>
+          </div>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

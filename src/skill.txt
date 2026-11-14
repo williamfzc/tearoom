@@ -2,7 +2,7 @@ tearoom agent guide
 
 Tearoom is a durable, append-only conversation per Room. Rooms form a parent
 tree. People and Agents share the same Room history across tools and restarts.
-The CLI is the product's automation interface; tearoom web is an optional local browser view. Run tearoom <command> --help for exact flags.
+The CLI is the product's automation interface; the desktop app is an optional local view. Run tearoom <command> --help for exact flags.
 
 The Agent setting up a Room owns the setup below. Prefer a known, stable
 project directory so each Agent CLI can reuse its own trust decision.
@@ -130,7 +130,6 @@ Readiness and recovery:
 
 Core commands:
   tearoom tree
-  tearoom web [--port <port>]
   tearoom read --room <room> [--after e<N>] [--tail N] [--subtree]
   tearoom send --room <room> --text <text> [--as <label>] [--to @role,...]
   tearoom collab run | deliveries | resolve ...
