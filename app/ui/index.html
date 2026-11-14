@@ -8,8 +8,31 @@
   <title>Tearoom</title>
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="chat.css">
+  <link rel="stylesheet" href="drawer.css">
+  <link rel="stylesheet" href="vendor/xterm.min.css">
 </head>
 <body>
+  <div id="boot-error" class="gate" hidden>
+    <div class="gate-card">
+      <h1>Tearoom could not start</h1>
+      <p id="boot-error-text" class="error"></p>
+    </div>
+  </div>
+  <script>
+    // Surface any startup failure instead of an unexplained blank window.
+    window.addEventListener("error", (event) => {
+      const gate = document.getElementById("boot-error");
+      if (!gate || !gate.hidden) return;
+      document.getElementById("app").hidden = true;
+      document.getElementById("gate").hidden = true;
+      document.getElementById("boot-error-text").textContent =
+        String(event.message || event.error || "unknown startup error");
+      gate.hidden = false;
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      window.dispatchEvent(new ErrorEvent("error", { message: String(event.reason) }));
+    });
+  </script>
   <div id="gate" class="gate" hidden>
     <div class="gate-card">
       <h1>Tearoom</h1>
@@ -22,7 +45,7 @@
   <div id="app" class="app" hidden>
     <aside class="rail" aria-label="Rooms">
       <header class="rail-head">
-        <h1 class="wordmark">Tearoom</h1>
+        <span class="rail-section">Rooms</span>
         <button id="refresh" class="icon-button" type="button"
                 title="Refresh" aria-label="Refresh rooms and messages">↻</button>
       </header>
@@ -73,8 +96,22 @@
         </form>
       </section>
     </main>
+
+    <aside id="drawer" class="drawer" hidden>
+      <div id="drawer-resize" class="drawer-resize" aria-hidden="true"></div>
+      <header class="drawer-head">
+        <span id="drawer-avatar" class="avatar drawer-avatar" aria-hidden="true"></span>
+        <span id="drawer-name" class="drawer-name"></span>
+        <span id="drawer-status" class="drawer-status"></span>
+        <button id="drawer-close" class="drawer-close" type="button"
+                aria-label="Close panel view">✕</button>
+      </header>
+      <div id="drawer-term" class="drawer-term"></div>
+    </aside>
   </div>
 
+  <script src="vendor/xterm.min.js"></script>
+  <script src="vendor/addon-fit.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

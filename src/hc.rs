@@ -1,6 +1,7 @@
 //! Local JSON-RPC client for the separate herdr-core runtime.
 //! Delivery policy belongs to the collaboration layer, not this transport.
 
+pub mod attach;
 mod socket;
 
 use serde_json::{json, Value};

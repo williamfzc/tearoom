@@ -36,11 +36,14 @@ executable proof in [../evaluations.md](../evaluations.md).
   Membership, credentials, the hosted profile, and the watch/HTTP faces are
   deleted (2026-11-09 concept pass; see [../log.md](../log.md)).
 - The `app/` Tauri desktop app is the optional local face for Room
-  navigation, record history, and addressed text append. It reads through the
-  same Store as the CLI and sends through the CLI `send` command; command
-  behavior is tested under `make test` and the UI journey is hand-run
-  evidence (see [../evaluations.md](../evaluations.md)). The 2026-11-10
-  loopback browser face was removed with it (see [../log.md](../log.md)).
+  navigation, record history, addressed text append, and an inline viewer for
+  a configured role's live panel (framed `terminal.attach` through
+  `hc/attach.rs`). It reads through the same Store as the CLI and sends
+  through the CLI `send` command; command and attach behavior is tested
+  under `make test` plus the ignored `panel_attach` suite, and the UI journey
+  is hand-run evidence (see [../evaluations.md](../evaluations.md)). The
+  2026-11-10 loopback browser face was removed with it (see
+  [../log.md](../log.md)).
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 

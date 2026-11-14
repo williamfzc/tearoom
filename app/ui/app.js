@@ -4,6 +4,7 @@
 
 import { element, renderRooms, renderRoster, avatarFill, MessageList } from "./ui.js";
 import { Composer } from "./composer.js";
+import { TerminalDrawer } from "./terminal.js";
 
 const { invoke } = window.__TAURI__.core;
 
@@ -26,6 +27,41 @@ const ui = {
   records: document.getElementById("records"),
 };
 
+const drawer = new TerminalDrawer({
+  drawer: document.getElementById("drawer"),
+  resize: document.getElementById("drawer-resize"),
+  avatar: document.getElementById("drawer-avatar"),
+  name: document.getElementById("drawer-name"),
+  status: document.getElementById("drawer-status"),
+  close: document.getElementById("drawer-close"),
+  term: document.getElementById("drawer-term"),
+  onLayoutChange: chatScrollGuard,
+});
+
+// Only senders that are configured roles of the current room have a panel.
+function openRolePanel(role) {
+  if (!state.selected) return;
+  drawer.show(state.selected, role);
+}
+
+// Opening or closing the drawer rewraps the chat; keep the reader's place.
+function chatScrollGuard() {
+  const list = ui.records;
+  const anchor = {
+    atBottom: list.scrollHeight - list.scrollTop - list.clientHeight < 90,
+    top: list.scrollTop,
+  };
+  requestAnimationFrame(() => {
+    if (anchor.atBottom) list.scrollTop = list.scrollHeight;
+    else list.scrollTop = anchor.top;
+  });
+}
+
+function isRoleSender(author) {
+  const room = roomById(state.selected);
+  return Boolean(room?.roles?.includes(author));
+}
+
 const composer = new Composer({
   composer: document.getElementById("composer"),
   recipients: document.getElementById("recipients"),
@@ -37,8 +73,8 @@ const composer = new Composer({
   send: document.getElementById("send"),
 });
 
-const state = { rooms: [], selected: null, request: 0 };
-const messages = new MessageList(ui.records, ui.status);
+const state = { rooms: [], roomsKey: null, selected: null, request: 0 };
+const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 
 /* Workspace gate ----------------------------------------------------------- */
 
@@ -88,7 +124,7 @@ function renderEmpty() {
 function updateRoomChrome(room) {
   ui.roomName.textContent = room.name;
   avatarFill(ui.roomAvatar, room.name);
-  renderRoster(ui.roomRoles, room);
+  renderRoster(ui.roomRoles, room, openRolePanel);
   document.getElementById("text").placeholder = `Message ${room.name}`;
 }
 
@@ -153,19 +189,25 @@ async function refreshState() {
     showGate(String(error));
     return;
   }
-  state.rooms = Array.isArray(data.rooms) ? data.rooms : [];
   ui.workspace.textContent = data.workspace || "";
   composer.setAuthor(data.actor);
-  if (state.selected && !roomById(state.selected)) closeRoom();
-  if (state.selected) {
-    const room = roomById(state.selected);
-    if (room) {
-      updateRoomChrome(room);
-      composer.setRoom(room);
+  // The roster, previews, and panel pills come from room_state; re-render
+  // only when something actually changed so the polled UI stays calm.
+  const key = JSON.stringify(data.rooms);
+  if (key !== state.roomsKey) {
+    state.roomsKey = key;
+    state.rooms = Array.isArray(data.rooms) ? data.rooms : [];
+    if (state.selected && !roomById(state.selected)) closeRoom();
+    if (state.selected) {
+      const room = roomById(state.selected);
+      if (room) {
+        updateRoomChrome(room);
+        composer.setRoom(room);
+      }
     }
+    renderEmpty();
+    renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
   }
-  renderEmpty();
-  renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
   if (!state.selected && state.rooms.length === 1) {
     await selectRoom(state.rooms[0].id);
   }
@@ -193,10 +235,14 @@ document.getElementById("composer").addEventListener("tearoom:send", async () =>
   }[outcome] || "");
 });
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.selected) loadHistory();
+  if (!document.hidden) {
+    refreshState().then(() => loadHistory());
+  }
 });
+// The poll keeps records AND the room roster (roles, previews) current.
 setInterval(() => {
-  if (!document.hidden && state.selected) loadHistory();
+  if (document.hidden) return;
+  refreshState().then(() => loadHistory());
 }, 2500);
 
 (async () => {

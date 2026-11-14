@@ -8,6 +8,18 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-14 — The desktop app opens a role's live panel
+
+Clicking a role's name in the desktop app now opens an inline terminal on
+that role's panel. The stream is herdr-core's framed `terminal.attach` —
+the same viewer protocol Herdr's panes and `hc attach` speak — wrapped as a
+library in `hc/attach.rs`; the app renders it with a vendored xterm.js and
+never owns a PTY. Refused: a read-only-only viewer (interactive matches
+Herdr-pane trust and lets first-use prompts be resolved in place), a
+subprocess-based attach behind an extra PTY dependency, and a second
+terminal-emulator implementation. The drawer is a second viewer of an
+existing Role's runtime state, not a new concept; Herdr stays optional.
+
 ## 2026-11-14 — The browser face becomes a desktop app
 
 The optional `tearoom web` loopback browser face is removed and replaced by a

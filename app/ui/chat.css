@@ -26,6 +26,14 @@
   color: hsl(var(--sender-h) 45% 62%);
 }
 
+/* Senders with a live panel open on click: always show the link affordance. */
+.meta .author.link {
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+.meta .author.link:hover { text-decoration-style: solid; }
+
 .bubble {
   display: inline-block;
   background: hsl(var(--sender-h) 12% 22%); color: var(--ink);
@@ -61,4 +69,12 @@
 .routes { margin: 3px 4px 0; font-size: 11px; color: var(--faint); }
 .msg.mine .routes { text-align: right; }
 .routes .route { color: var(--accent); font-weight: 600; }
+
+/* The small expand button under a role's message: opens its live panel. */
+.panel-jump {
+  margin: 4px 4px 0; border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font-size: 10px; line-height: 1;
+  border-radius: 6px; padding: 3px 7px; cursor: pointer;
+}
+.panel-jump:hover { color: var(--accent); border-color: var(--accent); }
 .msg.mine .routes .route { color: var(--accent); }

@@ -80,7 +80,7 @@ export function renderRooms(container, rooms, selectedId, onSelect) {
   );
 }
 
-export function renderRoster(node, room) {
+export function renderRoster(node, room, onRole) {
   const roles = Array.isArray(room?.roles) ? room.roles : [];
   if (!roles.length) {
     node.textContent = "";
@@ -88,10 +88,16 @@ export function renderRoster(node, room) {
     return;
   }
   node.hidden = false;
-  node.replaceChildren("with ");
-  roles.forEach((role, index) => {
-    if (index) node.append(", ");
-    node.append(element("span", "roster-role", `@${role}`));
+  node.replaceChildren("with");
+  roles.forEach((role) => {
+    const pill = element("button", "roster-pill");
+    pill.type = "button";
+    const dot = element("span", "pill-avatar", role.slice(0, 1).toUpperCase());
+    dot.style.background = avatarColor(role);
+    pill.append(dot, element("span", null, `@${role}`));
+    pill.title = `Open @${role}'s live panel`;
+    pill.addEventListener("click", () => onRole?.(role));
+    node.append(pill);
   });
 }
 
@@ -151,10 +157,13 @@ function timeLabel(at) {
 export class MessageList {
   // Bubbles in the native-Messages shape: a small name label above the first
   // bubble of each run from one author; the person's own messages carry no
-  // label and sit on the right.
-  constructor(list, statusNode) {
+  // label and sit on the right. `isRole` marks senders whose live panel can
+  // be opened; `onRole` receives their clicks.
+  constructor(list, statusNode, isRole = null, onRole = null) {
     this.list = list;
     this.statusNode = statusNode;
+    this.isRole = isRole;
+    this.onRole = onRole;
     this.count = 0;
     this.lastSeq = 0;
     this.lastKey = null;
@@ -186,7 +195,13 @@ export class MessageList {
     if (sameRun) node.classList.add("run");
     if (!mine && !sameRun) {
       const meta = element("div", "meta");
-      meta.append(element("span", "author", record.author || "(unnamed)"));
+      const author = element("span", "author", record.author || "(unnamed)");
+      if (this.isRole?.(record.author)) {
+        author.classList.add("link");
+        author.title = `Open the @${record.author} panel`;
+        author.addEventListener("click", () => this.onRole?.(record.author));
+      }
+      meta.append(author);
       const time = timeLabel(record.at);
       if (time) meta.append(` · ${time}`);
       node.append(meta);
@@ -208,6 +223,13 @@ export class MessageList {
         routes.append(element("span", "route", `@${name}`));
       });
       node.append(routes);
+    }
+    if (this.isRole?.(record.author)) {
+      const jump = element("button", "panel-jump", "▸");
+      jump.title = `Open @${record.author}'s live panel`;
+      jump.setAttribute("aria-label", jump.title);
+      jump.addEventListener("click", () => this.onRole?.(record.author));
+      node.append(jump);
     }
     this.list.append(node);
     this.count += 1;

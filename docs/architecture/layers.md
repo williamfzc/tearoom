@@ -67,8 +67,10 @@ the watch and HTTP faces with the notification concept (see
 client mode died with it. The desktop app (`app/`) is a new optional view,
 not a restoration of that remote-capable server: it opens only local
 workspaces, serves nothing over the network, and owns no product or storage
-invariant. It reads through the Store and sends through the CLI's `send`
-command, so message composition and delivery activation keep one owner.
+invariant. It reads through the Store, sends through the CLI's `send`
+command, and shows a role's live panel through the framed viewer protocol
+the hc runtime already serves (`hc/attach.rs`, the stream Herdr panes use),
+so message composition and delivery activation keep one owner.
 The per-user local collaboration service is a new lifecycle boundary, not the
 removed hosted profile or HTTP face; its contract and limits are in
 [collaboration.md](collaboration.md#local-collaboration-service).

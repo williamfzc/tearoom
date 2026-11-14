@@ -155,7 +155,8 @@ boundary:
 The CLI must support configuring and discovering collaborators, creating a
 Room, sending and reading messages, and seeing the Room structure. An optional
 local desktop app is a view over the same Store and message rules: it
-navigates Rooms, reads history, and appends messages on one machine. It adds
+navigates Rooms, reads history, and appends messages on one machine, and it
+can open a configured role's live panel as an inline viewer. It adds
 no entity, identity, or remote-serving boundary; its sends go through the
 CLI's own send command, and it opens only local workspaces. The
 [CLI reference](reference/cli.md) documents what ships, including lower-frequency

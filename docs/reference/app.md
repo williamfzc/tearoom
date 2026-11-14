@@ -43,6 +43,29 @@ recorded in [../log.md](../log.md).
   Content that is neither plain text nor a message object renders verbatim.
   New records arrive by polling with an explicit `after` boundary.
 
+## Role panel drawer
+
+Clicking a sender that is a configured role of the Room — its name above a
+bubble, the `▸` expand button under one of its messages, or its pill in the
+`with @role` roster — opens an inline terminal attached to that role's
+panel. The stream is herdr-core's framed `terminal.attach` over the hc
+socket (the same bytes Herdr's panes show), wrapped by `tearoom::hc::attach`;
+the webview renders it with the vendored xterm.js.
+
+- **Interactive, like a Herdr pane**: typing goes to the agent's PTY, so
+  first-use prompts can be resolved without leaving the app. herdr-core
+  allows several viewers per panel; the most recently active one owns the
+  size. Closing the drawer detaches the viewer; the panel keeps running.
+- **The drawer's left edge drags to resize**, and the width is remembered.
+  Resizing forwards to the panel, so the agent's TUI relayouts live. Both
+  scroll views are protected: resizing or opening the drawer never yanks a
+  scrolled-up viewport — the terminal's place returns after a relayout, and
+  the chat list keeps its position when the drawer rewraps it.
+- **No live panel** shows a hint instead: wake the role with an addressed
+  message first.
+- This is a view over an existing Role's runtime state — no new entity, no
+  admission change; whoever can reach the hc socket can already attach.
+
 ## What it refuses
 
 - No editing of records, moving of Rooms, or room creation: setup stays with

@@ -1,0 +1,46 @@
+/* Tearoom desktop face: the role-panel drawer — an inline terminal attached
+   to a role's live hc panel (see terminal.js). The drawer is a layout
+   sibling of the conversation: opening it indents the chat instead of
+   covering it, like a pane growing out of the window's right edge. */
+
+.drawer {
+  position: relative;
+  flex: none;
+  width: min(46vw, 720px);
+  display: flex; flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border: 1px solid var(--card-edge);
+  border-right: none;
+  border-radius: 14px 0 0 14px;
+}
+
+/* Drag this edge to resize; the width is remembered. */
+.drawer-resize {
+  position: absolute; left: -3px; top: 0; bottom: 0; width: 7px;
+  cursor: col-resize; touch-action: none;
+}
+.drawer-resize:hover, .drawer-resize.dragging { background: var(--accent); opacity: 0.35; }
+
+.drawer-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px 8px;
+}
+
+.drawer-avatar { width: 28px; height: 28px; font-size: 13px; }
+
+.drawer-name { font-size: 13px; font-weight: 650; }
+
+.drawer-status {
+  margin-left: auto; font-size: 11px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.drawer-close {
+  border: none; background: transparent; color: var(--muted);
+  font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+}
+.drawer-close:hover { color: var(--ink); }
+
+.drawer-term { flex: 1; min-height: 0; padding: 4px 8px 8px; }
+.drawer-term .xterm { height: 100%; }
