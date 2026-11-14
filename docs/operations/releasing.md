@@ -4,7 +4,7 @@ title: Releasing the Tearoom binary
 description: The public artifact contract, installation checks, and rollback boundary for Tearoom binaries.
 resource: .github/workflows/release.yml
 tags: [runbook, release, artifacts, security, rollback]
-timestamp: 2026-09-09
+timestamp: 2026-11-14
 ---
 
 # Releasing the Tearoom binary
@@ -79,8 +79,9 @@ The local entry points are `make release-target`, `make package`,
 archive and Cargo metadata; `package` assembles four targets and writes
 checksums and SPDX. `package-check` compares two assembled directories.
 Treat a release as complete only after the tagged workflow and downloaded
-artifact verification succeed. The workflow has not itself been proven until
-a tagged release runs.
+artifact verification succeed. The tagged `v0.2.0` run (2026-11-14) proved
+the workflow end to end; the evidence row lives in
+[../evaluations.md](../evaluations.md).
 
 The `.tearoom` workspace directory is the trust domain, and `TEAROOM_ACTOR`
 is only a default signature label, not a credential. See

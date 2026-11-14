@@ -3,7 +3,7 @@ type: evaluations
 title: Evaluation set
 description: The acceptance journeys, their staged proof, and supporting hand-run evidence.
 tags: [evaluations, stories, testing, registry]
-timestamp: 2026-11-07
+timestamp: 2026-11-14
 ---
 
 # Evaluation set
@@ -149,6 +149,7 @@ and is not acceptance evidence.
 
 | Date | Evaluation | Cases | Outcome | Record |
 |---|---|---|---|---|
+| 2026-11-14 | Tagged v0.2.0 release end to end | Push tag `v0.2.0` (commit `747834e`); the Release workflow ran `make check`, built each of the four targets twice on native runners and compared the archives byte for byte, verified archive contents, checksums, and SPDX during assembly, created the draft, read back every asset and compared it, ran the downloaded linux-amd64 binary's `--version`, then published; afterward the operator downloaded the darwin-arm64 archive and `SHA256SUMS` | Passed. The checksum verified and the downloaded binary reported `tearoom version=v0.2.0 commit=747834eb2a35750309ddbcb2e48da20f411f825f store-format=4`. A first attempt on the same tag name failed in verify after the setup-zig steps were wrongly removed as dead weight; the tag was re-pointed and the workflow reran clean (19m24s). | GitHub Actions Release run `43462102958` on tag `v0.2.0`; assets at github.com/williamfzc/tearoom/releases/tag/v0.2.0 |
 | 2026-11-13 | Local service lifecycle | On macOS arm64, run the isolated `service` integration tests: addressed send, two workspaces, repeated registration, service stop, read while stopped, abrupt service exit, unrelated terminal, short-lived connection, and uncertain delivery after restart | All nine cases passed, including a completed delivery followed by stop and a new addressed send. Scripted local tests do not prove Linux or arbitrary detached-process cleanup. | `cargo test --locked --test service -- --ignored` |
 | 2026-11-12 | Workspace shutdown isolation | Run two workspace dispatchers with scripted Agents in one hc session; send SIGTERM to each dispatcher in turn | Passed: each shutdown stopped its own Agent while the other workspace continued. This does not cover SIGKILL, system failure, or intentionally detached processes. | Former `cli_hc` workspace-dispatcher test; retired when the global service replaced foreground dispatchers. Current coverage is in `tests/service.rs`. |
 | 2026-11-12 | Embedded hc local lifecycle | On macOS arm64, run the ignored `cli_hc` and `hc_rpc` tests with isolated runtime state; start a terminal without an external hc command, restart the runtime and read it again; dispatch a Room message to a scripted collaborator | Passed: the terminal survived restart, an addressed message received a Room reply, and the embedded update command refused to replace Tearoom. This does not establish real-Agent, Herdr UI, or Linux release behavior. | `cargo test --locked --test cli_hc -- --ignored`; `cargo test --locked --test hc_rpc -- --ignored` |
