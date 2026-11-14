@@ -58,7 +58,7 @@ export function renderRooms(container, rooms, selected, onSelect) {
     if (!byParent.has(parent)) byParent.set(parent, []);
     byParent.get(parent).push(room);
   }
-  const known = new Set(rooms.map((room) => room.name));
+  const known = new Set(rooms.map((room) => room.id));
   const roots = rooms
     .filter((room) => !room.parent || !known.has(room.parent))
     .sort(byName);
@@ -67,26 +67,26 @@ export function renderRooms(container, rooms, selected, onSelect) {
   function branch(items) {
     const list = document.createElement("ul");
     for (const room of items) {
-      if (visited.has(room.name)) continue;
-      visited.add(room.name);
+      if (visited.has(room.id)) continue;
+      visited.add(room.id);
       const item = document.createElement("li");
       const button = document.createElement("button");
       button.type = "button";
       button.className = "room-link";
-      button.dataset.room = room.name;
+      button.dataset.room = room.id;
       button.append(element("span", "room-mark", Array.from(room.name)[0] || "·"));
       button.append(element("span", "name", room.name));
-      const children = (byParent.get(room.name) || []).slice().sort(byName);
+      const children = (byParent.get(room.id) || []).slice().sort(byName);
       if (children.length) {
         button.setAttribute(
           "aria-label",
           `${room.name}, ${children.length} child room${children.length === 1 ? "" : "s"}`,
         );
       }
-      if (room.name === selected) {
+      if (room.id === selected) {
         button.setAttribute("aria-current", "true");
       }
-      button.addEventListener("click", () => onSelect(room.name));
+      button.addEventListener("click", () => onSelect(room.id));
       item.append(button);
       if (children.length) item.append(branch(children));
       list.append(item);

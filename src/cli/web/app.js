@@ -71,8 +71,8 @@ import {
     ui.error.textContent = text || "";
     ui.error.hidden = !text;
   }
-  function roomByName(name) {
-    return state.rooms.find((room) => room.name === name) || null;
+  function roomById(id) {
+    return state.rooms.find((room) => room.id === id) || null;
   }
 
   function updateRoomChrome(room) {
@@ -99,7 +99,7 @@ import {
     return new Set(Array.from(ui.addresses.querySelectorAll('input[name="address"]:checked'), (input) => input.value));
   }
 
-  function updateRecipientControl(room = state.selected ? roomByName(state.selected) : null) {
+  function updateRecipientControl(room = state.selected ? roomById(state.selected) : null) {
     const selected = Array.from(selectedRoles());
     ui.recipientToggle.hidden = !(Array.isArray(room?.roles) && room.roles.length);
     ui.recipientToggle.textContent = selected.length ? `To · @${selected[0].replace(/^@/, "")}${selected.length > 1 ? ` +${selected.length - 1}` : ""}` : "To";
@@ -134,10 +134,10 @@ import {
     }
   }
 
-  async function selectRoom(name) {
-    const room = roomByName(name);
+  async function selectRoom(id) {
+    const room = roomById(id);
     if (!room) return;
-    state.selected = name;
+    state.selected = id;
     state.request += 1;
     messages.reset();
     ui.panel.hidden = false;
@@ -152,7 +152,7 @@ import {
     setError("");
     messages.status("Reading…");
     await loadHistory(true);
-    if (state.selected === name) {
+    if (state.selected === id) {
       if (!window.matchMedia("(max-width: 700px)").matches) ui.text.focus();
       resizeText();
     }
@@ -196,7 +196,7 @@ import {
       renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
       const mobile = window.matchMedia("(max-width: 700px)").matches;
       if (!state.selected && state.rooms.length === 1 && !mobile) {
-        await selectRoom(state.rooms[0].name);
+        await selectRoom(state.rooms[0].id);
       }
     } catch (error) {
       setRoomStatus(`Cannot load rooms: ${error.message}`);

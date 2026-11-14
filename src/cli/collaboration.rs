@@ -46,7 +46,8 @@ pub(super) fn collab_command(args: &[String]) -> Result<()> {
             if confirm && outcome != "retry" {
                 bail!("--confirm is only valid with --outcome retry");
             }
-            dispatcher.resolve(room, seq, role, outcome, confirm)?;
+            let room = super::resolve(&dispatcher.store, room)?;
+            dispatcher.resolve(&room, seq, role, outcome, confirm)?;
             println!("resolved {room}#{seq} @{role} as {outcome}");
             Ok(())
         }
@@ -55,9 +56,10 @@ pub(super) fn collab_command(args: &[String]) -> Result<()> {
             if room.is_empty() || role.is_empty() {
                 bail!("--room and --role are required");
             }
+            let room = super::resolve(&dispatcher.store, room)?;
             super::service::restart(
                 dispatcher.store.root(),
-                room,
+                &room,
                 role,
                 args.switches.contains("confirm"),
             )

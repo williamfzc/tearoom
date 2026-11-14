@@ -185,7 +185,7 @@ fn delete_role(root: &std::path::Path, name: &str) -> Result<()> {
         }
         let store = Store::open(root)?;
         for room in store.rooms()? {
-            for record in store.read(&room.name, *state.cursor.get(&room.name).unwrap_or(&0))? {
+            for record in store.read(&room.id, *state.cursor.get(&room.id).unwrap_or(&0))? {
                 if serde_json::from_str::<crate::collab::Message>(record.content.get())
                     .is_ok_and(|message| message.mentions.iter().any(|role| role == name))
                 {
@@ -213,9 +213,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
         bail!("--room is required");
     }
     let store = open()?;
-    if !store.rooms()?.iter().any(|r| r.name == room) {
-        bail!("room {room:?}: not found");
-    }
+    let id = super::resolve(&store, room)?;
     let root = store.root();
     let adds = mentions::parse_explicit(args.get("add")).map_err(|e| anyhow!(e))?;
     let removes = mentions::parse_explicit(args.get("remove")).map_err(|e| anyhow!(e))?;
@@ -223,7 +221,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
         Config::update(root, |config| {
             let mut roles: std::collections::BTreeSet<String> = config
                 .rooms
-                .get(room)
+                .get(&id)
                 .map_or_else(Default::default, |r| r.roles.iter().cloned().collect());
             for name in &adds {
                 if !config.roles.contains_key(name) {
@@ -235,7 +233,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
                 roles.remove(name);
             }
             config.rooms.insert(
-                room.into(),
+                id.clone(),
                 RoomRoles {
                     roles: roles.into_iter().collect(),
                 },
@@ -246,14 +244,13 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
     let config = Config::load(root)?;
     let mut names = config
         .rooms
-        .get(room)
+        .get(&id)
         .map_or_else(Vec::new, |r| r.roles.clone());
     names.sort();
     for name in names {
-        let mut entry =
-            serde_json::json!({"room":room,"role":name,"definition":config.roles.get(&name)});
+        let mut entry = serde_json::json!({"room":super::room_display(&store, &id),"role":name,"definition":config.roles.get(&name)});
         if args.switches.contains("observe") {
-            let panel = crate::collab::panel_name(root, room, &name)?;
+            let panel = crate::collab::panel_name(root, &id, &name)?;
             let observed = hc_runtime().and_then(|runtime| runtime.status(&panel));
             entry["panel"] = serde_json::json!(panel);
             match observed {

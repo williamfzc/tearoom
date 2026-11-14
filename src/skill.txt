@@ -25,6 +25,12 @@ Prepare once, reuse in each Room:
 - Assign existing roles when creating another Room with
   tearoom room init --name <name> --parent <parent> --role <roles>, or add
   them later with tearoom room roles --room <name> --add <roles>.
+- Give a Room its purpose at birth with tearoom room init --name <name>
+  --description <text>. Edit its labels later with
+  tearoom room update --room <room> [--name <new-name>] [--description <text>]
+  and inspect the card with tearoom room show --room <room>. Every Room has
+  an immutable id (shown by room show); its name and description are editable
+  labels, and every stored reference anchors to the id.
 - An addressed tearoom send starts the background collaboration service after
   saving the Room record. `tearoom collab run` is an optional manual way to
   register the current workspace and start the service. Room creation tries

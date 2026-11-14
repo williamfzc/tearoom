@@ -1,6 +1,7 @@
 //! Room creation and record commands at the CLI boundary.
 use super::roles::room_roles;
 use super::room_delete::delete_room_command;
+use super::room_info::{show_room_command, update_room_command};
 use super::{append_text, boundary, open, parse, print_json, resolve, room_herdr, signature};
 use crate::collab::{Config, Message, RecordRef, RoomRoles};
 use crate::core::{AppendRequest, Room};
@@ -10,11 +11,11 @@ use anyhow::{anyhow, bail, Result};
 
 pub(super) fn room_command(args: &[String]) -> Result<()> {
     let Some((action, args)) = args.split_first() else {
-        println!("Usage: tearoom room <init|delete|move|open|herdr|roles> [flags]");
+        println!("Usage: tearoom room <init|update|show|delete|move|open|herdr|roles> [flags]");
         return Ok(());
     };
     if action == "--help" || action == "-h" {
-        println!("Usage: tearoom room <init|delete|move|open|herdr|roles> [flags]");
+        println!("Usage: tearoom room <init|update|show|delete|move|open|herdr|roles> [flags]");
         return Ok(());
     }
     if action == "roles" {
@@ -32,11 +33,17 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
     if action == "delete" {
         return delete_room_command(args);
     }
+    if action == "update" {
+        return update_room_command(args);
+    }
+    if action == "show" {
+        return show_room_command(args);
+    }
     if action != "init" {
         bail!("unknown room command {action:?}");
     }
-    let args = parse(args, &["name", "parent", "role"], &[])?;
-    if args.help("Usage: tearoom room init --name <name> [--parent <room>] [--role <roles>]") {
+    let args = parse(args, &["name", "parent", "role", "description"], &[])?;
+    if args.help("Usage: tearoom room init --name <name> [--parent <room>] [--role <roles>] [--description <text>]") {
         return Ok(());
     }
     args.no_positional()?;
@@ -50,8 +57,13 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
         Err(e) => return Err(e),
     };
     let selected = mentions::parse_explicit(args.get("role")).map_err(|e| anyhow!(e))?;
+    let parent = if args.get("parent").trim().is_empty() {
+        String::new()
+    } else {
+        resolve(&store, args.get("parent"))?
+    };
     let room = if selected.is_empty() {
-        store.create_room(args.get("name"), args.get("parent"))?
+        store.create_room(args.get("name"), &parent)?
     } else {
         Config::update(store.root(), |config| {
             for role in &selected {
@@ -59,9 +71,9 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
                     bail!("unknown role {role:?}; init it first with 'tearoom role init'");
                 }
             }
-            let room = store.create_room(args.get("name"), args.get("parent"))?;
+            let room = store.create_room(args.get("name"), &parent)?;
             config.rooms.insert(
-                room.name.clone(),
+                room.id.clone(),
                 RoomRoles {
                     roles: selected.clone(),
                 },
@@ -69,7 +81,12 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
             Ok(room)
         })?
     };
-    match crate::herdr::ensure_room(store.root(), &room.name) {
+    let room = if args.get("description").trim().is_empty() {
+        room
+    } else {
+        store.update_room(&room.id, None, Some(args.get("description")))?
+    };
+    match crate::herdr::ensure_room(store.root(), &room.id) {
         Ok(binding) => eprintln!("Herdr session ready: {}\nOpen it with: {}", binding["session"].as_str().unwrap_or("unknown"), binding["open_command"].as_str().unwrap_or("tearoom room open --room <name>")),
         Err(error) => eprintln!("Room created, but its Herdr session is pending: {error:#}. Retry with: tearoom room herdr ensure --room '{}'", room.name.replace('\'', "'\\''")),
     }
@@ -87,7 +104,13 @@ fn move_room_command(args: &[String]) -> Result<()> {
         bail!("--room is required");
     }
     let store = open()?;
-    print_json(&store.move_room(name, args.get("parent"))?)
+    let room = resolve(&store, name)?;
+    let parent = if args.get("parent").trim().is_empty() {
+        String::new()
+    } else {
+        resolve(&store, args.get("parent"))?
+    };
+    print_json(&store.move_room(&room, &parent)?)
 }
 
 pub(super) fn send_command(args: &[String]) -> Result<()> {
@@ -142,16 +165,17 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
         let reply = if args.get("reply-to").is_empty() {
             None
         } else {
-            let (name, seq) = args
+            let (ref_room, seq) = args
                 .get("reply-to")
                 .split_once('#')
                 .ok_or_else(|| anyhow!("invalid --reply-to"))?;
             let seq: u64 = seq.parse().map_err(|_| anyhow!("invalid --reply-to"))?;
-            if name.trim().is_empty() || seq == 0 {
+            if ref_room.trim().is_empty() || seq == 0 {
                 bail!("invalid --reply-to");
             }
+            // References anchor to the Room id so a later label edit survives.
             Some(RecordRef {
-                room: name.trim().into(),
+                room: resolve(&store, ref_room)?,
                 seq,
             })
         };
@@ -173,13 +197,13 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
     Ok(())
 }
 fn subtree(rooms: &[Room], root: &str) -> Result<Vec<String>> {
-    if !rooms.iter().any(|r| r.name == root) {
+    if !rooms.iter().any(|r| r.id == root) {
         bail!("room {root:?}: not found");
     }
     fn visit(rooms: &[Room], room: &str, output: &mut Vec<String>) {
         output.push(room.to_owned());
         for child in rooms.iter().filter(|r| r.parent == room) {
-            visit(rooms, &child.name, output);
+            visit(rooms, &child.id, output);
         }
     }
     let mut result = Vec::new();
@@ -223,18 +247,22 @@ pub(super) fn tree_command(args: &[String]) -> Result<()> {
         return Ok(());
     }
     args.no_positional()?;
-    fn walk(rooms: &[Room], name: &str, prefix: &str, connector: &str) {
-        println!("{prefix}{connector}{name}");
+    fn walk(rooms: &[Room], id: &str, prefix: &str, connector: &str) {
+        let room = rooms.iter().find(|r| r.id == id);
+        println!(
+            "{prefix}{connector}{}",
+            room.map_or(id, |room| room.name.as_str())
+        );
         let base = match connector {
             "├── " => format!("{prefix}│   "),
             "└── " => format!("{prefix}    "),
             _ => prefix.into(),
         };
-        let children: Vec<_> = rooms.iter().filter(|room| room.parent == name).collect();
+        let children: Vec<_> = rooms.iter().filter(|room| room.parent == id).collect();
         for (index, child) in children.iter().enumerate() {
             walk(
                 rooms,
-                &child.name,
+                &child.id,
                 &base,
                 if index + 1 == children.len() {
                     "└── "
@@ -246,7 +274,7 @@ pub(super) fn tree_command(args: &[String]) -> Result<()> {
     }
     let rooms = open()?.rooms()?;
     for room in rooms.iter().filter(|r| r.parent.is_empty()) {
-        walk(&rooms, &room.name, "", "");
+        walk(&rooms, &room.id, "", "");
     }
     Ok(())
 }

@@ -741,3 +741,142 @@ fn command_specific_flags_and_boolean_values_are_checked() {
     let help = String::from_utf8(run(&["collab", "resolve", "--help"]).stdout).unwrap();
     assert!(help.contains("--outcome"));
 }
+
+#[test]
+fn room_update_edits_labels_without_touching_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let output = command(dir.path()).args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+    run(&[
+        "room",
+        "init",
+        "--name",
+        "child",
+        "--description",
+        "early work",
+    ]);
+    run(&[
+        "send", "--room", "child", "--text", "kept", "--as", "person",
+    ]);
+    run(&[
+        "send", "--room", "child", "--text", "anchor", "--as", "person",
+    ]);
+    // A reference written before the edit anchors the Room id.
+    run(&[
+        "send",
+        "--room",
+        "child",
+        "--text",
+        "ack",
+        "--as",
+        "person",
+        "--reply-to",
+        "child#2",
+    ]);
+
+    let updated: serde_json::Value = serde_json::from_slice(&run(&[
+        "room",
+        "update",
+        "--room",
+        "child",
+        "--name",
+        "workflow",
+        "--description",
+        "payments review",
+    ]))
+    .unwrap();
+    assert_eq!(updated["id"], "child");
+    assert_eq!(updated["name"], "workflow");
+    assert_eq!(updated["description"], "payments review");
+
+    // The id remains the address: history, the stored reference, and reads
+    // by id all survive the label edit.
+    let history = String::from_utf8(run(&["read", "--room", "workflow"])).unwrap();
+    assert_eq!(history.lines().count(), 3);
+    assert!(history.contains("room\":\"child\""), "{history}");
+    assert!(
+        history.contains("\"reply_to\":{\"room\":\"child\",\"seq\":2}"),
+        "{history}"
+    );
+    assert_eq!(
+        String::from_utf8(run(&["read", "--room", "child"])).unwrap(),
+        history
+    );
+    assert_eq!(String::from_utf8(run(&["tree"])).unwrap(), "workflow\n");
+    let card: serde_json::Value =
+        serde_json::from_slice(&run(&["room", "show", "--room", "workflow"])).unwrap();
+    assert_eq!(card["id"], "child");
+    assert_eq!(card["name"], "workflow");
+    assert_eq!(card["description"], "payments review");
+    // Updating by the id and clearing a description both work.
+    run(&["room", "update", "--room", "child", "--description", ""]);
+    let card: serde_json::Value =
+        serde_json::from_slice(&run(&["room", "show", "--room", "workflow"])).unwrap();
+    assert_eq!(card["description"], "");
+    let empty = command(dir.path())
+        .args(["room", "update", "--room", "workflow"])
+        .output()
+        .unwrap();
+    assert!(!empty.status.success());
+    let unknown = command(dir.path())
+        .args(["read", "--room", "missing"])
+        .output()
+        .unwrap();
+    assert_eq!(unknown.status.code(), Some(1));
+}
+
+#[test]
+fn a_birth_name_stays_reserved_and_labels_edit_freely() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str]| {
+        let output = command(dir.path()).args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+    run(&["room", "init", "--name", "alpha"]);
+    run(&[
+        "send", "--room", "alpha", "--text", "old work", "--as", "person",
+    ]);
+    run(&["room", "update", "--room", "alpha", "--name", "beta"]);
+
+    let tree = String::from_utf8(run(&["tree"])).unwrap();
+    assert_eq!(tree, "beta\n");
+    // The birth name is the id and stays reserved: neither a new Room nor
+    // another Room's label may take it.
+    let reused = command(dir.path())
+        .args(["room", "init", "--name", "alpha"])
+        .output()
+        .unwrap();
+    assert!(!reused.status.success());
+    assert!(String::from_utf8_lossy(&reused.stderr).contains("already in use"));
+    run(&["room", "init", "--name", "gamma"]);
+    let clash = command(dir.path())
+        .args(["room", "update", "--room", "gamma", "--name", "alpha"])
+        .output()
+        .unwrap();
+    assert!(!clash.status.success());
+    // Both rooms read their own history by id and by current name.
+    let old_history = String::from_utf8(run(&["read", "--room", "beta"])).unwrap();
+    assert!(old_history.contains("old work"));
+    assert_eq!(
+        String::from_utf8(run(&["read", "--room", "alpha"])).unwrap(),
+        old_history
+    );
+    let card: serde_json::Value =
+        serde_json::from_slice(&run(&["room", "show", "--room", "beta"])).unwrap();
+    assert_eq!(card["id"], "alpha");
+    assert_eq!(card["name"], "beta");
+    let new_history = String::from_utf8(run(&["read", "--room", "gamma"])).unwrap();
+    assert_eq!(new_history.lines().count(), 0);
+}

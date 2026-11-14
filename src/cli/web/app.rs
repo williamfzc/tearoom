@@ -89,11 +89,13 @@ impl App {
             .map(|room| {
                 let roles = config
                     .rooms
-                    .get(&room.name)
+                    .get(&room.id)
                     .map_or_else(Vec::new, |binding| binding.roles.clone());
                 json!({
+                    "id": room.id,
                     "name": room.name,
                     "parent": room.parent,
+                    "description": room.description,
                     "created": room.created,
                     "roles": roles,
                 })
@@ -117,7 +119,7 @@ impl App {
                 Ok(room) if !room.is_empty() => room,
                 _ => return failure(400, "invalid room name"),
             };
-            return finish(self.records(&room, &request.query));
+            return finish(self.room_records(&room, &request.query));
         }
         if let Some(encoded) = rest.strip_suffix("/messages") {
             if request.method != "POST" {
@@ -138,12 +140,14 @@ impl App {
         failure(404, "not found")
     }
 
-    fn records(&self, room: &str, query: &str) -> Result<Value> {
+    fn room_records(&self, room: &str, query: &str) -> Result<Value> {
+        // A Room is addressed by id or current name; the id is canonical.
+        let id = self.store.resolve_room(room)?;
         let after = http::query_param(query, "after")
             .map_err(anyhow::Error::msg)?
             .unwrap_or_default();
         let after = boundary(&after)?;
-        Ok(json!({ "records": self.store.read(room, after)? }))
+        Ok(json!({ "records": self.store.read(&id, after)? }))
     }
 
     fn message(&self, room: &str, body: &[u8]) -> Reply {
@@ -163,10 +167,14 @@ impl App {
         if message.text.trim().is_empty() {
             return failure(400, "message text is required");
         }
+        let id = match self.store.resolve_room(room) {
+            Ok(id) => id,
+            Err(error) => return from_error(error),
+        };
         let author = signature(&message.author);
         match append_text(
             &self.store,
-            room,
+            &id,
             &author,
             &message.text,
             &message.to.join(","),

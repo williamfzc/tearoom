@@ -16,12 +16,14 @@ and complete user journeys belong in [evaluations.md](../evaluations.md).
 ## Command contract
 
 ```text
-tearoom room init --name <name> [--parent <room>] [--role <role,...>]
-tearoom room delete --room <name> [--confirm]
-tearoom room open --room <name>
-tearoom room move --room <name> [--parent <room>]
-tearoom room roles --room <name> [--add <role,...>] [--remove <role,...>] [--observe]
-tearoom room herdr ensure --room <name>
+tearoom room init --name <name> [--parent <room>] [--role <role,...>] [--description <text>]
+tearoom room update --room <room> [--name <new-name>] [--description <text>]
+tearoom room show --room <room>
+tearoom room delete --room <room> [--confirm]
+tearoom room open --room <room>
+tearoom room move --room <room> [--parent <room>]
+tearoom room roles --room <room> [--add <role,...>] [--remove <role,...>] [--observe]
+tearoom room herdr ensure --room <room>
 tearoom role init --name <name> --agent-type <type> --command <program> [--arg <arg>] [--cwd <dir>] [--description <text>] [--instructions <text>]
 tearoom role update --name <name> [--agent-type <type>] [--command <program> [--arg <arg>]] [--cwd <dir>] [--description <text>] [--instructions <text>]
 tearoom role delete --name <name>
@@ -48,10 +50,20 @@ tearoom --version
 
 - `room init --name <name>` creates a Room. Without `--parent` the Room is a
   root; with `--parent <room>` it records that existing Room as its parent.
-  Room names are unique within the workspace.
+  Room names are unique within the workspace and never collide with any
+  Room's id. Every Room has an immutable id — its birth directory name; see
+  [Room selection](#room-selection).
 - The first `room init` in a directory creates the workspace (`.tearoom`);
   later inits add Rooms to the same tree. There is no join, no admission, and
   no credential step.
+- `room update --room <room> [--name <new-name>] [--description <text>]`
+  edits the Room's info card: its display name and description. The id,
+  records, parent pointers, rosters, delivery state, and Herdr bindings stay
+  untouched, and every stored `room#seq` reference keeps resolving. Names
+  must stay unique and disjoint from every Room's id — a Room's birth name
+  is its id and stays reserved for as long as the Room lives.
+- `room show --room <room>` prints one Room's info card: its id, current
+  name, parent's current name, description, creation time, and bound roles.
 - `room delete --room <name>` removes a leaf Room: its directory and record
   stream, its roster binding, its dispatch intents and cursor, and its Herdr
   binding go with it, and its Herdr session is stopped best-effort. Role
@@ -91,10 +103,10 @@ tearoom --version
   the dispatcher has not yet scanned. It does not stop an already-running
   Agent or change Room history. A running dispatcher may briefly hold the
   delivery lock; retry if the lock is busy.
-- Success prints one JSON object:
+- Success prints one JSON object; `description` appears only when set:
 
 ```json
-{"name":"implementation","parent":"main-line","created":"2026-11-07T10:00:00Z"}
+{"name":"implementation","id":"implementation","parent":"main-line","created":"2026-11-07T10:00:00Z"}
 ```
 
 Identifiers and timestamps above are examples, not fixed values.
@@ -102,10 +114,11 @@ Identifiers and timestamps above are examples, not fixed values.
 ### Room organization
 
 The current `room move` command changes a Room's parent; omit `--parent` to
-make it a root. Its name, history, role bindings and descendants stay intact.
-A Room cannot become its own ancestor. Subtree reads use the new location.
-Its place in a simpler command surface is under review; see
-[open questions](../domain/open-questions.md#room-organization).
+make it a root. Its id, name, history, role bindings and descendants stay
+intact. A Room cannot become its own ancestor. Subtree reads use the new
+location. Its place in a simpler command surface is under review; see
+[open questions](../domain/open-questions.md#room-organization). Label edits
+belong to `room update` above.
 
 ### Append and read
 
@@ -122,7 +135,8 @@ Its place in a simpler command surface is under review; see
   as a message with nonempty `mentions` is rejected. Other raw JSON keeps its
   original shape.
 - `--reply-to <room>#<seq>` writes a structured `reply_to` reference alongside
-  the message. Combine it with `--to` to acknowledge the delivery and direct
+  the message; the reference stores the Room's id, so a later label edit never
+  dangles it. Combine it with `--to` to acknowledge the delivery and direct
   the next step in one append. The signature remains unverified; this reference
   is a coordination convention, not proof of who completed the work.
 - `--idempotency-key` is optional and scoped per (room, signature, key).
@@ -143,9 +157,17 @@ Its place in a simpler command surface is under review; see
 
 ### Room selection
 
-`send` and `read` target Rooms by name:
+Every `--room <room>` value addresses a Room by its immutable id or by its
+current display name:
 
-- With `--room <name>` the named Room is used; an unknown name is an error.
+- The id is the directory name the Room was born with and never changes.
+  Stored references (`room#seq`), parent pointers, rosters, delivery state,
+  and Herdr bindings anchor to it; the `room` field on each printed Record is
+  the id.
+- The display name is editable through `room update`. A reference matching an
+  id wins over a name match.
+- With `--room <room>` the referenced Room is used; an unknown reference is
+  an error.
 - Without `--room`, a workspace containing exactly one Room uses it; a
   workspace with several Rooms refuses and names the rule.
 

@@ -19,11 +19,13 @@ defines the persistence shape and the migration discipline.
 
 One workspace database-free layout under `.tearoom`:
 
-- `rooms/<name>/room.json` — identity: name, parent (omitted for a root),
-  creation time. Each Room records only its own parent.
-- `rooms/<name>/records.jsonl` — the stream: one JSON record per line, dense
-  per Room, append-only.
-- `rooms/<name>/idempotency.jsonl` — the per-(author, key) retry ledger.
+- `rooms/<id>/room.json` — identity and labels: the immutable `id` (equal to
+  the directory name), the editable display `name` and `description`, the
+  parent id (omitted for a root), and the creation time. Each Room records
+  only its own parent.
+- `rooms/<id>/records.jsonl` — the stream: one JSON record per line, dense
+  per Room, append-only; each line carries the Room's id.
+- `rooms/<id>/idempotency.jsonl` — the per-(author, key) retry ledger.
 - `store.json` — the format marker; `lock` — the flock target.
 
 The child list of a Room is derived by reading the `rooms/` listing at read

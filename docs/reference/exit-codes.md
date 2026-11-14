@@ -14,7 +14,7 @@ timestamp: 2026-11-07
 | Code | Meaning |
 |---|---|
 | 0 | Operation succeeded; an empty `read` is still success |
-| 1 | Invalid command, validation error, unknown room name, or a store/runtime error, including an idempotency-key conflict |
+| 1 | Invalid command, validation error, unknown room reference (id or name), or a store/runtime error, including an idempotency-key conflict |
 | 4 | No workspace can be opened from the current directory |
 
 Agents should branch on the documented code rather than parse prose. Code `4`

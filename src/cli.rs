@@ -3,6 +3,7 @@ mod collaboration;
 mod roles;
 mod room_delete;
 mod room_herdr;
+mod room_info;
 mod rooms;
 mod service;
 mod web;
@@ -198,14 +199,14 @@ pub(super) fn activate_addressed(record: &Record, root: &Path) -> Option<String>
 fn open() -> Result<Store> {
     Store::open(std::env::current_dir()?)
 }
-fn resolve(store: &Store, room: &str) -> Result<String> {
+pub(super) fn resolve(store: &Store, room: &str) -> Result<String> {
     let room = room.trim();
     if !room.is_empty() {
-        return Ok(room.into());
+        return store.resolve_room(room);
     }
     let rooms = store.rooms()?;
     match rooms.as_slice() {
-        [room] => Ok(room.name.clone()),
+        [room] => Ok(room.id.clone()),
         [] => bail!("no workspace: run 'tearoom room init' first"),
         _ => bail!(
             "this workspace has {} rooms; pass --room (see 'tearoom tree')",
@@ -213,6 +214,8 @@ fn resolve(store: &Store, room: &str) -> Result<String> {
         ),
     }
 }
+
+pub(super) use room_info::room_display;
 
 pub(super) fn boundary(value: &str) -> Result<u64> {
     let value = value.trim();
@@ -261,7 +264,9 @@ pub(super) fn append_text(
 ) -> Result<Record> {
     Config::with_lock(store.root(), |config| {
         let roster = config.rooms.get(room).map(|binding| binding.roles.clone());
-        let names = mentions::resolve(text, to, room, roster.as_deref()).map_err(|e| anyhow!(e))?;
+        let display = room_display(store, room);
+        let names =
+            mentions::resolve(text, to, &display, roster.as_deref()).map_err(|e| anyhow!(e))?;
         let json = if names.is_empty() && reply_to.is_none() {
             serde_json::to_string(text)?
         } else {

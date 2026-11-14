@@ -4,11 +4,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use sha2::{Digest, Sha256};
 
+/// A Room's identity is its immutable `id`; `name` and `description` are
+/// editable labels. The id equals the Room's birth directory name and never
+/// changes; every stored reference anchors to it. An empty `id` marks a
+/// legacy Room file that predates the field and still derives it from its
+/// directory.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Room {
     pub name: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub parent: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     pub created: String,
 }
 

@@ -25,10 +25,14 @@ executable proof in [../evaluations.md](../evaluations.md).
   through the pending-intent file, and a cross-process flock around every
   append. Legacy format-2/3 (SQLite) workspaces are refused on open — the
   one-time migration belongs to the final Go release (tag `go-final`).
-- `src/cli.rs` and `cli/` expose `room init --name/--parent`,
+- `src/cli.rs` and `cli/` expose `room init --name/--parent/--description`,
+  `room update` (edits the display name and description labels), `room show`,
   `room delete --confirm`, `send`, `read` (`--after`, `--tail`, `--subtree`),
   `tree`, `skill`, `web`, and the `role`/`collab` collaboration surface,
-  including the per-user `service status|stop|forget` commands.
+  including the per-user `service status|stop|forget` commands. Rooms carry
+  an immutable id (their birth directory name) that references and state
+  anchor to; label editing cannot break history (see
+  [storage layout](../reference/storage-layout.md)).
   Membership, credentials, the hosted profile, and the watch/HTTP faces are
   deleted (2026-11-09 concept pass; see [../log.md](../log.md)).
 - `tearoom web` serves an optional loopback browser face for Room navigation,

@@ -1,6 +1,6 @@
 //! Room-scoped commands for ensuring and opening the mapped Herdr session.
 
-use super::{open, parse, print_json};
+use super::{open, parse, print_json, resolve, room_display};
 use anyhow::{bail, Result};
 
 pub(super) fn herdr_command(args: &[String]) -> Result<()> {
@@ -21,11 +21,9 @@ pub(super) fn herdr_command(args: &[String]) -> Result<()> {
         bail!("--room is required");
     }
     let store = open()?;
-    if !store.rooms()?.iter().any(|entry| entry.name == room) {
-        bail!("room {room:?}: not found");
-    }
+    let id = resolve(&store, room)?;
     print_json(
-        &serde_json::json!({"room":room,"herdr":crate::herdr::ensure_room(store.root(), room)?}),
+        &serde_json::json!({"room":room_display(&store, &id),"herdr":crate::herdr::ensure_room(store.root(), &id)?}),
     )
 }
 
@@ -40,8 +38,6 @@ pub(super) fn open_room_command(args: &[String]) -> Result<()> {
         bail!("--room is required");
     }
     let store = open()?;
-    if !store.rooms()?.iter().any(|entry| entry.name == room) {
-        bail!("room {room:?}: not found");
-    }
-    crate::herdr::open_room(store.root(), room)
+    let id = resolve(&store, room)?;
+    crate::herdr::open_room(store.root(), &id)
 }

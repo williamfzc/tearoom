@@ -1,6 +1,8 @@
 //! Durable Room-to-panel dispatch, serialized by the workspace lock.
 #[path = "dispatch/routing.rs"]
 mod routing;
+#[path = "dispatch/task.rs"]
+mod task;
 
 use super::runtime::{quote, PanelRequest, PanelStatus, Runtime};
 use super::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState, Intent};
@@ -67,11 +69,11 @@ impl<R: Runtime> Dispatcher<R> {
         for room in self.store.rooms()? {
             for record in self
                 .store
-                .read(&room.name, *state.cursor.get(&room.name).unwrap_or(&0))?
+                .read(&room.id, *state.cursor.get(&room.id).unwrap_or(&0))?
             {
                 mark_reply(&mut state, &record);
                 record_intent(&mut state, &config, root, &record)?;
-                state.cursor.insert(room.name.clone(), record.seq);
+                state.cursor.insert(room.id.clone(), record.seq);
                 state.save(root)?;
             }
         }
@@ -235,7 +237,8 @@ impl<R: Runtime> Dispatcher<R> {
             .filter(|record| record.seq <= seq)
             .collect();
         let history = serde_json::to_string(&records)?;
-        let task = format!("Room {room}, addressed to {role_name} at record {seq}. New Room records (JSON):\n{history}\nTearoom CLI: {cli}");
+        let card = self.store.rooms()?.into_iter().find(|card| card.id == room);
+        let task = task::compose(card.as_ref(), &room, &role_name, seq, &history, &cli);
         let task = if after == 0 {
             format!("{}\n\n{task}", role.instructions).trim().to_owned()
         } else {
@@ -614,6 +617,70 @@ mod tests {
                 assert_eq!(prompts[0], prompts[1]);
             }
         }
+    }
+
+    #[test]
+    fn the_room_description_rides_along_in_dispatch_prompts() {
+        struct Trace {
+            prompts: RefCell<Vec<String>>,
+        }
+        impl Runtime for Trace {
+            fn status(&self, _: &str) -> Result<PanelStatus> {
+                Ok(PanelStatus::Idle)
+            }
+            fn launch(
+                &self,
+                _: &str,
+                _: &str,
+                _: &str,
+                _: &Role,
+                _: &std::path::Path,
+            ) -> Result<()> {
+                unreachable!()
+            }
+            fn stop(&self, _: &str) -> Result<()> {
+                unreachable!()
+            }
+            fn ensure(&self, _: &PanelRequest<'_>) -> Result<SubmitResult> {
+                unreachable!()
+            }
+            fn submit(&self, _: &str, task: &str, _: PanelStatus) -> Result<SubmitResult> {
+                self.prompts.borrow_mut().push(task.to_owned());
+                Ok(SubmitResult {
+                    accepted: true,
+                    started: Some(true),
+                    pending: false,
+                })
+            }
+        }
+        let (_temp, base) = setup(false);
+        base.store
+            .update_room("project", None, Some("review payments changes"))
+            .unwrap();
+        let seq = append(
+            &base.store,
+            "builder",
+            &Message {
+                text: "review".into(),
+                mentions: vec!["reviewer".into()],
+                reply_to: None,
+            },
+        );
+        let dispatcher = Dispatcher {
+            store: base.store,
+            runtime: Trace {
+                prompts: RefCell::new(vec![]),
+            },
+        };
+        dispatcher.pump().unwrap();
+        let prompts = dispatcher.runtime.prompts.borrow();
+        assert_eq!(prompts.len(), 1);
+        assert!(
+            prompts[0].contains("Room project (review payments changes), addressed to reviewer"),
+            "{:?}",
+            prompts[0]
+        );
+        assert!(prompts[0].contains(&format!("record {seq}")));
     }
 
     #[test]

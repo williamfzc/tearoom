@@ -27,15 +27,15 @@ workspace's local or versioned status is a repository policy; see the
   .dispatcher.lock                 admits one running dispatcher per workspace
   .dispatch.lock                   serializes delivery state changes
   herdr.json                       local Room-to-Herdr session and pane bindings
-  herdr.lock                        serializes Herdr binding updates
+  herdr.lock                       serializes Herdr binding updates
   rooms/
     main-line/
-      room.json                     {"name":"main-line","created":"..."}
+      room.json                     {"name":"main-line","id":"main-line","created":"..."}
       records.jsonl                 one Record per line, seq 1..n
       idempotency.jsonl             one ledger line per (author, key) use
       append-pending.json            temporary durable intent during a keyed append
     implementation/
-      room.json                     {"name":"implementation","parent":"main-line","created":"..."}
+      room.json                     {"name":"implementation","id":"implementation","parent":"main-line","created":"..."}
       records.jsonl
 ```
 
@@ -48,13 +48,19 @@ refused with an incompatible-store error.
 
 ## The files
 
-- `room.json` carries the Room's identity: its name, its parent (omitted for
-  a root — a parentless room is a root), and its creation time. Each Room
-  records only its own parent; the child list of any Room is derived by
-  reading the `rooms/` listing at query time and is never cached.
+- `room.json` carries the Room's identity and its editable labels: the
+  immutable `id`, the display `name`, an optional `description`, the `parent`
+  id (omitted for a root — a parentless room is a root), and its creation
+  time. Files written before the id field existed carry no `id`; such a file
+  adopts its directory name as the id on first edit, and until then the name
+  must still match the directory. The id equals the directory name and never
+  changes: `room update` rewrites only the labels. Each Room records only its
+  parent's id; the child list of any Room is derived by reading the `rooms/`
+  listing at query time and is never cached.
 - `records.jsonl` is the Room's stream: one JSON object per line, in sequence
-  order — `{"room":...,"seq":...,"author":...,"at":...,"content":...}` — the
-  same shape the CLI prints. Records are appended, never rewritten.
+  order — `{"room":...,"seq":...,"author":...,"at":...,"content":...}` where
+  `room` is the Room's id — the same shape the CLI prints. Records are
+  appended, never rewritten.
 - `idempotency.jsonl` is the Room's retry ledger: one line per
   (author, key) use — `{"author":...,"key":...,"fingerprint":...,"seq":...}`.
   An equal retry returns the original record; the same key with different
@@ -76,10 +82,12 @@ refused with an incompatible-store error.
   including prior shared-session bindings when migrated. It is
   optional integration state; Room records remain usable if Herdr is absent.
 
-The directory is the Room's address; the name inside `room.json` and the
-`room` field on each record line exist so a moved or edited file fails
-closed instead of silently re-identifying. Room names are directory names:
-no `/`, no leading dot, and never `.` or `..`.
+The directory is the Room's address and equals its immutable id; the id
+inside `room.json` and the `room` field on each record line exist so a moved
+or edited file fails closed instead of silently re-identifying. Directory
+names are ids: no `/`, no leading dot, and never `.` or `..`. Display names
+are unique, never collide with any Room's id, and may be edited freely
+through `room update`.
 
 ## Serialization and durability
 
