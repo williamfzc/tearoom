@@ -25,7 +25,10 @@ root) and carries one ordered record stream. Rooms form a single-parent tree:
 each Room stores only its own parent, and a parent's child list is derived by
 reading at query time. Rooms are peers — a root is just the Room without a
 parent, and a "project" is an informal name a person gives to some subtree.
-Rooms are identified by name within their workspace.
+A Room is identified by an immutable id — the directory name it was born
+with — while its name and description are editable labels; references,
+parent pointers, and rosters anchor to the id (see the [storage
+layout](../reference/storage-layout.md)).
 
 A Room is also a shared conversation: broadcast and addressed messages are
 visible in the same Room history. Only explicitly selected recipients are
@@ -116,7 +119,8 @@ independent of read progress.
 | Writer crashes mid-append | Transaction semantics release the lock on recovery; no partial record is accepted |
 | Identical request is retried | An idempotent append returns the original record |
 | A child Room is created | It records its parent; the parent's data is never written to |
-| A Room is moved | Its parent changes; the Room name, records and descendants remain in place |
+| A Room is moved | Its parent changes; the Room id, name, records and descendants remain in place |
+| A Room's label is edited | The id, records, references and bindings stay; only name or description changes |
 | The child list is needed | Derived by reading the workspace at query time; never cached |
 | Reader supplies a boundary | Read repeats from the caller's explicit boundary |
 | A role is addressed | The runtime routes the shared Room message to that Room's panel for the role |

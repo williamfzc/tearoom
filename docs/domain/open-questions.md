@@ -31,8 +31,12 @@ The CLI can move a Room without changing its name or history, and delete a
 leaf Room under `--confirm`, refusing children and unresolved deliveries (see
 the [CLI reference](../reference/cli.md#room-lifecycle)). Moving is not part of
 the main journey, and its place in a simpler command surface needs a real
-reorganization case. Renaming would also affect quoted `room#seq` references;
-do not add it without a concrete need.
+reorganization case. Renaming settled on 2026-11-14 as label editing: a
+Room's id (its birth directory name) is immutable while its name and
+description are edited through `room update`. Whether reads such as `tree`,
+`collab deliveries`, and record output should resolve ids to current names
+for display or print ids verbatim stays open until real renamed-Room use
+says which reads better.
 
 ## Presentation of multiple roots
 

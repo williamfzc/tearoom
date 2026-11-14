@@ -8,6 +8,21 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-14 — Rooms separate identity from labels
+
+A Room now has an immutable id — its birth directory name — while its name
+and a new description are editable labels changed through `room update` and
+set at birth with `room init --description`. References (`room#seq`), parent
+pointers, rosters, delivery state, and Herdr bindings all anchor to the id,
+so editing the info card never breaks history; because every existing name
+already was the id, no migration is needed. Refused: alias redirects for
+retired names (a second truth), name snapshots inside records, and opaque
+generated ids where the birth name is available. This replaces the
+2026-11-09 refusal of renaming; the reopened need is the owner's requirement
+that labels stay editable. The contract is in
+[reference/cli.md](reference/cli.md#room-lifecycle) and the file shape in
+[reference/storage-layout.md](reference/storage-layout.md).
+
 ## 2026-11-12 — Implement the local collaboration service
 
 Addressed CLI and web messages now activate one per-user Tearoom service,
