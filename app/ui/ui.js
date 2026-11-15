@@ -57,25 +57,50 @@ export function previewText(room, depth) {
   return author ? `${author}: ${last.text}` : last.text;
 }
 
-export function renderRooms(container, rooms, selectedId, onSelect) {
+function roomRow(room, depth, selected, onSelect) {
+  const item = element("button", "room-item");
+  item.style.paddingLeft = `${10 + depth * 12}px`;
+  const avatar = element("span", "avatar");
+  avatarFill(avatar, room.name);
+  const text = element("span", "row-text");
+  const top = element("span", "row-top");
+  top.append(element("span", "row-name", room.name));
+  const last = room.last && typeof room.last === "object" ? room.last : null;
+  const time = last ? timeLabel(last.at) : "";
+  if (time) top.append(element("time", "row-time", time));
+  text.append(top, element("span", "row-preview", previewText(room, depth)));
+  item.append(avatar, text);
+  if (selected) item.classList.add("selected");
+  item.title = room.description || room.name;
+  item.addEventListener("click", () => onSelect(room));
+  return item;
+}
+
+// The dashboard rail: one section per workspace, its room tree nested under
+// a header that names the workspace directory.
+export function renderDashboard(container, workspaces, selected, onSelect) {
   container.replaceChildren(
-    ...roomTree(rooms).map(({ room, depth }) => {
-      const item = element("button", "room-item");
-      item.style.paddingLeft = `${10 + depth * 12}px`;
-      const avatar = element("span", "avatar");
-      avatarFill(avatar, room.name);
-      const text = element("span", "row-text");
-      const top = element("span", "row-top");
-      top.append(element("span", "row-name", room.name));
-      const last = room.last && typeof room.last === "object" ? room.last : null;
-      const time = last ? timeLabel(last.at) : "";
-      if (time) top.append(element("time", "row-time", time));
-      text.append(top, element("span", "row-preview", previewText(room, depth)));
-      item.append(avatar, text);
-      if (room.id === selectedId) item.classList.add("selected");
-      item.title = room.description || room.name;
-      item.addEventListener("click", () => onSelect(room.id));
-      return item;
+    ...workspaces.map((workspace) => {
+      const section = element("section", "ws");
+      const head = element("button", "ws-head");
+      head.title = workspace.root;
+      head.append(element("span", "ws-name", workspace.name || workspace.root));
+      const count = Array.isArray(workspace.rooms) ? workspace.rooms.length : 0;
+      head.append(element("span", "ws-count", `${count}`));
+      head.addEventListener("click", () => {
+        const first = (workspace.rooms || [])[0];
+        if (first) onSelect(workspace.root, first);
+      });
+      section.append(head);
+      for (const { room, depth } of roomTree(workspace.rooms || [])) {
+        const isSelected =
+          selected && selected.root === workspace.root && selected.id === room.id;
+        const item = roomRow(room, depth, isSelected, (room) =>
+          onSelect(workspace.root, room),
+        );
+        section.append(item);
+      }
+      return section;
     }),
   );
 }

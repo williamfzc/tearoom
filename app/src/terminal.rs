@@ -2,7 +2,6 @@
 //! `terminal.attach` client in `tearoom::hc::attach`. The PTY lives in
 //! herdr-core; this app is just another viewer, as Herdr's panes are.
 
-use crate::commands::AppState;
 use anyhow::Result;
 use base64::Engine as _;
 use serde_json::{json, Value};
@@ -20,6 +19,12 @@ use tearoom::store::Store;
 /// attach relay can run off the main thread.
 pub struct TerminalState {
     sessions: Mutex<HashMap<u32, Arc<PanelStream>>>,
+}
+
+impl Default for TerminalState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TerminalState {
@@ -48,13 +53,8 @@ impl TerminalState {
 
 /// Whether a role has a live panel, and its health if so.
 #[tauri::command]
-pub fn panel_info(
-    workspace: State<'_, AppState>,
-    room: String,
-    role: String,
-) -> Result<Value, String> {
-    let root = workspace.current().map_err(|e| e.to_string())?;
-    panel_info_json(&root, &room, &role).map_err(|e| format!("{e:#}"))
+pub fn panel_info(root: String, room: String, role: String) -> Result<Value, String> {
+    panel_info_json(Path::new(&root), &room, &role).map_err(|e| format!("{e:#}"))
 }
 
 fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
@@ -94,17 +94,16 @@ fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
 #[tauri::command]
 pub async fn attach_panel(
     state: State<'_, Arc<TerminalState>>,
-    workspace: State<'_, AppState>,
+    root: String,
     room: String,
     role: String,
     cols: u16,
     rows: u16,
     on: Channel<Value>,
 ) -> Result<Value, String> {
-    let root = workspace.current().map_err(|e| e.to_string())?;
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        attach_json(&state, &root, &room, &role, cols, rows, on)
+        attach_json(&state, Path::new(&root), &room, &role, cols, rows, on)
     })
     .await
     .map_err(|e| format!("attach task failed: {e}"))?

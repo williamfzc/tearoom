@@ -47,8 +47,9 @@ export class Composer {
     this.els.text.focus();
   }
 
-  async send(roomId, loadHistory) {
-    if (!roomId || this.sending) return;
+  async send(target, loadHistory) {
+    // target: { root, id } — the room's own workspace, not a global one.
+    if (!target || this.sending) return;
     const text = this.els.text.value;
     if (!text.trim()) {
       this.error("Write a message first.");
@@ -64,7 +65,8 @@ export class Composer {
     this.error("");
     try {
       const result = await window.__TAURI__.core.invoke("send_message", {
-        room: roomId,
+        root: target.root,
+        room: target.id,
         text,
         to,
         author: this.author,

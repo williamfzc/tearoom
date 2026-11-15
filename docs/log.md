@@ -8,6 +8,19 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-15 — The desktop app is a machine-wide dashboard
+
+The desktop app drops the workspace switcher: discovery now merges the
+collaboration service's registry, a Spotlight sweep for `.tearoom` markers,
+and the app's own history, validates every candidate by opening its Store,
+and the rail groups all found workspaces' rooms side by side. Selecting a
+room selects its workspace implicitly — records, sends, and panel attach
+take that workspace root explicitly instead of a stored "current" workspace.
+Refused: scanning the filesystem beyond Spotlight (no honest source for
+never-touched directories), and a separate dashboard page (the rail already
+shows everything at once). The folder picker survives as the fallback when
+discovery finds nothing.
+
 ## 2026-11-14 — The desktop app opens a role's live panel
 
 Clicking a role's name in the desktop app now opens an inline terminal on

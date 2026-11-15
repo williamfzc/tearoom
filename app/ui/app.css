@@ -124,20 +124,28 @@ body {
   overflow-wrap: anywhere;
 }
 
-.rail-foot {
-  padding: 9px 14px 11px;
-}
+/* Workspace sections on the dashboard rail --------------------------------- */
 
-.workspace-path {
-  margin: 0 0 3px; font-size: 11px; color: var(--faint);
+.ws { margin-bottom: 6px; }
+
+.ws-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: calc(100% - 16px); margin: 6px 8px 2px;
+  border: none; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12px; font-weight: 650;
+  padding: 4px 6px; border-radius: 6px; cursor: pointer;
+  text-align: left;
+}
+.ws-head:hover { color: var(--ink); }
+
+.ws-name {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.linklike {
-  border: none; background: transparent; color: var(--accent);
-  font-size: 12px; cursor: pointer; padding: 0;
+.ws-count {
+  flex: none; font-size: 10px; color: var(--faint);
+  background: var(--hover); border-radius: 999px; padding: 1px 7px;
 }
-.linklike:hover { text-decoration: underline; }
 
 /* Conversation column ------------------------------------------------------ */
 

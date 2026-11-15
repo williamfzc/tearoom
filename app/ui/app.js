@@ -1,8 +1,9 @@
-// Tearoom desktop face: state, IPC calls, room selection, and history.
-// A read boundary lives only in memory; the Room store keeps no cursor.
-// The composer and its send flow live in composer.js.
+// Tearoom desktop face: the machine-wide dashboard. Every Tearoom workspace
+// on this machine shows its rooms side by side — there is no switching.
+// Selection is a (workspace, room) pair; records, sends, and panels all take
+// the workspace root explicitly. A read boundary lives only in memory.
 
-import { element, renderRooms, renderRoster, avatarFill, MessageList } from "./ui.js";
+import { element, renderDashboard, renderRoster, avatarFill, MessageList } from "./ui.js";
 import { Composer } from "./composer.js";
 import { TerminalDrawer } from "./terminal.js";
 
@@ -15,8 +16,6 @@ const ui = {
   pick: document.getElementById("pick"),
   app: document.getElementById("app"),
   rooms: document.getElementById("rooms"),
-  workspace: document.getElementById("workspace"),
-  switch: document.getElementById("switch"),
   refresh: document.getElementById("refresh"),
   empty: document.getElementById("empty"),
   panel: document.getElementById("room-panel"),
@@ -38,30 +37,6 @@ const drawer = new TerminalDrawer({
   onLayoutChange: chatScrollGuard,
 });
 
-// Only senders that are configured roles of the current room have a panel.
-function openRolePanel(role) {
-  if (!state.selected) return;
-  drawer.show(state.selected, role);
-}
-
-// Opening or closing the drawer rewraps the chat; keep the reader's place.
-function chatScrollGuard() {
-  const list = ui.records;
-  const anchor = {
-    atBottom: list.scrollHeight - list.scrollTop - list.clientHeight < 90,
-    top: list.scrollTop,
-  };
-  requestAnimationFrame(() => {
-    if (anchor.atBottom) list.scrollTop = list.scrollHeight;
-    else list.scrollTop = anchor.top;
-  });
-}
-
-function isRoleSender(author) {
-  const room = roomById(state.selected);
-  return Boolean(room?.roles?.includes(author));
-}
-
 const composer = new Composer({
   composer: document.getElementById("composer"),
   recipients: document.getElementById("recipients"),
@@ -73,7 +48,9 @@ const composer = new Composer({
   send: document.getElementById("send"),
 });
 
-const state = { rooms: [], roomsKey: null, selected: null, request: 0 };
+// selected: { root, id } | null. roomsKey gates re-renders; rolesKey tracks
+// the selected room's roster so label affordances follow role changes.
+const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, rolesKey: null };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 
 /* Workspace gate ----------------------------------------------------------- */
@@ -82,8 +59,8 @@ function showGate(message) {
   ui.gateError.textContent = message || "";
   ui.gateError.hidden = !message;
   ui.gateHint.textContent = message
-    ? "Tearoom could not open that workspace."
-    : "Choose the folder that holds your Tearoom workspace.";
+    ? "Tearoom could not discover workspaces."
+    : "No Tearoom workspaces found on this machine yet. Point at one to get started.";
   ui.app.hidden = true;
   ui.gate.hidden = false;
 }
@@ -106,8 +83,21 @@ async function pickWorkspace() {
 
 /* Rooms and history -------------------------------------------------------- */
 
+function totalRooms() {
+  return state.workspaces.reduce(
+    (sum, workspace) => sum + (workspace.rooms?.length || 0),
+    0,
+  );
+}
+
+function selectedRoom() {
+  if (!state.selected) return null;
+  const workspace = state.workspaces.find((w) => w.root === state.selected.root);
+  return workspace?.rooms?.find((room) => room.id === state.selected.id) || null;
+}
+
 function renderEmpty() {
-  if (!state.rooms.length) {
+  if (!totalRooms()) {
     ui.empty.replaceChildren(
       element("p", "empty-title", "No rooms yet."),
       element(
@@ -128,22 +118,40 @@ function updateRoomChrome(room) {
   document.getElementById("text").placeholder = `Message ${room.name}`;
 }
 
-function roomById(id) {
-  return state.rooms.find((room) => room.id === id) || null;
+function isRoleSender(author) {
+  const room = selectedRoom();
+  return Boolean(room?.roles?.includes(author));
+}
+
+function openRolePanel(role) {
+  if (!state.selected) return;
+  drawer.show(state.selected.root, state.selected.id, role);
+}
+
+// Opening or closing the drawer rewraps the chat; keep the reader's place.
+function chatScrollGuard() {
+  const list = ui.records;
+  const anchor = {
+    atBottom: list.scrollHeight - list.scrollTop - list.clientHeight < 90,
+    top: list.scrollTop,
+  };
+  requestAnimationFrame(() => {
+    if (anchor.atBottom) list.scrollTop = list.scrollHeight;
+    else list.scrollTop = anchor.top;
+  });
 }
 
 async function loadHistory() {
-  const room = state.selected;
-  if (!room) return;
+  if (!state.selected) return;
+  const { root, id } = state.selected;
   const request = ++state.request;
   const stick =
     ui.records.scrollHeight - ui.records.scrollTop - ui.records.clientHeight < 90;
   try {
-    const data = await invoke("room_records", {
-      room,
-      after: messages.lastSeq,
-    });
-    if (state.selected !== room || request !== state.request) return;
+    const data = await invoke("room_records", { root, room: id, after: messages.lastSeq });
+    if (state.selected?.id !== id || state.selected?.root !== root || request !== state.request) {
+      return;
+    }
     for (const record of data.records || []) {
       messages.append(record, composer.author);
     }
@@ -151,24 +159,24 @@ async function loadHistory() {
     messages.status(`${messages.count} message${messages.count === 1 ? "" : "s"}`);
     if (stick) ui.records.scrollTop = ui.records.scrollHeight;
   } catch (error) {
-    if (state.selected === room) messages.status("Read failed");
+    if (state.selected?.id === id) messages.status("Read failed");
   }
 }
 
-async function selectRoom(id) {
-  const room = roomById(id);
-  if (!room) return;
-  state.selected = id;
+function selectRoom(root, room) {
+  if (state.selected?.root === root && state.selected?.id === room.id) return;
+  state.selected = { root, id: room.id };
   state.request += 1;
+  state.rolesKey = JSON.stringify(room.roles || []);
   messages.reset();
   ui.panel.hidden = false;
   ui.empty.hidden = true;
   updateRoomChrome(room);
   composer.setRoom(room);
-  renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
+  renderDashboard(ui.rooms, state.workspaces, state.selected, selectRoom);
   messages.status("Reading…");
-  await loadHistory();
-  if (state.selected === id) composer.focus();
+  loadHistory();
+  composer.focus();
 }
 
 function closeRoom() {
@@ -178,54 +186,65 @@ function closeRoom() {
   ui.panel.hidden = true;
   ui.empty.hidden = false;
   renderEmpty();
-  renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
 }
 
 async function refreshState() {
   let data;
   try {
-    data = await invoke("room_state");
+    data = await invoke("workspaces");
   } catch (error) {
     showGate(String(error));
     return;
   }
-  ui.workspace.textContent = data.workspace || "";
   composer.setAuthor(data.actor);
-  // The roster, previews, and panel pills come from room_state; re-render
-  // only when something actually changed so the polled UI stays calm.
-  const key = JSON.stringify(data.rooms);
-  if (key !== state.roomsKey) {
-    state.roomsKey = key;
-    state.rooms = Array.isArray(data.rooms) ? data.rooms : [];
-    if (state.selected && !roomById(state.selected)) closeRoom();
+  const workspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
+  const key = JSON.stringify(workspaces);
+  if (key !== state.workspacesKey) {
+    state.workspacesKey = key;
+    state.workspaces = workspaces;
+    // The selected room may have vanished with its workspace.
+    if (state.selected && !selectedRoom()) {
+      state.selected = null;
+      messages.reset();
+      ui.panel.hidden = true;
+      renderEmpty();
+    }
     if (state.selected) {
-      const room = roomById(state.selected);
+      const room = selectedRoom();
       if (room) {
-        updateRoomChrome(room);
-        composer.setRoom(room);
+        const rolesKey = JSON.stringify(room.roles || []);
+        if (rolesKey !== state.rolesKey) {
+          state.rolesKey = rolesKey;
+          updateRoomChrome(room);
+          composer.setRoom(room);
+          // Re-read history so label affordances follow the new roster.
+          messages.reset();
+          loadHistory();
+        }
       }
     }
+    renderDashboard(ui.rooms, state.workspaces, state.selected, selectRoom);
     renderEmpty();
-    renderRooms(ui.rooms, state.rooms, state.selected, selectRoom);
   }
-  if (!state.selected && state.rooms.length === 1) {
-    await selectRoom(state.rooms[0].id);
+  if (!state.selected && totalRooms() === 1) {
+    for (const workspace of state.workspaces) {
+      if (workspace.rooms?.length) {
+        selectRoom(workspace.root, workspace.rooms[0]);
+        break;
+      }
+    }
   }
 }
 
 /* Wiring ------------------------------------------------------------------- */
 
 ui.pick.addEventListener("click", pickWorkspace);
-ui.switch.addEventListener("click", async () => {
-  state.selected = null;
-  messages.reset();
-  await pickWorkspace();
-});
 ui.refresh.addEventListener("click", async () => {
   await refreshState();
   await loadHistory();
 });
 document.getElementById("composer").addEventListener("tearoom:send", async () => {
+  if (!state.selected) return;
   messages.status("Sending…");
   const outcome = await composer.send(state.selected, loadHistory);
   messages.status({
@@ -239,22 +258,14 @@ document.addEventListener("visibilitychange", () => {
     refreshState().then(() => loadHistory());
   }
 });
-// The poll keeps records AND the room roster (roles, previews) current.
+// The poll keeps records AND the dashboard (workspaces, roles) current.
 setInterval(() => {
   if (document.hidden) return;
   refreshState().then(() => loadHistory());
 }, 2500);
 
 (async () => {
-  try {
-    const current = await invoke("workspace_current");
-    if (current.root) {
-      ui.app.hidden = false;
-      await refreshState();
-    } else {
-      showGate("");
-    }
-  } catch (error) {
-    showGate(String(error));
-  }
+  ui.app.hidden = false;
+  await refreshState();
+  if (!totalRooms()) showGate("");
 })();

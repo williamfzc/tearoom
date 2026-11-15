@@ -26,11 +26,16 @@ recorded in [../log.md](../log.md).
   activation therefore have one owner (the CLI path). If the record was
   saved but the service did not start, the app shows the CLI's
   "record saved" warning instead of a failure.
-- **Workspace** — the app owns no workspace. On first run (or when the
-  remembered folder no longer opens as a workspace) it asks for a folder,
-  validates it by opening the Store, and remembers the workspace directory
-  in the app config dir. Any folder inside a workspace is accepted; the
-  canonical workspace directory is stored.
+- **Workspace discovery** — the dashboard shows every Tearoom workspace on
+  this machine side by side; there is no switching ceremony. Three sources
+  merge: the collaboration service's registry (workspaces activated at
+  least once), Spotlight (`mdfind -name .tearoom`), and the app's own
+  history (the config dir's known roots). Every candidate is validated by
+  opening the Store before it reaches the dashboard, and the rail groups
+  rooms under their workspace directory. Selecting a room selects its
+  workspace implicitly — reads, sends, and panel attach all take that
+  workspace root explicitly. The folder picker remains only as the fallback
+  for the zero-workspaces case.
 - **CLI discovery** — sends need the `tearoom` binary: `TEAROOM_CLI` if set,
   otherwise `tearoom` on `PATH`, `~/.cargo/bin`, `~/.local/bin`,
   `/opt/homebrew/bin`, or `/usr/local/bin`. The child gets an extended

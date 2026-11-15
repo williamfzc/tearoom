@@ -1,147 +1,114 @@
 //! IPC commands: the app's whole contract with the webview.
 //! Reads go through the Tearoom Store; sends go through the CLI `send`
 //! command so message composition and delivery activation keep one owner.
+//! Every command takes the workspace root explicitly: the dashboard shows
+//! all workspaces at once, so there is no "current" one.
 
 use crate::workspace;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
-use tearoom::collab::Config;
 use tearoom::store::Store;
+use workspace::ScanState;
 
+/// Shared app state: the config file backing workspace discovery. Managed as
+/// an `Arc` so discovery and relays can run off the main thread.
 pub struct AppState {
     config_path: PathBuf,
-    root: Mutex<Option<PathBuf>>,
+    scan: Mutex<ScanState>,
 }
 
 impl AppState {
     pub fn load(config_path: PathBuf) -> Self {
         Self {
-            root: Mutex::new(workspace::load(&config_path)),
             config_path,
+            scan: Mutex::new(ScanState::default()),
         }
     }
 
-    pub fn current(&self) -> Result<PathBuf> {
-        self.root
-            .lock()
-            .unwrap()
-            .clone()
-            .ok_or_else(|| anyhow!("no workspace selected"))
+    pub fn config_path(&self) -> &Path {
+        &self.config_path
     }
 
-    pub fn choose(&self, start: &Path) -> Result<PathBuf> {
-        let root = workspace::validate(start)?;
-        workspace::save(&self.config_path, &root)?;
-        *self.root.lock().unwrap() = Some(root.clone());
-        Ok(root)
+    pub fn scan(&self) -> std::sync::MutexGuard<'_, ScanState> {
+        self.scan.lock().unwrap()
     }
 }
 
+/// Every Tearoom workspace on this machine, most recently active first.
 #[tauri::command]
-pub fn workspace_current(state: State<AppState>) -> Value {
-    json!({ "root": state.current().ok().map(|p| p.display().to_string()) })
+pub async fn workspaces(state: State<'_, Arc<AppState>>) -> Result<Value, String> {
+    let state = state.inner().clone();
+    let value = tauri::async_runtime::spawn_blocking(move || {
+        // A missing CLI only drops the service-registry source; the dashboard
+        // still builds from Spotlight, the filesystem sweep, and history.
+        workspace::workspaces_json(
+            cli_path().ok().as_deref(),
+            state.config_path(),
+            &mut state.scan(),
+        )
+        .map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| format!("discovery task failed: {e}"))??;
+    // Debug-builds log the discovery result so an operator can confirm what
+    // the window is showing without screen access.
+    if cfg!(debug_assertions) {
+        let names: Vec<String> = value["workspaces"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .map(|w| w["name"].as_str().unwrap_or("?").to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        eprintln!("tearoom-app: discovered workspaces: {names:?}");
+    }
+    Ok(value)
 }
 
+/// Fallback for the zero-workspaces case: pick a folder by hand.
 #[tauri::command]
-pub fn workspace_pick(state: State<AppState>) -> Result<Value, String> {
+pub fn workspace_pick(state: State<'_, Arc<AppState>>) -> Result<Value, String> {
     let Some(dir) = rfd::FileDialog::new()
         .set_title("Choose a Tearoom workspace folder")
         .pick_folder()
     else {
         return Ok(json!({ "root": null }));
     };
-    let root = state.choose(&dir).map_err(|e| format!("{e:#}"))?;
-    Ok(json!({ "root": root.display().to_string() }))
+    let root = workspace::validate_candidate(&dir).map_err(|e| format!("{e:#}"))?;
+    let known = workspace::add_known(state.config_path(), &root).map_err(|e| format!("{e:#}"))?;
+    Ok(json!({
+        "root": root.display().to_string(),
+        "known": known.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+    }))
 }
 
 #[tauri::command]
-pub fn room_state(state: State<AppState>) -> Result<Value, String> {
-    let root = state.current().map_err(|e| e.to_string())?;
-    state_json(&root).map_err(|e| format!("{e:#}"))
-}
-
-#[tauri::command]
-pub fn room_records(state: State<AppState>, room: String, after: u64) -> Result<Value, String> {
-    let root = state.current().map_err(|e| e.to_string())?;
-    records_json(&root, &room, after).map_err(|e| format!("{e:#}"))
+pub fn room_records(root: String, room: String, after: u64) -> Result<Value, String> {
+    records_json(Path::new(&root), &room, after).map_err(|e| format!("{e:#}"))
 }
 
 /// Sends run off the main thread: service activation inside the CLI may
 /// block for seconds while the runtime starts.
 #[tauri::command]
 pub async fn send_message(
-    state: State<'_, AppState>,
+    root: String,
     room: String,
     text: String,
     to: Vec<String>,
     author: String,
 ) -> Result<Value, String> {
-    let root = state.current().map_err(|e| e.to_string())?;
     let cli = cli_path().map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || send_json(&root, &cli, &room, &text, &to, &author))
-        .await
-        .map_err(|e| format!("send task failed: {e}"))?
-        .map_err(|e| format!("{e:#}"))
-}
-
-fn state_json(root: &Path) -> Result<Value> {
-    let store = Store::open(root)?;
-    let config = Config::load(store.root())?;
-    let rooms: Vec<Value> = store
-        .rooms()?
-        .into_iter()
-        .map(|room| {
-            let roles = config
-                .rooms
-                .get(&room.id)
-                .map(|binding| binding.roles.clone())
-                .unwrap_or_default();
-            // Conversation-list preview: the newest record, read through the
-            // same Store seam; a failed read leaves the preview empty rather
-            // than failing the whole state.
-            let last = match store.read(&room.id, 0) {
-                Ok(records) => records.last().map_or(Value::Null, |record| {
-                    json!({
-                        "author": record.author,
-                        "text": preview_text(&record.content),
-                        "at": record.at,
-                    })
-                }),
-                Err(_) => Value::Null,
-            };
-            json!({
-                "id": room.id,
-                "name": room.name,
-                "parent": room.parent,
-                "description": room.description,
-                "created": room.created,
-                "roles": roles,
-                "last": last,
-            })
-        })
-        .collect();
-    Ok(json!({
-        "workspace": root.display().to_string(),
-        "actor": std::env::var("TEAROOM_ACTOR").unwrap_or_default(),
-        "rooms": rooms,
-    }))
-}
-
-/// The plain preview text of one record: a message's text, a plain JSON
-/// string, or a bracketed placeholder for any other content shape.
-fn preview_text(content: &impl serde::ser::Serialize) -> String {
-    match serde_json::to_value(content) {
-        Ok(Value::String(text)) => text,
-        Ok(Value::Object(map)) => match map.get("text") {
-            Some(Value::String(text)) => text.clone(),
-            _ => "[data]".into(),
-        },
-        _ => "[data]".into(),
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        send_json(Path::new(&root), &cli, &room, &text, &to, &author)
+    })
+    .await
+    .map_err(|e| format!("send task failed: {e}"))?
+    .map_err(|e| format!("{e:#}"))
 }
 
 fn records_json(root: &Path, room: &str, after: u64) -> Result<Value> {
@@ -207,7 +174,7 @@ fn send_json(
 
 /// The tearoom CLI binary, found the way a person's shell would find it even
 /// when the app is launched from Finder with a minimal PATH.
-fn cli_path() -> Result<PathBuf> {
+pub fn cli_path() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("TEAROOM_CLI").map(PathBuf::from) {
         if executable(&path) {
             return Ok(path);
@@ -263,7 +230,7 @@ mod tests {
         let store = Store::init(dir.path()).unwrap();
         let project = store.create_room("project", "").unwrap();
         let review = store.create_room("review", &project.id).unwrap();
-        Config::update(store.root(), |config| {
+        tearoom::collab::Config::update(store.root(), |config| {
             config.roles.insert(
                 "reviewer".into(),
                 tearoom::collab::Role {
@@ -284,36 +251,6 @@ mod tests {
         let _ = review;
         let root = dir.path().to_path_buf();
         (dir, root)
-    }
-
-    #[test]
-    fn state_reports_rooms_roles_and_actor() {
-        let (_dir, root) = workspace();
-        std::env::set_var("TEAROOM_ACTOR", "tester");
-        let store = Store::open(&root).unwrap();
-        let id = store.resolve_room("project").unwrap();
-        store
-            .append(
-                &id,
-                "tester",
-                tearoom::core::AppendRequest {
-                    content: "{\"text\":\"hello there\",\"mentions\":[\"reviewer\"]}",
-                    idempotency_key: "",
-                },
-            )
-            .unwrap();
-        let value = state_json(&root).unwrap();
-        assert_eq!(value["actor"], "tester");
-        let rooms = value["rooms"].as_array().unwrap();
-        assert_eq!(rooms.len(), 2);
-        let project = rooms.iter().find(|r| r["name"] == "project").unwrap();
-        assert_eq!(project["roles"], json!(["reviewer"]));
-        assert_eq!(project["last"]["author"], "tester");
-        assert_eq!(project["last"]["text"], "hello there");
-        let review = rooms.iter().find(|r| r["name"] == "review").unwrap();
-        assert_eq!(review["parent"], project["id"]);
-        assert!(review["last"].is_null(), "an empty room has no preview");
-        std::env::remove_var("TEAROOM_ACTOR");
     }
 
     #[test]

@@ -69,7 +69,7 @@ export class TerminalDrawer {
     this.els.status.textContent = text || "";
   }
 
-  async show(room, role) {
+  async show(root, room, role) {
     this.onLayoutChange?.();
     this.#renderChrome(role);
     try {
@@ -81,14 +81,14 @@ export class TerminalDrawer {
     this.els.drawer.hidden = false;
     this.status("connecting…");
     try {
-      await this.#start(room, role);
+      await this.#start(root, room, role);
     } catch (error) {
       this.status(String(error));
     }
   }
 
-  async #start(room, role) {
-    const info = await invoke("panel_info", { room, role });
+  async #start(root, room, role) {
+    const info = await invoke("panel_info", { root, room, role });
     if (!info.live) {
       this.status("no live panel — wake the role with an addressed message");
       return;
@@ -116,6 +116,7 @@ export class TerminalDrawer {
       }
     };
     const result = await invoke("attach_panel", {
+      root,
       room,
       role,
       cols: this.term.cols,

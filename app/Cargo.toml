@@ -17,4 +17,5 @@ tauri = { version = "2", features = [] }
 tearoom = { path = ".." }
 
 [dev-dependencies]
+tauri = { version = "2", features = ["test"] }
 tempfile = "3"
