@@ -3,6 +3,7 @@
 //! [`run`]; integration tests drive [`handler`] through the mock runtime.
 
 pub mod commands;
+pub mod dashboard;
 pub mod terminal;
 pub mod workspace;
 

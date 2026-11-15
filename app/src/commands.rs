@@ -4,7 +4,9 @@
 //! Every command takes the workspace root explicitly: the dashboard shows
 //! all workspaces at once, so there is no "current" one.
 
+use crate::dashboard;
 use crate::workspace;
+use crate::workspace::ScanState;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -12,7 +14,6 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use tearoom::store::Store;
-use workspace::ScanState;
 
 /// Shared app state: the config file backing workspace discovery. Managed as
 /// an `Arc` so discovery and relays can run off the main thread.
@@ -45,7 +46,7 @@ pub async fn workspaces(state: State<'_, Arc<AppState>>) -> Result<Value, String
     let value = tauri::async_runtime::spawn_blocking(move || {
         // A missing CLI only drops the service-registry source; the dashboard
         // still builds from Spotlight, the filesystem sweep, and history.
-        workspace::workspaces_json(
+        dashboard::workspaces_json(
             cli_path().ok().as_deref(),
             state.config_path(),
             &mut state.scan(),

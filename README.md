@@ -21,7 +21,7 @@ Tearoom is a command-line app. Install a pinned prebuilt binary from
 [GitHub Releases](https://github.com/williamfzc/tearoom/releases):
 
 ```sh
-version=v0.2.0
+version=v0.3.0
 artifact=tearoom_${version}_darwin_arm64.tar.gz  # also darwin-amd64, linux-amd64, linux-arm64
 base_url="https://github.com/williamfzc/tearoom/releases/download/$version"
 curl --fail --location --output "$artifact" "$base_url/$artifact"
