@@ -34,15 +34,20 @@ def main():
             stream.write("\n")
     # Scope to the shipped binary's dependency closure: the workspace may
     # carry other members (the desktop app) whose graph is not in these
-    # release artifacts.
-    root_id = metadata["resolve"]["root"]
-    nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
-    active, queue = {root_id}, [root_id]
-    while queue:
-        for dep in nodes[queue.pop()]["deps"]:
-            if dep["pkg"] not in active:
-                active.add(dep["pkg"])
-                queue.append(dep["pkg"])
+    # release artifacts. Metadata without a resolve root (fixtures, older
+    # producers) falls back to the full node list.
+    resolve = metadata.get("resolve", {})
+    root_id = resolve.get("root")
+    nodes = {node["id"]: node for node in resolve.get("nodes", [])}
+    if root_id and root_id in nodes:
+        active, queue = {root_id}, [root_id]
+        while queue:
+            for dep in nodes[queue.pop()]["deps"]:
+                if dep["pkg"] not in active:
+                    active.add(dep["pkg"])
+                    queue.append(dep["pkg"])
+    else:
+        active = set(nodes)
     packages = sorted(
         (p for p in metadata["packages"] if p["id"] in active and p.get("source")),
         key=lambda p: (p["name"], p["version"]),
