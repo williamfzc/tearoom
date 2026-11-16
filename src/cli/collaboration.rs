@@ -5,23 +5,25 @@ use crate::collab::runtime::{PanelStatus, Runtime};
 use crate::collab::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState};
 use crate::store::Store;
 use anyhow::{anyhow, bail, Context, Result};
+use serde_json::json;
 
 pub(super) fn collab_command(args: &[String]) -> Result<()> {
     let Some((action, rest)) = args.split_first() else {
-        println!("Usage: tearoom collab <run|deliveries|resolve|restart>");
+        println!("Usage: tearoom collab <run|pair|deliveries|resolve|restart>");
         return Ok(());
     };
     if action == "--help" || action == "-h" {
-        println!("Usage: tearoom collab <run|deliveries|resolve|restart>");
+        println!("Usage: tearoom collab <run|pair|deliveries|resolve|restart>");
         return Ok(());
     }
     let args = match action.as_str() {
         "run" | "deliveries" => parse(rest, &[], &[])?,
+        "pair" => parse(rest, &["port"], &[])?,
         "resolve" => parse(rest, &["room", "seq", "role", "outcome"], &["confirm"])?,
         "restart" => parse(rest, &["room", "role"], &["confirm"])?,
         _ => bail!("unknown collab command {action:?}"),
     };
-    if args.help("Usage: tearoom collab run (enable the local service and return)\n       tearoom collab deliveries\n       tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]\n       tearoom collab restart --room <room> --role <role> [--confirm]") {
+    if args.help("Usage: tearoom collab run (enable the local service and return)\n       tearoom collab pair [--port <port>] (pair a phone over the LAN)\n       tearoom collab deliveries\n       tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]\n       tearoom collab restart --room <room> --role <role> [--confirm]") {
         return Ok(());
     }
     args.no_positional()?;
@@ -34,6 +36,31 @@ pub(super) fn collab_command(args: &[String]) -> Result<()> {
         "deliveries" => print_json(&dispatcher.deliveries()?),
         "run" => super::service::activate(dispatcher.store.root())
             .map(|()| println!("local collaboration service is running")),
+        "pair" => {
+            super::service::activate(dispatcher.store.root())?;
+            let mut offer = json!({"action":"pair","root":dispatcher.store.root()});
+            let port = args.get("port");
+            if !port.is_empty() {
+                let port: u16 = port
+                    .parse()
+                    .map_err(|_| anyhow!("--port must be a TCP port number"))?;
+                offer["port"] = json!(port);
+            }
+            let result = super::service::call(&offer)?;
+            println!(
+                "Pair the Tearoom app within {} minutes:",
+                crate::lan::PAIR_TTL_SECS / 60
+            );
+            println!(
+                "  address {}",
+                result["url"]
+                    .as_str()
+                    .unwrap_or("(LAN address unavailable; enter this Mac's address manually)")
+            );
+            println!("  code    {}", result["code"].as_str().unwrap_or("?"));
+            println!("Enter the address and code in the app's connect screen.");
+            Ok(())
+        }
         "resolve" => {
             let seq: u64 = args.get("seq").parse().map_err(|_| {
                 anyhow!("--room, positive --seq, --role, and --outcome are required")

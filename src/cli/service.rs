@@ -55,6 +55,8 @@ pub(super) struct Request {
     pub role: Option<String>,
     #[serde(default)]
     pub confirm: bool,
+    #[serde(default)]
+    pub port: Option<u16>,
 }
 
 pub(super) fn dir() -> Result<PathBuf> {

@@ -4,5 +4,6 @@ pub mod collab;
 pub mod core;
 pub mod hc;
 pub mod herdr;
+pub mod lan;
 pub mod mentions;
 pub mod store;

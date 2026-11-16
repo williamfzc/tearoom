@@ -2,6 +2,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::io::{Read, Write};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -175,6 +176,51 @@ fn agent_script(path: &Path, marker: &Path) {
         ),
     )
     .unwrap();
+}
+
+/// One HTTP request against a `collab pair` address; the face closes every
+/// response, so read-to-end collects the whole reply.
+fn probe_url(
+    address: &str,
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Option<&str>,
+) -> (u16, String) {
+    let authority = address
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .expect("address carries a path-free authority");
+    let mut stream = std::net::TcpStream::connect(authority).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut request = format!("{method} {path} HTTP/1.1\r\nhost: probe\r\nconnection: close\r\n");
+    if let Some(token) = token {
+        request.push_str(&format!("authorization: Bearer {token}\r\n"));
+    }
+    if let Some(body) = body {
+        request.push_str(&format!(
+            "content-type: application/json\r\ncontent-length: {}\r\n",
+            body.len()
+        ));
+    }
+    request.push_str("\r\n");
+    if let Some(body) = body {
+        request.push_str(body);
+    }
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut response = String::new();
+    stream.read_to_string(&mut response).unwrap();
+    let (head, body) = response.split_once("\r\n\r\n").unwrap_or((&response, ""));
+    let status: u16 = head
+        .split_whitespace()
+        .nth(1)
+        .expect("status code")
+        .parse()
+        .expect("numeric status");
+    (status, body.to_owned())
 }
 
 #[test]
@@ -634,4 +680,97 @@ fn restart_marks_uncertain_delivery_without_replaying_it() {
         .matches("once only")
         .count();
     assert_eq!(count, 1, "uncertain delivery was replayed");
+}
+
+#[test]
+#[ignore = "starts an isolated user service and hc server"]
+fn pair_serves_a_phone_whose_send_dispatches_like_any_other() {
+    let sandbox = ServiceSandbox::new();
+    let root = sandbox._temp.path().join("workspace");
+    let script = sandbox._temp.path().join("agent.sh");
+    let marker = sandbox._temp.path().join("seen");
+    agent_script(&script, &marker);
+    sandbox.setup_workspace(&root, &script);
+
+    let pair = sandbox.success(&root, &["collab", "pair"]);
+    let text = String::from_utf8_lossy(&pair.stdout).into_owned();
+    let address = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("address "))
+        .filter(|line| line.starts_with("http://"))
+        .expect("pair printed a LAN address")
+        .to_owned();
+    let code = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("code "))
+        .map(str::trim)
+        .expect("pair printed a code")
+        .to_owned();
+
+    // The face turns on within a service tick of pairing; retry the way a
+    // real client does while the thread picks up the enabled flag.
+    let authority = address
+        .trim_start_matches("http://")
+        .split('/')
+        .next()
+        .expect("address carries a path-free authority")
+        .to_owned();
+    sandbox.wait_for("the LAN face to open its port", || {
+        std::net::TcpStream::connect(&authority).is_ok()
+    });
+
+    // The face is token-gated before pairing and after it.
+    let (status, _) = probe_url(&address, "GET", "/v1/rooms", None, None);
+    assert_eq!(status, 401);
+    let (status, body) = probe_url(
+        &address,
+        "POST",
+        "/v1/pair",
+        None,
+        Some(&format!("{{\"code\":\"{code}\"}}")),
+    );
+    assert_eq!(status, 200, "{body}");
+    let paired: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let token = paired["token"].as_str().unwrap().to_owned();
+
+    // The paired token reads the registered workspace only.
+    let (status, body) = probe_url(&address, "GET", "/v1/rooms", Some(&token), None);
+    assert_eq!(status, 200, "{body}");
+    assert!(body.contains("\"project\""), "{body}");
+    let (status, _) = probe_url(
+        &address,
+        "GET",
+        "/v1/records?room=project&after=0",
+        Some(&token),
+        None,
+    );
+    assert_eq!(status, 200);
+
+    // A phone send is a mention like any other: the same dispatch tick
+    // delivers it to the worker panel.
+    let body = r#"{"room":"project","text":"from the phone","author":"phone","key":"lan1","to":["worker"]}"#;
+    let (status, response) = probe_url(&address, "POST", "/v1/send", Some(&token), Some(body));
+    assert_eq!(status, 200, "{response}");
+    sandbox.wait_for("the phone's mention reaching the worker panel", || {
+        fs::read_to_string(&marker)
+            .unwrap_or_default()
+            .contains("from the phone")
+    });
+
+    // The record is durable in the shared stream, and the face sees it too.
+    let read = sandbox.success(&root, &["read", "--room", "project"]);
+    assert!(String::from_utf8_lossy(&read.stdout).contains("from the phone"));
+    let (status, body) = probe_url(
+        &address,
+        "GET",
+        "/v1/records?room=project&after=0",
+        Some(&token),
+        None,
+    );
+    assert_eq!(status, 200);
+    assert!(body.contains("from the phone"), "{body}");
+
+    let status = sandbox.status(&root);
+    assert_eq!(status["lan"]["enabled"], true);
+    assert_eq!(status["lan"]["paired"], 1);
 }

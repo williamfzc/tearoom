@@ -30,6 +30,7 @@ tearoom role delete --name <name>
 tearoom role list
 tearoom role show --name <name>
 tearoom collab run
+tearoom collab pair [--port <port>]
 tearoom collab deliveries
 tearoom collab resolve --room <room> --seq <seq> --role <role> --outcome <delivered|skip|retry> [--confirm]
 tearoom collab restart --room <room> --role <role> [--confirm]
@@ -225,13 +226,16 @@ Room record. If CLI activation fails, the error says the record was saved. A
 message without recipients does not activate collaboration. `read` and
 `room init` never start the service. `collab run` is a short-lived manual
 command that registers the current workspace and ensures the service is
-running. `collab deliveries` prints durable delivery intents; it does not wake
-Agents by itself.
+running. `collab pair` does the same and additionally enables the LAN face
+and prints one address and one single-use pairing code for the phone app;
+the endpoint and threat-model contract is in
+[lan-face.md](lan-face.md). `collab deliveries` prints durable delivery
+intents; it does not wake Agents by itself.
 
 `service status` prints whether the service is running, whether it is stopping,
-and its registered workspaces with any paused-workspace errors. `service stop`
+and its registered workspaces with any paused-workspace errors, plus the LAN
+face state under `lan`. `service stop`
 stops the service and attempts to stop the Agent terminals managed for its
-registered workspaces. It records stopped panels, reports cleanup failures,+preserves Room history, and leaves the shared hc service and unrelated
 registered workspaces. It records stopped panels, reports cleanup failures,
 preserves Room history, and leaves the shared hc service and unrelated
 terminals running. If cleanup fails, dispatch stays stopped and `service stop`

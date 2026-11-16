@@ -8,6 +8,32 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-16 — The service grows an opt-in LAN face
+
+`tearoom collab pair` enables a minimal HTTP face inside the per-user
+collaboration service and prints one address and one single-use pairing
+code; a phone exchanges the code for a workspace-bound bearer token and then
+reads Room streams (`rooms`, `records` with its own `after` boundary) and
+appends records (`send`, idempotent by key). A phone send is a writer like
+any other: it lands in the same Store stream, so the dispatcher and recovery
+machinery treat it without special cases, and there is no Mac→phone push —
+the Room stream is the outbox and the phone polls with its own boundary,
+matching the desktop face's polling contract. This reopens the network-face
+question the 2026-11-14 browser removal settled, on narrower terms: the
+removed face was an always-on loopback page with origin policy; this one is
+off until paired, speaks to a native app instead of a browser, and is
+token-gated with the pairing code single-use, five-minute, five-attempt. The
+face carries no second append implementation — sends shell out to the CLI
+`send` command, the same single-owner path the desktop app uses. Refused:
+TLS (plain HTTP is scoped to the trusted LAN in the [threat model](reference/lan-face.md#threat-model-and-limits); reopening is a logged decision when the face leaves
+that scope), mDNS discovery (the printed address is the v1 match; reopen
+when manual entry frictions real use), an SSE/push channel (the polling
+contract already exists), a phone-side dispatch subscription (the Room
+stream already is the durable outbox; a Mac-side viewer outbox would
+duplicate a caller-owned guarantee), and serving the role panel or terminal
+drawer (no PTY semantics over this face; reopen only with a concrete remote
+Agent story). The contract is in [reference/lan-face.md](reference/lan-face.md).
+
 ## 2026-11-15 — The desktop app is a machine-wide dashboard
 
 The desktop app drops the workspace switcher: discovery now merges the

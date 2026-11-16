@@ -44,6 +44,14 @@ executable proof in [../evaluations.md](../evaluations.md).
   is hand-run evidence (see [../evaluations.md](../evaluations.md)). The
   2026-11-10 loopback browser face was removed with it (see
   [../log.md](../log.md)).
+- `src/lan.rs` and `lan/` are the opt-in LAN face inside the per-user
+  service: `collab pair` mints a single-use code that a phone exchanges for
+  a workspace-bound bearer token, and the face serves `rooms`, `records`
+  (caller-owned `after` boundary), and `send` (through the CLI `send`
+  command, idempotent by key). The contract and threat model are in
+  [LAN face](../reference/lan-face.md); the probe matrix runs in `make
+  check` (`tests/lan.rs`) and the full pair→dispatch journey is the tenth
+  ignored service case. The phone app that consumes this face is unshipped.
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 
@@ -56,6 +64,7 @@ are tracked below. The delivery contract is in [collaboration.md](collaboration.
 | Item | State |
 |---|---|
 | Local collaboration service | The Unix implementation starts one per-user service on the first addressed send or explicit `collab run`, registers multiple workspaces, and exposes `service status|stop|forget`. Pure reads and Room creation do not start it. Nine scripted service integration cases passed on macOS arm64, including a stop followed by a new addressed send. They remain ignored in the regular suite because they start an isolated hc service. Passing cases cover CLI exit, multiple workspaces, cleanup of owned terminals while preserving unrelated ones, service-terminal SIGKILL, and uncertain-delivery recovery. Linux, hc-server failure, real Agent processes, detached descendants, and identity-check races remain unverified. See [service lifecycle and limits](collaboration.md#local-collaboration-service). |
+| Phone journey over the LAN face | The scripted pair→pair→read→send→dispatch case passed through a real service (`tests/service.rs`, ignored). Still open: a phone app running the journey on a real device, the send path exercised across a suspended/resumed app, and a second paired workspace. See [LAN face](../reference/lan-face.md) and [../evaluations.md](../evaluations.md). |
 | Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | One unattended Pi–Claude build-and-review journey passed; next-day resume and the complete acceptance suite remain open. See [../evaluations.md](../evaluations.md) |
 | Wake journey S4 | The hc dispatcher delivers addressed records to Room-role panels; unattended operation requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host. See [agent integration](../reference/agent-integration.md) for setup and [evaluations](../evaluations.md) for evidence |
 | Wake delivery | New Room records are sent directly, and only explicit recipients are woken. A finished turn releases the next queued delivery without requiring a reply. One Trae CLI Agent continued across wakes with new records; a broader multi-Agent journey remains open. Reliable lifecycle status remains required. See [collaboration delivery](collaboration.md#delivery-and-recovery) and [evidence](../evaluations.md#hand-run-evidence). |
