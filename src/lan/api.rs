@@ -4,7 +4,8 @@
 //! route requires the bearer token issued at pairing time; a token is bound
 //! to one workspace root and sees nothing else.
 use super::auth;
-use super::server::Request;
+use super::server::{parse_query, Request};
+use super::view;
 use super::{SendArgs, Sender, Shared, TokenEntry, PAIR_MAX_ATTEMPTS};
 use crate::store::Store;
 use anyhow::Result;
@@ -154,8 +155,18 @@ fn rooms(workspace: &Path) -> Response {
         Ok(store) => store,
         Err(response) => return response,
     };
+    let config = match crate::collab::Config::load(store.root()) {
+        Ok(config) => config,
+        Err(issue) => return error(500, &format!("{issue:#}")),
+    };
     match store.rooms() {
-        Ok(rooms) => respond(200, &json!({"rooms": rooms})),
+        Ok(rooms) => respond(
+            200,
+            &json!({"rooms": rooms
+                .iter()
+                .map(|room| view::room_json(&store, &config, room))
+                .collect::<Vec<_>>()}),
+        ),
         Err(issue) => error(500, &format!("{issue:#}")),
     }
 }
@@ -240,61 +251,9 @@ fn store_error(issue: anyhow::Error) -> Response {
     }
 }
 
-fn parse_query(query: &str) -> Vec<(String, String)> {
-    query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .map(|pair| match pair.split_once('=') {
-            Some((name, value)) => (decode(name), decode(value)),
-            None => (decode(pair), String::new()),
-        })
-        .collect()
-}
-
-/// Percent-decoding for query values, as the phone client's fetch produces.
-fn decode(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match (bytes[index], bytes.get(index + 1), bytes.get(index + 2)) {
-            (b'%', Some(first), Some(second))
-                if first.is_ascii_hexdigit() && second.is_ascii_hexdigit() =>
-            {
-                let hex = [*first, *second];
-                let hex = std::str::from_utf8(&hex).expect("ascii digits");
-                out.push(u8::from_str_radix(hex, 16).expect("hex digits"));
-                index += 3;
-            }
-            (byte, _, _) => {
-                out.push(byte);
-                index += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 fn workspace_name(root: &Path) -> String {
     root.parent()
         .and_then(|parent| parent.file_name())
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn query_values_decode_percent_escapes() {
-        let params = parse_query("room=%E8%8C%B6%E5%AE%A4&after=e12");
-        assert_eq!(params[0].1, "茶室");
-        assert_eq!(params[1].1, "e12");
-    }
-
-    #[test]
-    fn query_without_pairs_is_empty() {
-        assert!(parse_query("").is_empty());
-    }
 }

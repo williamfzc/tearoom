@@ -222,10 +222,30 @@ fn routes_require_the_paired_token() {
     assert_eq!(status, 401);
     let code = lan::mint_pairing(&face.shared, &face.root, 0).unwrap();
     let (_, token) = pair_token(&face, &code);
+    tearoom::collab::Config::update(&face.root, |config| {
+        config.roles.insert(
+            "reviewer".into(),
+            tearoom::collab::Role {
+                agent_type: "probe".into(),
+                command: vec!["true".into()],
+                ..Default::default()
+            },
+        );
+        config.rooms.insert(
+            "project".into(),
+            tearoom::collab::RoomRoles {
+                roles: vec!["reviewer".into()],
+            },
+        );
+        Ok(())
+    })
+    .unwrap();
     let (status, _, body) = probe(face.addr, &wire("GET", "/v1/rooms", Some(&token), None));
     assert_eq!(status, 200);
     let rooms: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(rooms["rooms"][0]["name"], "project");
+    assert_eq!(rooms["rooms"][0]["roles"][0], "reviewer");
+    assert_eq!(rooms["rooms"][0]["last"], serde_json::Value::Null);
 }
 
 #[test]

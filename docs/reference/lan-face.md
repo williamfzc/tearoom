@@ -43,7 +43,7 @@ the origin, is the authority.
 ```text
 POST /v1/pair   {"code": "<6 digits>"}
               → {"token": "<64 hex>", "workspace": "<name>"}
-GET  /v1/rooms                → {"rooms": [Room…]}
+GET  /v1/rooms                → {"rooms": [dashboard room…]}
 GET  /v1/records?room=<room>&after=<e seq>
                               → {"records": [Record…]}
 POST /v1/send   {"room": "<room>", "text": "<text>",
@@ -53,8 +53,10 @@ POST /v1/send   {"room": "<room>", "text": "<text>",
 OPTIONS *                      → 204 with CORS headers
 ```
 
-`rooms` and `records` return the same shapes as the desktop app's commands
-([app.md](app.md)); `room` accepts an id or a name, and `after` takes either
+`rooms` returns each Room as the desktop dashboard renders it — labels,
+roster (`roles`), and the last record's preview (`last`); `records` returns
+the same shape as the desktop app's command ([app.md](app.md)); `room`
+accepts an id or a name, and `after` takes either
 `e<seq>` or a plain integer. The send path shells out to the CLI `send`
 command with `--idempotency-key`, so retries with the same `key` and content
 replay the original record and conflicting content is refused — a phone that

@@ -11,6 +11,7 @@
 mod api;
 mod auth;
 mod server;
+mod view;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
