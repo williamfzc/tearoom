@@ -2,7 +2,12 @@
 name = "tearoom-app"
 version = "0.3.0"
 edition = "2021"
-description = "Local desktop face for Tearoom rooms"
+description = "Local desktop face for Tearoom rooms, and the phone face over the LAN"
+
+# The mobile faces link the crate as a static library (tauri's iOS project
+# expects libapp.a); the desktop face keeps using the rlib.
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -10,10 +15,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 anyhow = "1"
 base64 = "0.22"
-rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+
+# The desktop face reads the Store and shells out to the CLI; the iOS face
+# is a pure remote view and carries no workspace code at all.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+rfd = "0.15"
 tearoom = { path = ".." }
 
 [dev-dependencies]

@@ -59,6 +59,7 @@ const gateCard = document.getElementById("gate");
 const connectCard = document.getElementById("connect");
 const gates = initGates(
   {
+    app: ui.app,
     gate: gateCard,
     gateHint: document.getElementById("gate-hint"),
     gateError: document.getElementById("gate-error"),
@@ -202,6 +203,12 @@ function closeRoom() {
 }
 
 async function refreshState() {
+  // The poll and visibility handler run before pairing too; keep the
+  // connect screen up until a token exists.
+  if (transport.kind === "remote" && !transport.connected()) {
+    gates.showConnect();
+    return;
+  }
   let data;
   try {
     data = await transport.listWorkspaces();

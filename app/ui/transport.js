@@ -68,7 +68,15 @@ function remote() {
 
   // A send that fails to reach the Mac may or may not have landed; the same
   // key and content replay safely, so the pending key survives until a send
-  // is confirmed or refused.
+  // is confirmed or refused. randomUUID needs a secure context, which a
+  // webview's custom scheme may not provide — getRandomValues always exists.
+  const newKey = () =>
+    crypto.randomUUID
+      ? crypto.randomUUID()
+      : Array.from(
+          crypto.getRandomValues(new Uint8Array(16)),
+          (byte) => byte.toString(16).padStart(2, "0"),
+        ).join("");
   let pendingKey = null;
 
   return {
@@ -77,7 +85,12 @@ function remote() {
     connected: () => Boolean(saved()),
     savedAddress: () => saved()?.baseUrl || "",
     async pair(address, code) {
-      const baseUrl = address.trim().replace(/\/+$/, "");
+      // `collab pair` prints the address with its /v1 prefix; accept either
+      // shape and store the bare origin — every call appends /v1 itself.
+      const baseUrl = address
+        .trim()
+        .replace(/\/+$/, "")
+        .replace(/\/v1$/, "");
       const response = await fetch(`${baseUrl}/v1/pair`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -112,7 +125,7 @@ function remote() {
       return call(`/v1/records?room=${encodeURIComponent(room)}&after=${after}`);
     },
     async send({ room, text, to, author }) {
-      if (!pendingKey) pendingKey = crypto.randomUUID();
+      if (!pendingKey) pendingKey = newKey();
       try {
         const result = await call("/v1/send", {
           method: "POST",

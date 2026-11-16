@@ -192,7 +192,8 @@ reads through the same Store seam and sends through the CLI's `send` command,
 so message composition and delivery activation keep one owner; it does not
 edit records, move Rooms, or persist a read cursor. It opens only local
 workspaces and serves nothing over the network; this is not a hosted control
-plane. Its contract is in [app.md](app.md).
+plane. Its contract is in [app.md](app.md), together with the paired phone
+face that consumes the [LAN face](lan-face.md) instead of the local Store.
 
 ### Agent guide
 

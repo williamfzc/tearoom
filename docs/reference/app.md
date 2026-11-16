@@ -1,20 +1,25 @@
 ---
 type: reference
-title: Desktop app contract
-description: The optional Tauri desktop face — what it shows, how it reads, how it sends, and its limits.
-tags: [reference, app, desktop, contract]
-timestamp: 2026-11-14
+title: App contract
+description: The optional Tauri faces — the desktop window over local workspaces and the phone window over the LAN face.
+tags: [reference, app, desktop, ios, contract]
+timestamp: 2026-11-16
 ---
 
-# Desktop app contract
+# App contract
 
-The desktop app (`app/`, a Tauri crate) is the optional local face: one
-native window that navigates the Room tree, reads a Room's ordered record
-stream, and appends text messages with explicit `@role` addresses. It is a
-view over the same Store and message rules as the CLI; it adds no entity,
-identity, or remote-serving boundary. The product statement is in
+The app (`app/`, one Tauri crate, two faces) is the optional windowed view of
+Tearoom: it navigates the Room tree, reads a Room's ordered record stream,
+and appends text messages with explicit `@role` addresses. It is a view over
+the same Store and message rules as the CLI; it adds no entity, identity, or
+remote-serving boundary. The product statement is in
 [product.md](../product.md#command-surface); the browser face it replaced is
 recorded in [../log.md](../log.md).
+
+The two faces share the UI (renderers, composer, conversation) and differ
+only in the transport behind one seam (`app/ui/transport.js`): the desktop
+face talks to the local Store and CLI through Tauri commands; the phone face
+talks to the paired Mac's [LAN face](lan-face.md) over fetch.
 
 ## Behavior
 
@@ -75,9 +80,35 @@ the webview renders it with the vendored xterm.js.
 
 - No editing of records, moving of Rooms, or room creation: setup stays with
   the CLI (`tearoom room init`, `role init`).
-- No network serving of any kind: the window is not a server, and there is
-  no remote mode. This is not a hosted control plane.
+- No network serving from the desktop window: it is a client of the local
+  Store and CLI, never a server. The phone face is likewise a client only —
+  its serving counterpart is the paired Mac's LAN face (see
+  [lan-face.md](lan-face.md)).
 - No signature verification: the author remains an unverified label.
+
+## The phone face (iOS)
+
+The same crate builds for iOS (`cargo tauri ios …`), where the Rust command
+surface is compiled out entirely: the face is a bare webview whose UI runs
+the remote transport against the paired Mac's LAN face. First run shows the
+connect gate — the address and six-digit code from `tearoom collab pair` —
+and a successful pairing stores the endpoint and token locally. After that
+it behaves like the desktop conversation with these differences:
+
+- One workspace (the paired one); discovery, the folder picker, and the
+  workspace picker gate do not exist on the phone.
+- The role-panel drawer does not exist: the LAN face carries no terminal
+  stream, so role pills render without the attach affordance.
+- Reads poll `records` with the same explicit `after` boundary at the same
+  cadence as the desktop; sends go through `/v1/send` with a phone-generated
+  idempotency key, so a lost network replays safely. A refused send (roster,
+  conflict) shows the face's error; an unreachable Mac shows a reconnect
+  hint.
+- The threat model is the LAN face's ([lan-face.md](lan-face.md)); the
+  token stays on the device.
+
+Distribution is personal sideloading; packaging and store distribution are
+pending and tracked in [../architecture/status.md](../architecture/status.md).
 
 ## Build and run
 
@@ -88,7 +119,18 @@ Cargo. From the repository root:
 ```sh
 cargo run --manifest-path app/Cargo.toml        # development window
 cargo build --locked --manifest-path app/Cargo.toml
+cargo tauri ios build --target aarch64-sim      # phone face, simulator
 ```
+
+The first iOS scaffold is `cargo tauri ios init` inside `app/`. Its
+generated project lives under `app/gen/apple/` — deliberately untracked
+like the rest of `gen/`, since `tauri ios init` reproduces it. One manual
+step does not survive regeneration and must be reapplied after a fresh
+`init`: `gen/apple/tearoom-app_iOS/Info.plist` carries the LAN-face keys —
+`NSAppTransportSecurity` → `NSAllowsLocalNetworking` (the face speaks plain
+HTTP to the paired Mac) and `NSLocalNetworkUsageDescription` (iOS asks
+before touching the local network). The webview's CSP for iOS comes from
+the checked-in `app/tauri.ios.conf.json`.
 
 The icon source is `app/icons/icon.svg`, drawn on the macOS icon grid
 (1024 canvas, 824 rounded-square body, r=185). Render it with `resvg` —

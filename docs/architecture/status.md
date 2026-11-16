@@ -51,7 +51,15 @@ executable proof in [../evaluations.md](../evaluations.md).
   command, idempotent by key). The contract and threat model are in
   [LAN face](../reference/lan-face.md); the probe matrix runs in `make
   check` (`tests/lan.rs`) and the full pair→dispatch journey is the tenth
-  ignored service case. The phone app that consumes this face is unshipped.
+  ignored service case.
+- The `app/` Tauri crate also builds the phone face for iOS (`cargo tauri
+  ios …`): one UI behind a transport seam (`app/ui/transport.js`) — the
+  desktop keeps the local Store/CLI commands, the phone talks fetch to the
+  paired Mac's LAN face. The desktop Rust command surface is compiled out
+  on iOS. The simulator bundle boots to the connect gate, and the scripted
+  phone journey (pair → rooms → addressed send → dispatch → reconcile) is
+  hand-run evidence; a real-device journey remains open. See
+  [app.md](../reference/app.md) and [../evaluations.md](../evaluations.md).
 - A repository-local `.tearoom/` workspace is optional and untracked. Existing
   workspace data is preserved; repository work does not require a root Room.
 
@@ -64,7 +72,7 @@ are tracked below. The delivery contract is in [collaboration.md](collaboration.
 | Item | State |
 |---|---|
 | Local collaboration service | The Unix implementation starts one per-user service on the first addressed send or explicit `collab run`, registers multiple workspaces, and exposes `service status|stop|forget`. Pure reads and Room creation do not start it. Nine scripted service integration cases passed on macOS arm64, including a stop followed by a new addressed send. They remain ignored in the regular suite because they start an isolated hc service. Passing cases cover CLI exit, multiple workspaces, cleanup of owned terminals while preserving unrelated ones, service-terminal SIGKILL, and uncertain-delivery recovery. Linux, hc-server failure, real Agent processes, detached descendants, and identity-check races remain unverified. See [service lifecycle and limits](collaboration.md#local-collaboration-service). |
-| Phone journey over the LAN face | The scripted pair→pair→read→send→dispatch case passed through a real service (`tests/service.rs`, ignored). Still open: a phone app running the journey on a real device, the send path exercised across a suspended/resumed app, and a second paired workspace. See [LAN face](../reference/lan-face.md) and [../evaluations.md](../evaluations.md). |
+| Phone journey over the LAN face | The scripted pair→pair→read→send→dispatch case passed through a real service (`tests/service.rs`, ignored), and the phone UI ran the same journey under headless Chrome with an iPhone UA against a live service: connect gate, pairing, room read with roster, an addressed send that created a delivery intent, and reconciliation (`collab resolve --outcome retry`) delivered it to the live worker panel. Still open: the journey on a real iPhone (sideload), the app across background/foreground suspension, a second paired workspace, and LTE-to-LAN handoff. See [LAN face](../reference/lan-face.md), [app.md](../reference/app.md), and [../evaluations.md](../evaluations.md). |
 | Acceptance journeys S1–S3 (solo delivery, build-and-review, resume) | One unattended Pi–Claude build-and-review journey passed; next-day resume and the complete acceptance suite remain open. See [../evaluations.md](../evaluations.md) |
 | Wake journey S4 | The hc dispatcher delivers addressed records to Room-role panels; unattended operation requires each Agent tool's one-time trust dialogs and login to be pre-cleared on the host. See [agent integration](../reference/agent-integration.md) for setup and [evaluations](../evaluations.md) for evidence |
 | Wake delivery | New Room records are sent directly, and only explicit recipients are woken. A finished turn releases the next queued delivery without requiring a reply. One Trae CLI Agent continued across wakes with new records; a broader multi-Agent journey remains open. Reliable lifecycle status remains required. See [collaboration delivery](collaboration.md#delivery-and-recovery) and [evidence](../evaluations.md#hand-run-evidence). |

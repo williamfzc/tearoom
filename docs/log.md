@@ -8,6 +8,26 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-17 — The app grows a phone face
+
+The same Tauri crate now builds for iOS. The desktop and phone faces share
+one UI behind a single transport seam (`app/ui/transport.js`): the desktop
+talks to the local Store and CLI through the existing Tauri commands, the
+phone talks to the paired Mac's LAN face over fetch and keeps its endpoint
+and token in local storage. First run on iOS shows the connect gate fed by
+`tearoom collab pair`; there is no second renderer, no second send shape,
+and the desktop payload contract is unchanged byte for byte. The desktop
+Rust command surface is compiled out on iOS (`cfg(target_os = "ios")`), so
+the phone face is a bare webview — no workspace code, no CLI discovery, no
+panel drawer on a device that has no PTY and no hc socket. Refused: a
+separate mobile repository or a second UI implementation (one seam was
+already the whole coupling — five invoke sites), serving the drawer over
+the LAN face (no PTY semantics; the phone reads rooms, not terminals), and
+committing the generated Xcode project (gen/ stays reproducible-by-command;
+the two Info.plist keys the LAN face needs are documented in
+[reference/app.md](reference/app.md)). The phone face contract is in
+[reference/app.md](reference/app.md).
+
 ## 2026-11-16 — The service grows an opt-in LAN face
 
 `tearoom collab pair` enables a minimal HTTP face inside the per-user
