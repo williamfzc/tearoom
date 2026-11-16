@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="chat.css">
   <link rel="stylesheet" href="drawer.css">
+  <link rel="stylesheet" href="mobile.css">
   <link rel="stylesheet" href="vendor/xterm.min.css">
 </head>
 <body>
@@ -41,6 +42,22 @@
       <button id="pick" type="button" class="primary">Choose folder…</button>
     </div>
   </div>
+  <div id="connect" class="gate" hidden>
+    <div class="gate-card">
+      <h1>Tearoom</h1>
+      <p class="gate-hint">On your Mac, run <code>tearoom collab pair</code>
+        and enter the address and code it prints.</p>
+      <form id="connect-form" autocomplete="off">
+        <input id="connect-address" type="url" required
+               placeholder="http://192.168.x.x:7761/v1"
+               aria-label="Mac address from collab pair">
+        <input id="connect-code" inputmode="numeric" pattern="[0-9]{6}" required
+               placeholder="6-digit code" aria-label="Pairing code">
+        <p id="connect-error" class="error" role="alert" hidden></p>
+        <button id="connect-submit" type="submit" class="primary">Connect</button>
+      </form>
+    </div>
+  </div>
 
   <div id="app" class="app" hidden>
     <aside class="rail" aria-label="Rooms">
@@ -59,6 +76,8 @@
 
       <section id="room-panel" class="room-panel" hidden>
         <header class="chat-head">
+          <button id="back" class="back-button" type="button"
+                  aria-label="Back to the room list">‹</button>
           <span id="room-avatar" class="head-avatar" aria-hidden="true"></span>
           <div class="chat-title">
             <h2 id="room-name"></h2>

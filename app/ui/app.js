@@ -1,19 +1,17 @@
-// Tearoom desktop face: the machine-wide dashboard. Every Tearoom workspace
-// on this machine shows its rooms side by side — there is no switching.
-// Selection is a (workspace, room) pair; records, sends, and panels all take
-// the workspace root explicitly. A read boundary lives only in memory.
+// Tearoom face controller: the machine-wide dashboard on the desktop, the
+// paired-Mac view over the LAN face on a phone. Every Tearoom workspace
+// shows its rooms side by side — there is no switching. Selection is a
+// (workspace, room) pair; records, sends, and panels all take the workspace
+// root explicitly. A read boundary lives only in memory. Which transport
+// carries the data is decided in transport.js.
 
 import { element, renderDashboard, renderRoster, avatarFill, MessageList } from "./ui.js";
 import { Composer } from "./composer.js";
 import { TerminalDrawer } from "./terminal.js";
-
-const { invoke } = window.__TAURI__.core;
+import { transport } from "./transport.js";
+import { initGates } from "./gate.js";
 
 const ui = {
-  gate: document.getElementById("gate"),
-  gateHint: document.getElementById("gate-hint"),
-  gateError: document.getElementById("gate-error"),
-  pick: document.getElementById("pick"),
   app: document.getElementById("app"),
   rooms: document.getElementById("rooms"),
   refresh: document.getElementById("refresh"),
@@ -26,16 +24,18 @@ const ui = {
   records: document.getElementById("records"),
 };
 
-const drawer = new TerminalDrawer({
-  drawer: document.getElementById("drawer"),
-  resize: document.getElementById("drawer-resize"),
-  avatar: document.getElementById("drawer-avatar"),
-  name: document.getElementById("drawer-name"),
-  status: document.getElementById("drawer-status"),
-  close: document.getElementById("drawer-close"),
-  term: document.getElementById("drawer-term"),
-  onLayoutChange: chatScrollGuard,
-});
+const drawer = transport.capabilities.terminal
+  ? new TerminalDrawer({
+      drawer: document.getElementById("drawer"),
+      resize: document.getElementById("drawer-resize"),
+      avatar: document.getElementById("drawer-avatar"),
+      name: document.getElementById("drawer-name"),
+      status: document.getElementById("drawer-status"),
+      close: document.getElementById("drawer-close"),
+      term: document.getElementById("drawer-term"),
+      onLayoutChange: chatScrollGuard,
+    })
+  : null;
 
 const composer = new Composer({
   composer: document.getElementById("composer"),
@@ -53,33 +53,41 @@ const composer = new Composer({
 const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, rolesKey: null };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 
-/* Workspace gate ----------------------------------------------------------- */
+/* Boot gates: the desktop workspace picker and the phone's connect screen. */
 
-function showGate(message) {
-  ui.gateError.textContent = message || "";
-  ui.gateError.hidden = !message;
-  ui.gateHint.textContent = message
-    ? "Tearoom could not discover workspaces."
-    : "No Tearoom workspaces found on this machine yet. Point at one to get started.";
-  ui.app.hidden = true;
-  ui.gate.hidden = false;
-}
-
-async function pickWorkspace() {
-  let result;
-  try {
-    result = await invoke("workspace_pick");
-  } catch (error) {
-    showGate(String(error));
-    return;
-  }
-  if (!result.root) return; // the person cancelled the dialog
-  state.selected = null;
-  messages.reset();
-  ui.gate.hidden = true;
-  ui.app.hidden = false;
-  await refreshState();
-}
+const gateCard = document.getElementById("gate");
+const connectCard = document.getElementById("connect");
+const gates = initGates(
+  {
+    gate: gateCard,
+    gateHint: document.getElementById("gate-hint"),
+    gateError: document.getElementById("gate-error"),
+    pick: document.getElementById("pick"),
+    connect: connectCard,
+    connectForm: document.getElementById("connect-form"),
+    connectAddress: document.getElementById("connect-address"),
+    connectCode: document.getElementById("connect-code"),
+    connectError: document.getElementById("connect-error"),
+    connectSubmit: document.getElementById("connect-submit"),
+  },
+  transport,
+  {
+    afterPick: async () => {
+      state.selected = null;
+      messages.reset();
+      gateCard.hidden = true;
+      ui.app.hidden = false;
+      await refreshState();
+    },
+    afterConnect: async () => {
+      connectCard.hidden = true;
+      ui.app.hidden = false;
+      ui.app.classList.remove("in-room");
+      await refreshState();
+      if (!totalRooms()) gates.showGate("");
+    },
+  },
+);
 
 /* Rooms and history -------------------------------------------------------- */
 
@@ -124,7 +132,7 @@ function isRoleSender(author) {
 }
 
 function openRolePanel(role) {
-  if (!state.selected) return;
+  if (!state.selected || !drawer) return;
   drawer.show(state.selected.root, state.selected.id, role);
 }
 
@@ -148,7 +156,7 @@ async function loadHistory() {
   const stick =
     ui.records.scrollHeight - ui.records.scrollTop - ui.records.clientHeight < 90;
   try {
-    const data = await invoke("room_records", { root, room: id, after: messages.lastSeq });
+    const data = await transport.records(root, id, messages.lastSeq);
     if (state.selected?.id !== id || state.selected?.root !== root || request !== state.request) {
       return;
     }
@@ -164,7 +172,10 @@ async function loadHistory() {
 }
 
 function selectRoom(root, room) {
-  if (state.selected?.root === root && state.selected?.id === room.id) return;
+  if (state.selected?.root === root && state.selected?.id === room.id) {
+    ui.app.classList.add("in-room");
+    return;
+  }
   state.selected = { root, id: room.id };
   state.request += 1;
   state.rolesKey = JSON.stringify(room.roles || []);
@@ -176,6 +187,7 @@ function selectRoom(root, room) {
   renderDashboard(ui.rooms, state.workspaces, state.selected, selectRoom);
   messages.status("Reading…");
   loadHistory();
+  ui.app.classList.add("in-room");
   composer.focus();
 }
 
@@ -186,14 +198,15 @@ function closeRoom() {
   ui.panel.hidden = true;
   ui.empty.hidden = false;
   renderEmpty();
+  ui.app.classList.remove("in-room");
 }
 
 async function refreshState() {
   let data;
   try {
-    data = await invoke("workspaces");
+    data = await transport.listWorkspaces();
   } catch (error) {
-    showGate(String(error));
+    gates.showGate(String(error));
     return;
   }
   composer.setAuthor(data.actor);
@@ -238,11 +251,11 @@ async function refreshState() {
 
 /* Wiring ------------------------------------------------------------------- */
 
-ui.pick.addEventListener("click", pickWorkspace);
 ui.refresh.addEventListener("click", async () => {
   await refreshState();
   await loadHistory();
 });
+document.getElementById("back").addEventListener("click", closeRoom);
 document.getElementById("composer").addEventListener("tearoom:send", async () => {
   if (!state.selected) return;
   messages.status("Sending…");
@@ -265,7 +278,11 @@ setInterval(() => {
 }, 2500);
 
 (async () => {
+  if (transport.kind === "remote" && !transport.connected()) {
+    gates.showConnect();
+    return;
+  }
   ui.app.hidden = false;
   await refreshState();
-  if (!totalRooms()) showGate("");
+  if (!totalRooms()) gates.showGate("");
 })();

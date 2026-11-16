@@ -1,8 +1,10 @@
-// The composer: recipient chips, the text field, and the send flow.
-// Sends go through the tearoom CLI via the send_message command; a saved
-// record whose collaboration failed to start comes back as a warning.
+// The composer: recipient chips, the text field, and the send flow. Sends
+// go through the face's transport — the CLI's send command on the desktop,
+// the LAN service's /v1/send on a phone; a saved record whose collaboration
+// failed to start comes back as a warning.
 
 import { renderAddresses } from "./ui.js";
+import { transport } from "./transport.js";
 
 export class Composer {
   constructor(els) {
@@ -64,7 +66,7 @@ export class Composer {
     this.#updateSendState();
     this.error("");
     try {
-      const result = await window.__TAURI__.core.invoke("send_message", {
+      const result = await transport.send({
         root: target.root,
         room: target.id,
         text,

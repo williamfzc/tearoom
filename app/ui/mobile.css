@@ -1,0 +1,89 @@
+/* Narrow screens: the rail becomes the room list, the conversation its
+   child screen, and the body class `in-room` (set by app.js) decides which
+   is visible. The desktop layout above 768px is untouched by this file. */
+
+.back-button {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app {
+    position: relative;
+  }
+
+  .back-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  /* The conversation covers the rail while a room is open. */
+  .app.in-room .rail {
+    display: none;
+  }
+
+  .conversation {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .chat-head {
+    padding-left: 8px;
+  }
+
+  .stream-status {
+    display: none;
+  }
+
+  .composer {
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .drawer {
+    display: none;
+  }
+
+  /* The connect card fills the width instead of floating. */
+  .gate-card {
+    width: min(92vw, 420px);
+  }
+
+  #connect-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  #connect-form input {
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+  }
+
+  #connect-form input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  #connect-form input::placeholder {
+    color: var(--faint);
+  }
+
+  #connect-form .primary {
+    align-self: center;
+    padding: 10px 24px;
+  }
+}
