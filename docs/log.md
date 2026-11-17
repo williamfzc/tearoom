@@ -8,6 +8,33 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-18 — A quiet Room is adjudicated once per stop
+
+Rooms can now name a mediator. `room roles --mediator <role>` binds one roster
+role (empty clears it; the role must already be on the roster); when every
+delivery of that Room is terminal, the dispatch service appends one
+runtime-signed addressed record — author `tearoom`, `--to` the mediator —
+asking it to close the Room, direct the next step, or record a blocker. The
+wake rides the ordinary record → intent → delivery pipeline; the ledger gains
+no new intent shape, only a `mediated` progress marker beside `cursor` and
+`fresh`.
+
+The stop rule is the user's: silence after a wake means the Room ended
+normally, and the runtime does nothing — no status field, no closing marker,
+no timeout. A new stop requires a record authored by someone other than the
+runtime and the mediator after the previous wake; the guard is derived from
+the stream plus the marker, and the wake's idempotency key makes a crashed
+append retry-safe. Refused: a silence timeout (T=0 by decision — the concept
+is deleted, and every broadcast in a mediated Room is therefore adjudicated
+once the ledger settles), a name-convention mediator, and a ledger intent
+without a record (it would fork the delivery contract). Known accepted costs,
+documented in [collaboration.md](architecture/collaboration.md#silence-mediation):
+a service start mediates each historically quiet mediated Room once, and the
+signature-based guard inherits the unverified-label stance of every other
+signature. Dispatch bookkeeping moved from `collab.rs` into `collab/state.rs`
+to pay the line budget this change would otherwise exceed; configuration and
+the delivery ledger now have separate owners.
+
 ## 2026-11-17 — Retry phone sends by payload, and let a recovered poll restore the face
 
 The phone transport no longer keeps one global pending key. A send is

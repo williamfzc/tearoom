@@ -149,6 +149,13 @@ boundary:
 - Which wake happens, and how, is decided by the collaboration runtime: a
   broadcast starts no panel, and an explicit recipient is routed to that role's
   Room-scoped panel.
+- A Room may configure one of its roles as its mediator. When the Room goes
+  quiet — no delivery in flight — the runtime wakes that role once per stop
+  through an ordinary addressed record, and the mediator closes the Room,
+  directs the next step, or records a blocker. A quiet Room after a wake has
+  ended; a record from someone else begins a new stop. Silence needs no
+  timeout and adds no status field: the mediator is a Role, the wake is a
+  record, and "ended" is the absence of further records.
 
 ## Command surface
 

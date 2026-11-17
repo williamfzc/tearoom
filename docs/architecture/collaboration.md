@@ -92,6 +92,35 @@ stream remains the shared history. Builder and reviewer work in the same Room; t
 reviewer is a different agent instance. A shared ancestor Room can carry
 coordination across branches, with the relevant roles configured there.
 
+## Silence mediation
+
+A Room may name one of its roster roles as its mediator
+(`room roles --room <room> --mediator <role>`; an empty value clears it). The
+mediator is an ordinary Role with its own command and instructions; mediation
+adds no entity, no Room status field, and no second delivery contract.
+
+When every delivery of the Room is terminal — nothing pending, submitted, or
+awaiting inspection — the Room is quiet, and the next dispatch pass appends
+one silence-wake record: signed by the runtime (`tearoom`), addressed to the
+mediator with `--to` semantics, asking it to close the Room, direct the next
+step, or record a blocker. From there the normal pipeline owns everything:
+the record routes through hc like any addressed message, appears in
+`collab deliveries`, and completes on the mediator's turn or reply.
+
+One stop is mediated once. If the Room falls quiet again after a wake, it has
+ended normally and the runtime does nothing; a new stop requires a record
+authored by someone other than the runtime and the mediator after the previous
+wake. The dispatch state records the last wake's sequence, so each pass reads
+only records since it; the wake's idempotency key makes a crashed append
+retry-safe. Consequences of the immediate, timeout-free detection: every
+broadcast in a mediated Room is followed by one adjudication once the ledger
+settles; a service start mediates each historically quiet mediated Room once;
+and a mediator that answers without involving anyone ends the Room until a
+third party writes again. A Room recovers mid-flight (an `unknown` delivery) or
+with undeliverable work (stuck `pending`) is not quiet and is not mediated.
+The guard trusts record signatures, which are unverified labels like every
+other signature in the product.
+
 ## Delivery and recovery
 
 A local integration process observes Room appends and uses hc to start a role

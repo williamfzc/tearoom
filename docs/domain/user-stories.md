@@ -140,6 +140,18 @@ retrying. It must not blindly repeat effects whose completion is uncertain,
 and must show unresolved ambiguity to a person. This does not assume exactly
 once execution of external side effects.
 
+### S12: A quiet Room is adjudicated once per stop
+
+**When** a Room with a configured mediator goes quiet — no delivery pending,
+submitted, or awaiting inspection — **the runtime can** wake that one role to
+adjudicate the stop, through an ordinary addressed record in the Room stream.
+
+**Accept when:** the wake reaches the mediator like any addressed message; the
+mediator closes the Room, addresses the next step, or records a blocker; and a
+Room that falls quiet again after a wake is treated as ended, waking nobody,
+until a record from someone other than the runtime and the mediator begins a
+new stop. Silence is detected immediately, with no timeout.
+
 ## Current design boundaries
 
 - A project Room can host several roles in one shared conversation. Each

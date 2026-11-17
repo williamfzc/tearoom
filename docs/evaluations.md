@@ -60,6 +60,7 @@ journeys and their remaining cases are still open.
 | S9 | Agents in separate Rooms coordinate through their common parent Room | open | acceptance | [user-stories.md](domain/user-stories.md#s9-separate-rooms-coordinate-through-their-common-parent) |
 | S10 | Reusable role definitions can be configured in Rooms with separate hc panels | open | acceptance | [user-stories.md](domain/user-stories.md#s10-reuse-role-definitions-across-rooms) |
 | S11 | Inspect the Agent implementation assigned to a role | open | acceptance | [user-stories.md](domain/user-stories.md#s11-choose-a-collaborator-by-role-and-agent-type) |
+| S12 | A quiet Room is adjudicated once per stop | open | acceptance | [user-stories.md](domain/user-stories.md#s12-a-quiet-room-is-adjudicated-once-per-stop) |
 
 ## Evaluations
 
@@ -73,6 +74,7 @@ journeys and their remaining cases are still open.
 | E6 | End-to-end builder/reviewer collaboration in one Room and branch coordination through a common parent Room | hand-run | — | planned |
 | E7 | Recovery after stopping the runtime at delivery and execution boundaries; reconcile uncertain work before retrying | hand-run | — | planned |
 | E8 | Agent discovery across multiple Agent types and explicit selection of a configured Room role | hand-run | — | planned |
+| E9 | Silence mediation with a real Agent: a mediated Room wakes its mediator once per quiet stop (closing, redirecting, or recording a blocker), and a third-party record arms the next stop; in-suite unit, dispatch-cycle, and CLI flag tests cover the contract in `make check` | hand-run | — | planned |
 
 ## Story → evaluation
 
@@ -89,6 +91,7 @@ journeys and their remaining cases are still open.
 | S9 | E6 |
 | S10 | E5 |
 | S11 | E5, E8 |
+| S12 | E9 |
 
 ## Evaluation → story
 
@@ -102,6 +105,7 @@ journeys and their remaining cases are still open.
 | E6 | S2, S7, S9 |
 | E7 | S8 |
 | E8 | S5, S11 |
+| E9 | S12 |
 
 ## Hand-run evidence
 
