@@ -4,8 +4,10 @@ mod routing;
 #[path = "dispatch/task.rs"]
 mod task;
 
+use super::panel_name;
 use super::runtime::{quote, PanelRequest, PanelStatus, Runtime};
-use super::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState, Intent};
+use super::state::{dispatch_lock, DeliveryState, DispatchState, Intent};
+use super::Config;
 use crate::store::Store;
 use anyhow::{bail, Context, Result};
 use routing::{head_of_queue, mark_reply, record_intent};
@@ -292,7 +294,8 @@ impl<R: Runtime> Dispatcher<R> {
 #[cfg(test)]
 mod tests {
     use super::super::runtime::SubmitResult;
-    use super::super::{Delivery, Message, RecordRef, Role, RoomRoles};
+    use super::super::state::Delivery;
+    use super::super::{Message, RecordRef, Role, RoomRoles};
     use super::*;
     use crate::core::AppendRequest;
     use std::cell::{Cell, RefCell};

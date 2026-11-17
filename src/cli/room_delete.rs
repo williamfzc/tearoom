@@ -1,7 +1,8 @@
 //! Destructive Room removal guarded by tree, delivery, and confirmation checks.
 
 use super::{open, parse, print_json, resolve, room_display};
-use crate::collab::{dispatch_lock, panel_name, DeliveryState, DispatchState};
+use crate::collab::panel_name;
+use crate::collab::state::{dispatch_lock, DeliveryState, DispatchState};
 use anyhow::{bail, Result};
 
 pub(super) fn delete_room_command(args: &[String]) -> Result<()> {

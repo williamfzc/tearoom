@@ -1,6 +1,6 @@
 //! Coalesced, backoff-limited synchronization of hc status into Herdr.
 
-use super::{DeliveryState, Intent};
+use super::state::{DeliveryState, Intent};
 use crate::collab::runtime::{HcRuntime, PanelStatus, Runtime};
 use crate::hc::HcClient;
 use anyhow::{anyhow, Result};

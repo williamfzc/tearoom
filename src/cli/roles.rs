@@ -1,7 +1,8 @@
 //! Reusable role definitions and Room rosters at the CLI boundary.
 use super::{hc_runtime, open, parse, print_json};
 use crate::collab::runtime::Runtime;
-use crate::collab::{dispatch_lock, Config, DeliveryState, DispatchState, Role, RoomRoles};
+use crate::collab::state::{dispatch_lock, DeliveryState, DispatchState};
+use crate::collab::{Config, Role, RoomRoles};
 use crate::mentions;
 use crate::store::Store;
 use anyhow::{anyhow, bail, Result};

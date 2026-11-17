@@ -31,7 +31,7 @@ fn dispatcher_survives_a_busy_delivery_lock_and_duplicate_registration() {
         .unwrap()
         .success());
     let root = tearoom::store::Store::find(dir.path()).unwrap();
-    let held = tearoom::collab::dispatch_lock(&root).unwrap();
+    let held = tearoom::collab::state::dispatch_lock(&root).unwrap();
     let first = command(dir.path())
         .args(["collab", "run"])
         .output()
@@ -496,7 +496,7 @@ fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
     );
 
     let workspace = tearoom::store::Store::find(dir.path()).unwrap();
-    let held = tearoom::collab::dispatch_lock(&workspace).unwrap();
+    let held = tearoom::collab::state::dispatch_lock(&workspace).unwrap();
     let busy = run(&["role", "delete", "--name", "reviewer"]);
     assert!(!busy.status.success());
     assert!(String::from_utf8_lossy(&busy.stderr).contains("dispatcher holds"));

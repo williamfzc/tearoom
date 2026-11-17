@@ -1,5 +1,6 @@
 //! Pure record-to-delivery routing and per-role queue ordering.
-use super::super::{panel_name, Config, Delivery, DeliveryState, DispatchState, Intent, Message};
+use super::super::state::{Delivery, DeliveryState, DispatchState, Intent};
+use super::super::{panel_name, Config, Message};
 use crate::core::Record;
 use anyhow::Result;
 use std::collections::BTreeSet;

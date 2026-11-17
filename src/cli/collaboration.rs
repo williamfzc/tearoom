@@ -1,8 +1,10 @@
 //! Dispatcher commands at the CLI boundary.
 use super::{hc_runtime, parse, print_json};
 use crate::collab::dispatch::Dispatcher;
+use crate::collab::panel_name;
 use crate::collab::runtime::{PanelStatus, Runtime};
-use crate::collab::{dispatch_lock, panel_name, Config, DeliveryState, DispatchState};
+use crate::collab::state::{dispatch_lock, DeliveryState, DispatchState};
+use crate::collab::Config;
 use crate::store::Store;
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::json;
@@ -163,7 +165,8 @@ pub(super) fn restart<R: Runtime>(
 mod tests {
     use super::*;
     use crate::collab::runtime::{PanelRequest, SubmitResult};
-    use crate::collab::{Delivery, Intent, Role, RoomRoles};
+    use crate::collab::state::{Delivery, Intent};
+    use crate::collab::{Role, RoomRoles};
     use std::cell::RefCell;
     use std::path::Path;
 

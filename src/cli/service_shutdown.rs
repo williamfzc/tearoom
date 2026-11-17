@@ -1,7 +1,7 @@
 //! Recovery and safe cleanup for service-owned Agent terminals.
 //! The service acquires the workspace lock before inspecting or killing them.
 use super::super::{identity, Registry, Workspace};
-use crate::collab::{dispatch_lock, DeliveryState, DispatchState};
+use crate::collab::state::{dispatch_lock, DeliveryState, DispatchState};
 use anyhow::{bail, Result};
 use std::path::Path;
 use std::time::Duration;
