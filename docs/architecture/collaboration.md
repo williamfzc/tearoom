@@ -79,6 +79,12 @@ validated. If an unknown role is found in a persisted record, the runtime
 reports an undeliverable target without changing the record or routing to
 another role.
 
+Address a role only when its participation is needed and the message requests
+action. An address wakes that role and creates work for it; updates,
+acknowledgments, completion reports, and references to a role belong in the
+shared stream without an address unless action is needed. Each delivery prompt
+reminds Agents of this convention; it is guidance, not semantic enforcement.
+
 The wake carries Room records since the role's last confirmed delivery through
 the addressed record; the first wake and an explicit restart carry the Room
 history through that record. The Agent may read more history if needed. The Room

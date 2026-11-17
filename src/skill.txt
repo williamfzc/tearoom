@@ -95,7 +95,11 @@ How work moves:
 
 An unaddressed message is shared history (broadcast) and does not wake a panel.
 Only explicit --to directs a message to the listed roles; @role in text is
-ordinary shared Room content. Each Room-role binding maps to its own hc panel;
+ordinary shared Room content. Only use --to when the recipient's participation
+is needed and the message asks them to act. Each address wakes that role and
+creates work for it. Share updates, acknowledgments, completion reports, and
+references to roles without --to unless action is needed.
+Each Room-role binding maps to its own hc panel;
 the same role in another
 Room has a separate panel. --reply-to room#seq is a reference convention, not
 identity proof. Tearoom does not validate --as: any process can write any

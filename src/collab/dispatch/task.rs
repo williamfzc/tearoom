@@ -23,7 +23,7 @@ pub(super) fn compose(
         ),
         None => format!("Room {display}, addressed to {role_name} at record {seq}."),
     };
-    format!("{head} New Room records (JSON):\n{history}\nTearoom CLI: {cli}")
+    format!("{head} New Room records (JSON):\n{history}\nTearoom CLI: {cli}\nOnly address a role with --to when its participation is needed and the message asks it to act. Each address wakes that role and creates work for it. Share updates or mention roles as context without --to; do not address someone just to acknowledge, inform, or report completion.")
 }
 
 #[cfg(test)]
@@ -33,10 +33,10 @@ mod tests {
     #[test]
     fn undescribed_rooms_keep_the_plain_task_shape() {
         let task = compose(None, "project", "reviewer", 2, "[history]", "'tearoom'");
-        assert_eq!(
-            task,
-            "Room project, addressed to reviewer at record 2. New Room records (JSON):\n[history]\nTearoom CLI: 'tearoom'"
-        );
+        assert!(task.starts_with("Room project, addressed to reviewer at record 2. New Room records (JSON):\n[history]\nTearoom CLI: 'tearoom'"));
+        assert!(task.contains("Only address a role with --to when its participation is needed"));
+        assert!(task
+            .contains("do not address someone just to acknowledge, inform, or report completion"));
     }
 
     #[test]
