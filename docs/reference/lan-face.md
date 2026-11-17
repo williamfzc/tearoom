@@ -64,7 +64,8 @@ loses connectivity resends safely. When the CLI saves the record but the
 background wake fails to start, the response is still 200: `record` carries
 the saved record and `warning` carries the wake error, so the phone shows the
 same saved-with-warning message as the desktop instead of a refusal. A 400
-means nothing was saved. Errors are
+means the request returned no saved record; a hard kill between the store
+write and stdout is a narrow window this does not exclude. Errors are
 `{"error": "<message>"}` with 400 (malformed or refused request), 401
 (missing or unknown token), 403 (rejected pairing), 404 (unknown room or
 route), 405 (wrong method), 408/413/431 (request-shape limits: headers

@@ -6,7 +6,7 @@ RELEASE_TAG ?= v0.0.0-dev
 RELEASE_DIR ?= dist/releases/$(RELEASE_TAG)
 RELEASE_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 RELEASE_SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || date +%s)
-.PHONY: all build cli app-build app-test app-fmt app-vet test target-room target-replay check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check
+.PHONY: all build cli app-build app-test app-fmt app-vet test target-room target-replay phone-poll check-evals line-budget docs fmt vet clean check release-test package package-check release-target release-check
 
 all: build
 
@@ -59,6 +59,13 @@ target-room: cli
 # across processes.
 target-replay: cli
 	@./scripts/target-replay.sh
+
+# Hand-run browser check for the phone face's overlapping-poll guard. It needs
+# Playwright and Chromium, so it is not in `make check`; the Rust test chain
+# keeps no JavaScript runtime dependency. Pass UI=<dir>/app/ui to bind it to
+# an exported commit instead of the checkout.
+phone-poll:
+	node scripts/phone-poll-order.mjs $(UI)
 
 fmt: app-fmt
 	$(CARGO) fmt --manifest-path $(RUST_MANIFEST) -- --check
