@@ -603,10 +603,15 @@ fn concurrent_send_and_role_delete_do_not_drop_a_cli_handoff() {
     assert!(remove.status.success());
     let read = run(&["read", "--room", "project"]);
     let history = String::from_utf8(read.stdout).unwrap();
-    if send.status.success() {
+    // A send can save its record and still exit non-zero: when the wake fails,
+    // the CLI prints the saved record and then exits with the warning. Branch
+    // on whether the handoff was saved, not on the exit status.
+    let saved = String::from_utf8_lossy(&send.stdout).contains("review please")
+        || history.contains("review please");
+    if saved {
+        assert!(history.contains("review please"));
         assert!(!delete.status.success());
         assert!(String::from_utf8_lossy(&delete.stderr).contains("unscanned messages"));
-        assert!(history.contains("review please"));
     } else {
         assert!(delete.status.success());
         assert!(history.is_empty());
