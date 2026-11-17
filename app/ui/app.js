@@ -49,8 +49,8 @@ const composer = new Composer({
 });
 
 // selected: { root, id } | null. roomsKey gates re-renders; rolesKey tracks
-// the selected room's roster so label affordances follow role changes.
-const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, rolesKey: null };
+// the room's roster; request and poll gate stale reads from history and polls.
+const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, poll: 0, rolesKey: null };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 
 /* Boot gates: the desktop workspace picker and the phone's connect screen. */
@@ -93,10 +93,7 @@ const gates = initGates(
 /* Rooms and history -------------------------------------------------------- */
 
 function totalRooms() {
-  return state.workspaces.reduce(
-    (sum, workspace) => sum + (workspace.rooms?.length || 0),
-    0,
-  );
+  return state.workspaces.reduce((sum, workspace) => sum + (workspace.rooms?.length || 0), 0);
 }
 
 function selectedRoom() {
@@ -204,6 +201,7 @@ function closeRoom() {
 }
 
 async function refreshState() {
+  const request = ++state.poll;
   // The poll and visibility handler run before pairing too; keep the
   // connect screen up until a token exists.
   if (transport.kind === "remote" && !transport.connected()) {
@@ -214,9 +212,10 @@ async function refreshState() {
   try {
     data = await transport.listWorkspaces();
   } catch (error) {
-    gates.showGate(String(error));
+    if (request === state.poll) gates.showGate(String(error));
     return false;
   }
+  if (request !== state.poll) return false;
   composer.setAuthor(data.actor);
   const workspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
   const key = JSON.stringify(workspaces);

@@ -36,11 +36,14 @@ instead of trapping the phone.
 The face's view state now has one restoration path. `refreshState` returns
 whether its fetch succeeded and, on success, either shows the app or the
 empty-workspace hint; a failed poll shows the reconnect gate but keeps the
-selected Room. The pairing hook no longer overwrites a post-pairing network
-error with a stale no-rooms message, and the boot path no longer has the same
-overwrite. The browser harness reproduced both original defects before the
-fix and passed afterwards; the real LAN service journey covers pairing, send,
-service stop, restart, recovery, and a lost response. See
+selected Room. It also carries a generation, and only the newest LAN poll
+applies its result or failure, so a slow older response cannot hide a newer
+success or clear a newer reconnect gate. The pairing hook no longer
+overwrites a post-pairing network error with a stale no-rooms message, and
+the boot path no longer has the same overwrite. The browser harness
+reproduced both original defects before the fix and passed afterwards; the
+real LAN service journey covers pairing, send, service stop, restart,
+recovery, and a lost response. See
 [reference/app.md](reference/app.md) and [evaluations.md](evaluations.md).
 
 ## 2026-11-17 — The app grows a phone face

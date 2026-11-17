@@ -117,7 +117,9 @@ it behaves like the desktop conversation with these differences:
 - A failed poll shows a reconnect hint without discarding the selected Room;
   a later successful poll restores the conversation and reads from its
   in-memory boundary. A poll that fails immediately after pairing keeps its
-  network error instead of being replaced by the empty-workspace hint.
+  network error instead of being replaced by the empty-workspace hint. Only
+  the newest poll applies: a slow older response cannot hide a newer success
+  or clear a newer failure gate.
 - A revoked token (or a Mac you no longer trust) offers Pair again on the
   gate; it forgets the stored endpoint and token and returns to the connect
   screen. The selected Room and history are left for the next pairing.
