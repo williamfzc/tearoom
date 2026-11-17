@@ -48,6 +48,9 @@ pub struct DispatchState {
     pub intents: Vec<Intent>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fresh: BTreeMap<String, BTreeSet<String>>,
+    /// Room id -> sequence of the last silence-wake record the runtime appended.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub mediated: BTreeMap<String, u64>,
 }
 
 impl Default for DispatchState {
@@ -57,6 +60,7 @@ impl Default for DispatchState {
             cursor: BTreeMap::new(),
             intents: Vec::new(),
             fresh: BTreeMap::new(),
+            mediated: BTreeMap::new(),
         }
     }
 }

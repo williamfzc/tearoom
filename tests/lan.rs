@@ -245,6 +245,7 @@ fn routes_require_the_paired_token() {
             "project".into(),
             tearoom::collab::RoomRoles {
                 roles: vec!["reviewer".into()],
+                ..Default::default()
             },
         );
         Ok(())

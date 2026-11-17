@@ -8,7 +8,7 @@ mod rooms;
 mod service;
 
 use crate::collab::runtime::{workspace_label, HcRuntime};
-use crate::collab::{Config, Message, RecordRef};
+use crate::collab::{escape_json, Config, Message, RecordRef};
 use crate::core::{AppendRequest, Record};
 use crate::hc::HcClient;
 use crate::mentions;
@@ -240,14 +240,6 @@ fn signature(explicit: &str) -> String {
     }
 }
 
-fn escape_content(json: String) -> String {
-    json.replace('&', "\\u0026")
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029")
-}
-
 /// Append one text message, resolving explicit or body addresses against the
 /// Room roster. The CLI and the local browser face share this path so message
 /// encoding and roster rules have one owner.
@@ -274,7 +266,7 @@ pub(super) fn append_text(
                 reply_to,
             })?
         };
-        let content = escape_content(json);
+        let content = escape_json(json);
         store.append(
             room,
             author,

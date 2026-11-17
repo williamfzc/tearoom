@@ -1,13 +1,14 @@
 //! Durable Room-to-panel dispatch, serialized by the workspace lock.
 #[path = "dispatch/routing.rs"]
 mod routing;
+#[path = "dispatch/silence.rs"]
+mod silence;
 #[path = "dispatch/task.rs"]
 mod task;
 
-use super::panel_name;
 use super::runtime::{quote, PanelRequest, PanelStatus, Runtime};
 use super::state::{dispatch_lock, DeliveryState, DispatchState, Intent};
-use super::Config;
+use super::{panel_name, Config};
 use crate::store::Store;
 use anyhow::{bail, Context, Result};
 use routing::{head_of_queue, mark_reply, record_intent};
@@ -107,6 +108,8 @@ impl<R: Runtime> Dispatcher<R> {
                 state.save(root)?;
             }
         }
+        silence::mediate(&config, &self.store, &mut state)?;
+        state.save(root)?;
         Ok(())
     }
 
@@ -367,6 +370,7 @@ mod tests {
                 "project".into(),
                 RoomRoles {
                     roles: vec!["reviewer".into()],
+                    ..Default::default()
                 },
             );
             Ok(())
@@ -390,6 +394,7 @@ mod tests {
             version: 1,
             cursor: Default::default(),
             fresh: Default::default(),
+            mediated: Default::default(),
             intents: vec![
                 Intent {
                     room: "project".into(),
@@ -774,5 +779,123 @@ mod tests {
             .unwrap()
             .fresh
             .is_empty());
+    }
+
+    /// A runtime whose observed panel status the test flips between pumps.
+    struct Panel {
+        status: Cell<PanelStatus>,
+    }
+    impl Runtime for Panel {
+        fn status(&self, _: &str) -> Result<PanelStatus> {
+            Ok(self.status.get())
+        }
+        fn launch(&self, _: &str, _: &str, _: &str, _: &Role, _: &std::path::Path) -> Result<()> {
+            unreachable!("the panel trace overrides ensure")
+        }
+        fn stop(&self, _: &str) -> Result<()> {
+            unreachable!("dispatch tests do not stop panels")
+        }
+        fn ensure(&self, _: &PanelRequest<'_>) -> Result<SubmitResult> {
+            self.status.set(PanelStatus::Idle);
+            Ok(SubmitResult {
+                pending: true,
+                ..Default::default()
+            })
+        }
+        fn submit(&self, _: &str, _: &str, _: PanelStatus) -> Result<SubmitResult> {
+            Ok(SubmitResult {
+                accepted: true,
+                started: Some(true),
+                pending: false,
+            })
+        }
+    }
+
+    #[test]
+    fn pending_work_blocks_silence_mediation() {
+        let (_temp, existing) = setup(false);
+        Config::update(existing.store.root(), |config| {
+            config.rooms.get_mut("project").unwrap().mediator = Some("reviewer".into());
+            Ok(())
+        })
+        .unwrap();
+        let dispatcher = Dispatcher {
+            store: existing.store,
+            runtime: Panel {
+                status: Cell::new(PanelStatus::Working),
+            },
+        };
+        append(
+            &dispatcher.store,
+            "builder",
+            &Message {
+                text: "review".into(),
+                mentions: vec!["reviewer".into()],
+                reply_to: None,
+            },
+        );
+        dispatcher.pump().unwrap();
+        // The addressed record queues behind a working panel; the room is not quiet.
+        assert_eq!(
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
+            DeliveryState::Pending
+        );
+        let records = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].author, "builder");
+    }
+
+    #[test]
+    fn a_quiet_mediated_room_wakes_once_per_stop() {
+        let (_temp, existing) = setup(false);
+        Config::update(existing.store.root(), |config| {
+            config.rooms.get_mut("project").unwrap().mediator = Some("reviewer".into());
+            Ok(())
+        })
+        .unwrap();
+        let dispatcher = Dispatcher {
+            store: existing.store,
+            runtime: Panel {
+                status: Cell::new(PanelStatus::Idle),
+            },
+        };
+        // An empty ledger with no work in flight is the first stop: one wake.
+        dispatcher.pump().unwrap();
+        let records = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].author, silence::SILENCE_AUTHOR);
+        // The next pass routes the wake like any addressed record.
+        dispatcher.pump().unwrap();
+        assert_eq!(
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
+            DeliveryState::Submitted
+        );
+        // The turn ends with no third party speaking: the stop stays mediated.
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 1);
+        // A third-party broadcast arms the next stop.
+        append(
+            &dispatcher.store,
+            "builder",
+            &Message {
+                text: "shared update".into(),
+                mentions: vec![],
+                reply_to: None,
+            },
+        );
+        dispatcher.pump().unwrap();
+        let records = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[2].author, silence::SILENCE_AUTHOR);
+        // The second wake is delivered and, with nobody new speaking, is the last.
+        dispatcher.pump().unwrap();
+        assert_eq!(
+            dispatcher.deliveries().unwrap()[1].deliveries[0].state,
+            DeliveryState::Submitted
+        );
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 3);
     }
 }

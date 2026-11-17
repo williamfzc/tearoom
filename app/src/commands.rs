@@ -244,6 +244,7 @@ mod tests {
                 project.id.clone(),
                 tearoom::collab::RoomRoles {
                     roles: vec!["reviewer".into()],
+                    ..Default::default()
                 },
             );
             Ok(())

@@ -65,10 +65,9 @@ pub(super) fn show_room_command(args: &[String]) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("room {id:?}: not found"))?;
     let config = Config::load(store.root())?;
     let parent = super::room_display(&store, &room.parent);
-    let roles = config
-        .rooms
-        .get(&id)
-        .map_or_else(Vec::new, |binding| binding.roles.clone());
+    let binding = config.rooms.get(&id);
+    let roles = binding.map_or_else(Vec::new, |b| b.roles.clone());
+    let mediator = binding.and_then(|b| b.mediator.clone());
     print_json(&serde_json::json!({
         "id": room.id,
         "name": room.name,
@@ -76,5 +75,6 @@ pub(super) fn show_room_command(args: &[String]) -> Result<()> {
         "description": room.description,
         "created": room.created,
         "roles": roles,
+        "mediator": mediator,
     }))
 }

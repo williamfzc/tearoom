@@ -220,6 +220,7 @@ mod tests {
                 "project".into(),
                 RoomRoles {
                     roles: vec!["reviewer".into()],
+                    ..Default::default()
                 },
             );
             Ok(())
@@ -238,6 +239,7 @@ mod tests {
             version: 1,
             cursor: Default::default(),
             fresh: Default::default(),
+            mediated: Default::default(),
             intents: vec![Intent {
                 room: "project".into(),
                 seq: 1,

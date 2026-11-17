@@ -67,6 +67,9 @@ impl Role {
 pub struct RoomRoles {
     #[serde(default, deserialize_with = "null_default")]
     pub roles: Vec<String>,
+    /// The role the runtime wakes when this Room goes quiet; must be on the roster.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mediator: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -87,6 +90,20 @@ pub struct Message {
 pub struct RecordRef {
     pub room: String,
     pub seq: u64,
+}
+
+/// Record-content encoding shared by every writer: JSON, then the escapes
+/// that keep content line-safe inside the record stream.
+pub fn escape_json(json: String) -> String {
+    json.replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+}
+
+pub fn message_content(message: &Message) -> Result<String> {
+    Ok(escape_json(serde_json::to_string(message)?))
 }
 
 impl Config {
@@ -137,6 +154,11 @@ impl Config {
                 }
                 if !seen.insert(role) {
                     bail!("room {name:?} lists role {role:?} more than once");
+                }
+            }
+            if let Some(mediator) = &room.mediator {
+                if !room.roles.contains(mediator) {
+                    bail!("room {name:?} mediator {mediator:?} is not on its roster");
                 }
             }
         }
@@ -231,6 +253,7 @@ mod tests {
                 "project".into(),
                 RoomRoles {
                     roles: vec!["missing".into()],
+                    ..Default::default()
                 },
             );
             Ok(())

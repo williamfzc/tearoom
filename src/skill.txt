@@ -59,6 +59,16 @@ substituting the intended recipient's role name.
 These handoffs use explicit --to @role addresses, not names in message text.
 Use separate Agent instances for implementation and independent review.
 
+A Room may name one roster role as its silence mediator:
+  tearoom room roles --room project --mediator referee
+When every delivery of that Room is terminal, the runtime appends one
+addressed record (signed tearoom) waking the mediator to adjudicate the stop:
+record a closing sentence, address the next step with --to, or record a
+blocker. A Room that is quiet again after a wake has ended normally and wakes
+nobody; a record from someone other than the runtime and the mediator begins
+a new stop. Choose mediator instructions accordingly; an empty Room with a
+mediator has its work started by the first wake.
+
 Custom Agent TUIs: configure the interactive launch command and its arguments
 as a Role. Read `tearoom hc --skill`, then check startup, input delivery, and
 lifecycle status in the actual working directory. hc observes OSC 7501 status reports;

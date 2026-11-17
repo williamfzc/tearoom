@@ -76,6 +76,7 @@ pub(super) fn room_command(args: &[String]) -> Result<()> {
                 room.id.clone(),
                 RoomRoles {
                     roles: selected.clone(),
+                    ..Default::default()
                 },
             );
             Ok(room)

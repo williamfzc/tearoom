@@ -453,6 +453,92 @@ fn roles_and_room_mentions_are_discoverable() {
 }
 
 #[test]
+fn room_mediators_are_configured_and_shown() {
+    let dir = tempfile::tempdir().unwrap();
+    let _cleanup = ServiceCleanup::new(dir.path());
+    let run = |args: &[&str]| {
+        let output = command(dir.path()).args(args).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    };
+    run(&["room", "init", "--name", "project"]);
+    run(&[
+        "role",
+        "init",
+        "--name",
+        "reviewer",
+        "--agent-type",
+        "pi",
+        "--command",
+        "pi",
+    ]);
+    run(&[
+        "role",
+        "init",
+        "--name",
+        "watcher",
+        "--agent-type",
+        "pi",
+        "--command",
+        "pi",
+    ]);
+    run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
+    // A mediator must be a known role and already on the roster.
+    let off_roster = command(dir.path())
+        .args([
+            "room",
+            "roles",
+            "--room",
+            "project",
+            "--mediator",
+            "watcher",
+        ])
+        .output()
+        .unwrap();
+    assert!(!off_roster.status.success());
+    assert!(String::from_utf8_lossy(&off_roster.stderr).contains("must be on the Room roster"));
+    let unknown = command(dir.path())
+        .args(["room", "roles", "--room", "project", "--mediator", "ghost"])
+        .output()
+        .unwrap();
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr).contains("unknown role"));
+    run(&[
+        "room",
+        "roles",
+        "--room",
+        "project",
+        "--mediator",
+        "reviewer",
+    ]);
+    let card: serde_json::Value =
+        serde_json::from_slice(&run(&["room", "show", "--room", "project"])).unwrap();
+    assert_eq!(card["mediator"], "reviewer");
+    let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
+    let entry: serde_json::Value = serde_json::from_str(roster.lines().next().unwrap()).unwrap();
+    assert_eq!(entry["mediator"], serde_json::json!(true));
+    // Removing the mediating role without clearing the mediator is refused.
+    let conflict = command(dir.path())
+        .args(["room", "roles", "--room", "project", "--remove", "reviewer"])
+        .output()
+        .unwrap();
+    assert!(!conflict.status.success());
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("mediator"));
+    // An empty --mediator clears the binding.
+    run(&["room", "roles", "--room", "project", "--mediator", ""]);
+    let card: serde_json::Value =
+        serde_json::from_slice(&run(&["room", "show", "--room", "project"])).unwrap();
+    assert!(card["mediator"].is_null());
+    run(&["room", "roles", "--room", "project", "--remove", "reviewer"]);
+    let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
+    assert!(!roster.contains("reviewer"));
+}
+
+#[test]
 fn role_delete_preserves_rooms_and_refuses_bindings_or_unresolved_work() {
     let dir = tempfile::tempdir().unwrap();
     let _cleanup = ServiceCleanup::new(dir.path());

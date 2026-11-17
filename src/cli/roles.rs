@@ -2,7 +2,7 @@
 use super::{hc_runtime, open, parse, print_json};
 use crate::collab::runtime::Runtime;
 use crate::collab::state::{dispatch_lock, DeliveryState, DispatchState};
-use crate::collab::{Config, Role, RoomRoles};
+use crate::collab::{Config, Role};
 use crate::mentions;
 use crate::store::Store;
 use anyhow::{anyhow, bail, Result};
@@ -202,9 +202,9 @@ fn delete_role(root: &std::path::Path, name: &str) -> Result<()> {
 }
 
 pub(super) fn room_roles(args: &[String]) -> Result<()> {
-    let args = parse(args, &["room", "add", "remove"], &["observe"])?;
+    let args = parse(args, &["room", "add", "remove", "mediator"], &["observe"])?;
     if args.help(
-        "Usage: tearoom room roles --room <name> [--add <roles>] [--remove <roles>] [--observe]",
+        "Usage: tearoom room roles --room <name> [--add <roles>] [--remove <roles>] [--mediator <role>] [--observe]\n       --mediator names the role the runtime wakes when this Room goes quiet with no work in flight;\n       one role, already on the roster; --mediator \"\" clears it.",
     ) {
         return Ok(());
     }
@@ -218,12 +218,21 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
     let root = store.root();
     let adds = mentions::parse_explicit(args.get("add")).map_err(|e| anyhow!(e))?;
     let removes = mentions::parse_explicit(args.get("remove")).map_err(|e| anyhow!(e))?;
-    if !adds.is_empty() || !removes.is_empty() {
+    let mut mediator = mentions::parse_explicit(args.get("mediator")).map_err(|e| anyhow!(e))?;
+    if mediator.len() > 1 {
+        bail!("--mediator takes one role");
+    }
+    let mediator = mediator.pop();
+    // Absent flag preserves the binding; an empty flag clears it.
+    let wanted = args
+        .values
+        .contains_key("mediator")
+        .then_some(mediator.as_ref());
+    if !adds.is_empty() || !removes.is_empty() || wanted.is_some() {
         Config::update(root, |config| {
-            let mut roles: std::collections::BTreeSet<String> = config
-                .rooms
-                .get(&id)
-                .map_or_else(Default::default, |r| r.roles.iter().cloned().collect());
+            let binding = config.rooms.entry(id.clone()).or_default();
+            let mut roles: std::collections::BTreeSet<String> =
+                binding.roles.iter().cloned().collect();
             for name in &adds {
                 if !config.roles.contains_key(name) {
                     bail!("unknown role {name:?}; init it first with 'tearoom role init'");
@@ -233,23 +242,32 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
             for name in &removes {
                 roles.remove(name);
             }
-            config.rooms.insert(
-                id.clone(),
-                RoomRoles {
-                    roles: roles.into_iter().collect(),
-                },
-            );
+            let mediator = match wanted {
+                // Flag absent: keep the binding's mediator.
+                None => binding.mediator.clone(),
+                // Empty flag: clear it.
+                Some(None) => None,
+                Some(Some(name)) => {
+                    if !config.roles.contains_key(name) {
+                        bail!("unknown role {name:?}; init it first with 'tearoom role init'");
+                    }
+                    if !roles.contains(name) {
+                        bail!("mediator {name:?} must be on the Room roster first");
+                    }
+                    Some(name.clone())
+                }
+            };
+            binding.roles = roles.into_iter().collect();
+            binding.mediator = mediator;
             Ok(())
         })?;
     }
     let config = Config::load(root)?;
-    let mut names = config
-        .rooms
-        .get(&id)
-        .map_or_else(Vec::new, |r| r.roles.clone());
+    let binding = config.rooms.get(&id);
+    let mut names = binding.map_or_else(Vec::new, |r| r.roles.clone());
     names.sort();
     for name in names {
-        let mut entry = serde_json::json!({"room":super::room_display(&store, &id),"role":name,"definition":config.roles.get(&name)});
+        let mut entry = serde_json::json!({"room":super::room_display(&store, &id),"role":name,"definition":config.roles.get(&name),"mediator":binding.and_then(|b| b.mediator.as_deref()) == Some(name.as_str())});
         if args.switches.contains("observe") {
             let panel = crate::collab::panel_name(root, &id, &name)?;
             let observed = hc_runtime().and_then(|runtime| runtime.status(&panel));
