@@ -128,8 +128,33 @@ export function renderRoster(node, room, onRole) {
     const dot = element("span", "pill-avatar", role.slice(0, 1).toUpperCase());
     dot.style.background = avatarColor(role);
     pill.append(dot, element("span", null, `@${role}`));
+    if (onRole) {
+      const status = element("span", "role-status", "Checking…");
+      status.dataset.role = role;
+      pill.append(status);
+    }
     node.append(pill);
   });
+}
+
+export function roleStatus(info) {
+  if (!info) return "Status unavailable";
+  if (!info.live) return "No active panel";
+  return ({ working: "Working", idle: "Idle", done: "Turn ended", blocked: "Needs attention", error: "Needs attention" })[info.status] || "Status unknown";
+}
+
+let rosterPoll = 0;
+export async function refreshRoster(node, root, room, isCurrent) {
+  const poll = ++rosterPoll;
+  const roles = [...(room.roles || [])];
+  const results = await Promise.all(roles.map((role) =>
+    window.__TAURI__.core.invoke("panel_info", { root, room: room.id, role }).catch(() => null),
+  ));
+  if (poll !== rosterPoll || !isCurrent()) return;
+  for (const status of node.querySelectorAll(".role-status")) {
+    const index = roles.indexOf(status.dataset.role);
+    if (index !== -1) status.textContent = roleStatus(results[index]);
+  }
 }
 
 export function renderAddresses(container, room, selected) {

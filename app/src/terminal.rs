@@ -62,12 +62,14 @@ fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
     let id = store.resolve_room(room)?;
     let panel = panel_name(store.root(), &id, role)?;
     let client = hc::HcClient::from_env()?;
-    let listed = client.call(
+    let listed = client.call_existing(
         "terminal.list",
         json!({ "all": false }),
         std::time::Duration::from_secs(5),
     )?;
-    let terminals = listed["terminals"].as_array().cloned().unwrap_or_default();
+    let terminals = listed["terminals"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("invalid terminal list"))?;
     let live = terminals
         .iter()
         .find(|t| t["name"] == panel && t["state"] == "live");
@@ -75,9 +77,14 @@ fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
         Some(terminal) => {
             // hc reports the health word at `status.state`; older shapes put
             // the bare word at `status`.
-            let status = terminal["status"]["state"]
+            let details = client.call_existing(
+                "terminal.get",
+                json!({ "terminal": panel }),
+                std::time::Duration::from_secs(5),
+            )?;
+            let status = details["status"]["state"]
                 .as_str()
-                .or_else(|| terminal["status"].as_str())
+                .or_else(|| details["status"].as_str())
                 .unwrap_or("unknown");
             json!({
                 "panel": panel,

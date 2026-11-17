@@ -2,7 +2,7 @@
 // The stream is herdr-core's framed terminal.attach — first paint, then live
 // bytes; typing goes to the agent's PTY exactly as it would from a Herdr pane.
 
-import { avatarFill } from "./ui.js";
+import { avatarFill, roleStatus } from "./ui.js";
 
 // The Tauri core is resolved only when a panel is actually attached: the
 // phone face imports this module but has no terminal commands, so it must
@@ -30,6 +30,9 @@ export class TerminalDrawer {
     this.session = null;
     this.term = null;
     this.fit = null;
+    this.generation = 0;
+    this.timer = null;
+    this.attaching = Promise.resolve();
     this.els.close.addEventListener("click", () => this.close());
     window.addEventListener("resize", () => this.#fit());
     this.#wireResize();
@@ -77,6 +80,8 @@ export class TerminalDrawer {
   }
 
   async show(root, room, role) {
+    this.close();
+    const generation = this.generation;
     this.onLayoutChange?.();
     this.#renderChrome(role);
     try {
@@ -87,20 +92,27 @@ export class TerminalDrawer {
     }
     this.els.drawer.hidden = false;
     this.status("connecting…");
-    try {
-      await this.#start(root, room, role);
-    } catch (error) {
-      this.status(String(error));
-    }
+    const refresh = async () => {
+      try {
+        const info = await core().invoke("panel_info", { root, room, role });
+        if (generation !== this.generation) return;
+        this.status(roleStatus(info));
+        if (info.live && !this.term) {
+          const attaching = this.#start(root, room, role, generation);
+          this.attaching = attaching.catch(() => {});
+          await attaching;
+        }
+      } catch {
+        if (generation === this.generation) this.status("Status unavailable");
+      }
+      if (generation === this.generation) this.timer = setTimeout(refresh, 2500);
+    };
+    await refresh();
   }
 
-  async #start(root, room, role) {
-    const info = await core().invoke("panel_info", { root, room, role });
-    if (!info.live) {
-      this.status("no live panel — wake the role with an addressed message");
-      return;
-    }
-    this.status(info.status || "live");
+  async #start(root, room, role, generation) {
+    await this.attaching;
+    if (generation !== this.generation) return;
     const theme = window.matchMedia("(prefers-color-scheme: light)").matches
       ? LIGHT
       : DARK;
@@ -112,6 +124,7 @@ export class TerminalDrawer {
 
     const channel = new (core().Channel)();
     channel.onmessage = (message) => {
+      if (generation !== this.generation) return;
       if (message.t === "data") {
         const raw = atob(message.d);
         const bytes = new Uint8Array(raw.length);
@@ -119,17 +132,34 @@ export class TerminalDrawer {
         this.term?.write(bytes);
       } else if (message.t === "close") {
         this.session = null;
+        this.term?.dispose();
+        this.term = null;
+        this.els.term.replaceChildren();
         this.status(message.reason ? `panel ended: ${message.reason}` : "detached");
       }
     };
-    const result = await core().invoke("attach_panel", {
-      root,
-      room,
-      role,
-      cols: this.term.cols,
-      rows: this.term.rows,
-      on: channel,
-    });
+    let result;
+    try {
+      result = await core().invoke("attach_panel", {
+        root,
+        room,
+        role,
+        cols: this.term.cols,
+        rows: this.term.rows,
+        on: channel,
+      });
+    } catch (error) {
+      if (generation === this.generation) {
+        this.term?.dispose();
+        this.term = null;
+        this.els.term.replaceChildren();
+      }
+      throw error;
+    }
+    if (generation !== this.generation || !this.term) {
+      await core().invoke("detach_panel", { session: result.session }).catch(() => {});
+      return;
+    }
     this.session = result.session;
 
     this.term.onData((data) => {
@@ -178,9 +208,12 @@ export class TerminalDrawer {
   }
 
   close() {
+    this.generation += 1;
+    clearTimeout(this.timer);
     this.onLayoutChange?.();
     if (this.session != null) {
-      core().invoke("detach_panel", { session: this.session }).catch(() => {});
+      const detached = core().invoke("detach_panel", { session: this.session }).catch(() => {});
+      this.attaching = Promise.all([this.attaching, detached]);
     }
     this.session = null;
     this.term?.dispose();

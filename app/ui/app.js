@@ -5,7 +5,7 @@
 // root explicitly. A read boundary lives only in memory. Which transport
 // carries the data is decided in transport.js.
 
-import { element, renderDashboard, renderRoster, avatarFill, MessageList } from "./ui.js";
+import { element, renderDashboard, renderRoster, refreshRoster, avatarFill, MessageList } from "./ui.js";
 import { Composer } from "./composer.js";
 import { TerminalDrawer } from "./terminal.js";
 import { transport } from "./transport.js";
@@ -52,12 +52,10 @@ const composer = new Composer({
 // the room's roster; request and poll gate stale reads from history and polls.
 const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, poll: 0, rolesKey: null };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
-
 /* Boot gates: the desktop workspace picker and the phone's connect screen. */
 
 const gateCard = document.getElementById("gate");
 const connectCard = document.getElementById("connect");
-
 const gates = initGates(
   {
     app: ui.app,
@@ -129,7 +127,6 @@ function isRoleSender(author) {
   const room = selectedRoom();
   return Boolean(room?.roles?.includes(author));
 }
-
 function openRolePanel(role) {
   if (!state.selected || !drawer) return;
   drawer.show(state.selected.root, state.selected.id, role);
@@ -175,6 +172,7 @@ function selectRoom(root, room) {
     ui.app.classList.add("in-room");
     return;
   }
+  drawer?.close();
   state.selected = { root, id: room.id };
   state.request += 1;
   state.rolesKey = JSON.stringify(room.roles || []);
@@ -191,6 +189,7 @@ function selectRoom(root, room) {
 }
 
 function closeRoom() {
+  drawer?.close();
   state.selected = null;
   state.request += 1;
   messages.reset();
@@ -258,6 +257,8 @@ async function refreshState() {
   // hint instead of showing an empty dashboard.
   if (totalRooms()) gates.showApp();
   else gates.showGate("");
+  const selection = state.selected;
+  if (drawer && selection && selectedRoom()) refreshRoster(ui.roomRoles, selection.root, selectedRoom(), () => state.selected === selection);
   return true;
 }
 

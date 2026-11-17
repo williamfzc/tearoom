@@ -71,8 +71,13 @@ the webview renders it with the vendored xterm.js.
   scroll views are protected: resizing or opening the drawer never yanks a
   scrolled-up viewport — the terminal's place returns after a relayout, and
   the chat list keeps its position when the drawer rewraps it.
-- **No live panel** shows a hint instead: wake the role with an addressed
-  message first.
+- The roster shows each role's observed status, including an unavailable or
+  missing panel; the open drawer refreshes and connects if a panel appears.
+  These observations do not establish that work is complete.
+- **No live panel** means there is no currently running panel; address the
+  role when its participation is needed to start one. Previously used missing
+  panels can require reconciliation rather than an automatic restart. See the
+  [delivery contract](../architecture/collaboration.md#conversation-continuity-and-replacement).
 - This is a view over an existing Role's runtime state — no new entity, no
   admission change; whoever can reach the hc socket can already attach.
 
