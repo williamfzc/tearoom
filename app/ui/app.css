@@ -200,6 +200,8 @@ body {
   font: inherit; font-size: 12px; color: var(--ink); cursor: pointer;
 }
 .roster-pill:hover { border-color: var(--accent); color: var(--accent); }
+.roster-pill.static { cursor: default; }
+.roster-pill.static:hover { border-color: var(--line); color: var(--ink); }
 
 .pill-avatar {
   width: 16px; height: 16px; border-radius: 50%;

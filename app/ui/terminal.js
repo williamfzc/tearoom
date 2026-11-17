@@ -4,7 +4,14 @@
 
 import { avatarFill } from "./ui.js";
 
-const { invoke, Channel } = window.__TAURI__.core;
+// The Tauri core is resolved only when a panel is actually attached: the
+// phone face imports this module but has no terminal commands, so it must
+// not need window.__TAURI__ to boot.
+function core() {
+  const api = window.__TAURI__?.core;
+  if (!api) throw new Error("Terminal panels need the desktop app.");
+  return api;
+}
 const encoder = new TextEncoder();
 
 const DARK = { background: "#0c0c0d", foreground: "#f5f5f7", cursor: "#f5f5f7" };
@@ -88,7 +95,7 @@ export class TerminalDrawer {
   }
 
   async #start(root, room, role) {
-    const info = await invoke("panel_info", { root, room, role });
+    const info = await core().invoke("panel_info", { root, room, role });
     if (!info.live) {
       this.status("no live panel — wake the role with an addressed message");
       return;
@@ -103,7 +110,7 @@ export class TerminalDrawer {
     this.term.open(this.els.term);
     this.fit.fit();
 
-    const channel = new Channel();
+    const channel = new (core().Channel)();
     channel.onmessage = (message) => {
       if (message.t === "data") {
         const raw = atob(message.d);
@@ -115,7 +122,7 @@ export class TerminalDrawer {
         this.status(message.reason ? `panel ended: ${message.reason}` : "detached");
       }
     };
-    const result = await invoke("attach_panel", {
+    const result = await core().invoke("attach_panel", {
       root,
       room,
       role,
@@ -127,7 +134,7 @@ export class TerminalDrawer {
 
     this.term.onData((data) => {
       if (this.session == null) return;
-      invoke("terminal_write", { session: this.session, data: toBase64(data) }).catch(() => {});
+      core().invoke("terminal_write", { session: this.session, data: toBase64(data) }).catch(() => {});
     });
     this.#syncSize();
     this.term.focus();
@@ -158,7 +165,7 @@ export class TerminalDrawer {
   // Forwards the viewer size to the core, which relayouts the panel's PTY.
   #syncSize() {
     if (this.session == null || !this.term) return;
-    invoke("terminal_resize", {
+    core().invoke("terminal_resize", {
       session: this.session,
       cols: this.term.cols,
       rows: this.term.rows,
@@ -173,7 +180,7 @@ export class TerminalDrawer {
   close() {
     this.onLayoutChange?.();
     if (this.session != null) {
-      invoke("detach_panel", { session: this.session }).catch(() => {});
+      core().invoke("detach_panel", { session: this.session }).catch(() => {});
     }
     this.session = null;
     this.term?.dispose();

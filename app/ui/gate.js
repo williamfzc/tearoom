@@ -8,11 +8,15 @@ export function initGates(els, transport, hooks) {
     els.gateError.textContent = message || "";
     els.gateError.hidden = !message;
     els.pick.hidden = transport.kind !== "desktop";
-    els.gateHint.textContent = message
-      ? "Tearoom could not discover workspaces."
-      : transport.kind === "remote"
-        ? "Your Mac's workspace has no rooms yet. Create one with tearoom room init."
-        : "No Tearoom workspaces found on this machine yet. Point at one to get started.";
+    els.reconnect.hidden = transport.kind !== "remote";
+    els.gateHint.textContent =
+      transport.kind === "remote"
+        ? message
+          ? "The phone could not read the paired workspace. Tearoom keeps trying; check the Mac's service."
+          : "Your Mac's workspace has no rooms yet. Create one with tearoom room init."
+        : message
+          ? "Tearoom could not discover workspaces."
+          : "No Tearoom workspaces found on this machine yet. Point at one to get started.";
     els.app.hidden = true;
     els.gate.hidden = false;
   };
@@ -20,7 +24,16 @@ export function initGates(els, transport, hooks) {
   const showConnect = () => {
     els.app.hidden = true;
     els.gate.hidden = true;
+    els.reconnect.hidden = true;
     els.connect.hidden = false;
+  };
+
+  // One authority for "the face is usable": every gate path that succeeds
+  // comes back through here, so a recovered poll cannot leave the app hidden.
+  const showApp = () => {
+    els.gate.hidden = true;
+    els.connect.hidden = true;
+    els.app.hidden = false;
   };
 
   els.pick.addEventListener("click", async () => {
@@ -33,6 +46,13 @@ export function initGates(els, transport, hooks) {
     }
     if (!result.root) return; // the person cancelled the dialog
     hooks.afterPick();
+  });
+
+  // A revoked token or a changed Mac must not leave the phone on a dead gate:
+  // forget the pairing and return to the address/code screen.
+  els.reconnect.addEventListener("click", () => {
+    transport.disconnect?.();
+    showConnect();
   });
 
   if (transport.savedAddress) els.connectAddress.value = transport.savedAddress();
@@ -52,5 +72,5 @@ export function initGates(els, transport, hooks) {
     }
   });
 
-  return { showGate, showConnect };
+  return { showApp, showGate, showConnect };
 }

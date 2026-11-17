@@ -74,10 +74,19 @@ pub struct SendArgs {
     pub key: String,
 }
 
+/// The outcome of one send: the saved record and, when the CLI saved it but
+/// background collaboration did not start, the warning the phone must show.
+/// The record is present in both cases; an error means nothing was saved.
+#[derive(Clone, Debug)]
+pub struct Sent {
+    pub record: Value,
+    pub warning: Option<String>,
+}
+
 /// How the face appends a record. Production shells out to the CLI `send`
 /// command so message composition, roster rules and service activation keep
 /// one owner; tests substitute their own sender.
-pub type Sender = Arc<dyn Fn(&SendArgs) -> Result<Value> + Send + Sync>;
+pub type Sender = Arc<dyn Fn(&SendArgs) -> Result<Sent> + Send + Sync>;
 
 pub type Shared = Arc<Mutex<LanState>>;
 
@@ -205,16 +214,28 @@ pub fn cli_sender() -> Sender {
             .find_map(|line| serde_json::from_str(line).ok());
         if output.status.success() {
             return record
+                .map(|record| Sent {
+                    record,
+                    warning: None,
+                })
                 .ok_or_else(|| anyhow::anyhow!("the tearoom CLI did not return a record"));
         }
-        Err(anyhow::anyhow!(
-            "{}",
-            stderr
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or("the tearoom CLI refused the message")
-        ))
+        let warning = stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("the tearoom CLI refused the message")
+            .to_owned();
+        // `send` prints the record before it tries to start collaboration. A
+        // nonzero exit with a record therefore means the message was saved and
+        // only the wake failed: report it as saved-with-warning, not refused.
+        match record {
+            Some(record) => Ok(Sent {
+                record,
+                warning: Some(warning),
+            }),
+            None => Err(anyhow::anyhow!(warning)),
+        }
     })
 }
 

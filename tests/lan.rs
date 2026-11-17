@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tearoom::lan::{self, LanState, SendArgs, Sender, Shared};
+use tearoom::lan::{self, LanState, SendArgs, Sender, Sent, Shared};
 use tearoom::store::Store;
 
 struct Face {
@@ -90,23 +90,33 @@ fn cli_sender() -> Sender {
             command.args(["--as", &args.author]);
         }
         let output = command.output().expect("run the tearoom CLI");
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-            anyhow::bail!(
-                "{}",
-                stderr
-                    .lines()
-                    .rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or("send failed")
-            );
-        }
         let stdout = String::from_utf8_lossy(&output.stdout);
-        stdout
+        let record: Option<serde_json::Value> = stdout
             .lines()
             .rev()
-            .find_map(|line| serde_json::from_str(line).ok())
-            .ok_or_else(|| anyhow::anyhow!("the tearoom CLI did not return a record"))
+            .find_map(|line| serde_json::from_str(line).ok());
+        if output.status.success() {
+            return record
+                .map(|record| Sent {
+                    record,
+                    warning: None,
+                })
+                .ok_or_else(|| anyhow::anyhow!("the tearoom CLI did not return a record"));
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let warning = stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("send failed")
+            .to_owned();
+        match record {
+            Some(record) => Ok(Sent {
+                record,
+                warning: Some(warning),
+            }),
+            None => anyhow::bail!("{warning}"),
+        }
     })
 }
 
@@ -325,6 +335,7 @@ fn send_appends_and_retries_idempotently() {
     let record: serde_json::Value = serde_json::from_str(&response).unwrap();
     assert_eq!(record["record"]["seq"], 1);
     assert_eq!(record["record"]["author"], "phone");
+    assert!(record["warning"].is_null(), "a plain save has no warning");
 
     // The same key with the same content replays the original record.
     let (status, _, response) = probe(
@@ -349,6 +360,73 @@ fn send_appends_and_retries_idempotently() {
     let records = store.read(&id, 0).unwrap();
     assert_eq!(records.len(), 1);
     assert!(records[0].content.get().contains("hello from the phone"));
+}
+
+fn stub_face(sender: Sender) -> Face {
+    let workspace = tempfile::tempdir().unwrap();
+    let store = Store::init(workspace.path()).unwrap();
+    store.create_room("project", "").unwrap();
+    let root = store.root().to_path_buf();
+    let state = tempfile::tempdir().unwrap();
+    let shared = LanState::new(state.path().join("lan.json"), true, 0);
+    let server_state = shared.clone();
+    std::thread::spawn(move || lan::serve(server_state, sender));
+    let addr = wait_bound(&shared);
+    Face {
+        addr,
+        shared,
+        root,
+        _workspace: workspace,
+        _state: state,
+    }
+}
+
+#[test]
+fn a_saved_record_with_a_failed_wake_is_a_warning_not_a_refusal() {
+    let face = stub_face(Arc::new(|_args: &SendArgs| {
+        Ok(Sent {
+            record: serde_json::json!({
+                "room": "project", "seq": 1, "author": "phone", "content": "saved"
+            }),
+            warning: Some(
+                "record saved, but background collaboration did not start: permission denied"
+                    .to_owned(),
+            ),
+        })
+    }));
+    let code = lan::mint_pairing(&face.shared, &face.root, 0).unwrap();
+    let (_, token) = pair_token(&face, &code);
+    let body = r#"{"room":"project","text":"saved","author":"phone","key":"k1","to":["worker"]}"#;
+    let (status, _, response) = probe(
+        face.addr,
+        &wire("POST", "/v1/send", Some(&token), Some(body)),
+    );
+    assert_eq!(status, 200);
+    let response: serde_json::Value = serde_json::from_str(&response).unwrap();
+    assert_eq!(response["record"]["seq"], 1);
+    assert!(
+        response["warning"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("background collaboration did not start"),
+        "the phone must see the saved-but-not-woken warning: {response}"
+    );
+}
+
+#[test]
+fn a_send_that_saved_nothing_is_a_definite_refusal() {
+    let face = stub_face(Arc::new(|_args: &SendArgs| {
+        anyhow::bail!("role \"worker\" is not configured in room \"project\"")
+    }));
+    let code = lan::mint_pairing(&face.shared, &face.root, 0).unwrap();
+    let (_, token) = pair_token(&face, &code);
+    let body = r#"{"room":"project","text":"refused","author":"phone","key":"k1","to":["worker"]}"#;
+    let (status, _, response) = probe(
+        face.addr,
+        &wire("POST", "/v1/send", Some(&token), Some(body)),
+    );
+    assert_eq!(status, 400);
+    assert!(response.contains("not configured"), "{response}");
 }
 
 #[test]

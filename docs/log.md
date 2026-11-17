@@ -8,6 +8,41 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-17 — Retry phone sends by payload, and let a recovered poll restore the face
+
+The phone transport no longer keeps one global pending key. A send is
+identified by its exact Room, text, author, and recipient set; that identity
+gets a key on its first uncertain attempt, the pair is persisted locally, and
+it is dropped on confirmation or a definite 4xx refusal. Retrying the same
+payload replays the record the Mac may already hold, while editing the text,
+changing the Room, or changing recipients gets a fresh key. A 5xx is treated
+as uncertain because the CLI may have saved the record before the service
+failed to report it; a 4xx is definite. Refused: reusing the last key for
+different content (the face produced a false idempotency conflict), deriving
+the key from content alone (two identical messages are legitimate), and
+discarding a pending key on a 5xx (the save may have landed).
+
+The LAN send boundary now distinguishes a saved record from a refusal. When
+the CLI prints the record but the wake fails, `/v1/send` returns 200 with that
+record and a warning, so the phone renders the same saved-with-warning message
+as the desktop instead of claiming "not sent" and inviting a duplicate.
+Unconfirmed keys are kept without silent eviction. The phone no longer
+advertises the desktop's role-panel controls (static roster text only) and
+boots without the Tauri global; a LAN failure shows phone copy rather than the
+desktop discovery hint. A revoked token offers Pair again on the gate,
+which forgets the stored endpoint and token and returns to the connect screen
+instead of trapping the phone.
+
+The face's view state now has one restoration path. `refreshState` returns
+whether its fetch succeeded and, on success, either shows the app or the
+empty-workspace hint; a failed poll shows the reconnect gate but keeps the
+selected Room. The pairing hook no longer overwrites a post-pairing network
+error with a stale no-rooms message, and the boot path no longer has the same
+overwrite. The browser harness reproduced both original defects before the
+fix and passed afterwards; the real LAN service journey covers pairing, send,
+service stop, restart, recovery, and a lost response. See
+[reference/app.md](reference/app.md) and [evaluations.md](evaluations.md).
+
 ## 2026-11-17 — The app grows a phone face
 
 The same Tauri crate now builds for iOS. The desktop and phone faces share

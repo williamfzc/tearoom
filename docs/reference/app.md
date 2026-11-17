@@ -98,12 +98,29 @@ it behaves like the desktop conversation with these differences:
 - One workspace (the paired one); discovery, the folder picker, and the
   workspace picker gate do not exist on the phone.
 - The role-panel drawer does not exist: the LAN face carries no terminal
-  stream, so role pills render without the attach affordance.
+  stream, so role pills render as static text without the attach affordance.
+  The phone webview boots without the Tauri global; terminal commands resolve
+  only when the desktop drawer is used.
 - Reads poll `records` with the same explicit `after` boundary at the same
-  cadence as the desktop; sends go through `/v1/send` with a phone-generated
-  idempotency key, so a lost network replays safely. A refused send (roster,
-  conflict) shows the face's error; an unreachable Mac shows a reconnect
-  hint.
+  cadence as the desktop. Sends go through `/v1/send` with a phone-generated
+  idempotency key scoped to the exact Room, text, author, and recipient set
+  (recipient order is canonical); the key is kept locally until the send is
+  confirmed or refused, and unconfirmed keys are not silently evicted.
+  Retrying an unchanged payload after a lost response therefore replays the
+  saved record, while changing any of those fields gets a fresh key and
+  cannot turn an edit into an idempotency conflict. A confirmed send forgets
+  its key, so sending the same message again appends a new record. A network
+  failure and a 5xx response are uncertain; a 4xx refusal is definite. A
+  saved record whose wake failed returns as a 200 warning carrying the
+  record, and the face shows the same saved-with-warning message as the
+  desktop; a genuinely refused send shows the face's error.
+- A failed poll shows a reconnect hint without discarding the selected Room;
+  a later successful poll restores the conversation and reads from its
+  in-memory boundary. A poll that fails immediately after pairing keeps its
+  network error instead of being replaced by the empty-workspace hint.
+- A revoked token (or a Mac you no longer trust) offers Pair again on the
+  gate; it forgets the stored endpoint and token and returns to the connect
+  screen. The selected Room and history are left for the next pairing.
 - The threat model is the LAN face's ([lan-face.md](lan-face.md)); the
   token stays on the device.
 

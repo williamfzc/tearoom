@@ -115,13 +115,19 @@ export function renderRoster(node, room, onRole) {
   node.hidden = false;
   node.replaceChildren("with");
   roles.forEach((role) => {
-    const pill = element("button", "roster-pill");
-    pill.type = "button";
+    // The phone face has no terminal stream: render a static pill there
+    // instead of a button that would advertise an unavailable panel.
+    const pill = element(onRole ? "button" : "span", "roster-pill");
+    if (onRole) {
+      pill.type = "button";
+      pill.title = `Open @${role}'s live panel`;
+      pill.addEventListener("click", () => onRole(role));
+    } else {
+      pill.classList.add("static");
+    }
     const dot = element("span", "pill-avatar", role.slice(0, 1).toUpperCase());
     dot.style.background = avatarColor(role);
     pill.append(dot, element("span", null, `@${role}`));
-    pill.title = `Open @${role}'s live panel`;
-    pill.addEventListener("click", () => onRole?.(role));
     node.append(pill);
   });
 }

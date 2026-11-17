@@ -57,19 +57,34 @@ function remote() {
         },
       });
     } catch {
-      throw new Error(
+      const error = new Error(
         "Cannot reach the Mac. Check that both devices are on the same network and the service is running.",
       );
+      // The request left the device; it may or may not have landed.
+      error.uncertain = true;
+      throw error;
     }
     const body = response.status === 204 ? {} : await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || `Request failed (${response.status})`);
+    if (!response.ok) {
+      const error = new Error(body.error || `Request failed (${response.status})`);
+      // A 5xx may hide a saved record or a failed response write. Refusals
+      // (4xx) are definite, so their key can be forgotten.
+      error.uncertain = response.status >= 500;
+      throw error;
+    }
     return body;
   }
 
-  // A send that fails to reach the Mac may or may not have landed; the same
-  // key and content replay safely, so the pending key survives until a send
-  // is confirmed or refused. randomUUID needs a secure context, which a
-  // webview's custom scheme may not provide — getRandomValues always exists.
+  // A send that fails after the request left the device may or may not have
+  // landed. Remember one key per exact payload across reloads: the same
+  // payload replays the original record, while changed text, room, or
+  // recipients get a fresh key instead of a false idempotency conflict.
+  // Unconfirmed keys are never silently evicted; a payload is forgotten only
+  // when its send is confirmed or definitely refused. If storage refuses a
+  // write, the in-memory map still covers this session.
+  // randomUUID needs a secure context, which a webview's custom scheme may
+  // not provide — getRandomValues always exists.
+  const PENDING = "tearoom.pendingSends";
   const newKey = () =>
     crypto.randomUUID
       ? crypto.randomUUID()
@@ -77,7 +92,56 @@ function remote() {
           crypto.getRandomValues(new Uint8Array(16)),
           (byte) => byte.toString(16).padStart(2, "0"),
         ).join("");
-  let pendingKey = null;
+  // The outgoing payload is normalized once: recipient order is canonical
+  // because the Store fingerprints mention order, and the author is trimmed
+  // exactly as the CLI does. Identity and body therefore always agree.
+  const payloadOf = ({ room, text, to, author }) => ({
+    room,
+    text,
+    to: Array.isArray(to) ? [...to].sort() : [],
+    author: String(author ?? "").trim(),
+  });
+  const identityOf = (payload) =>
+    JSON.stringify([payload.room, payload.text, payload.to, payload.author]);
+  const loadPending = () => {
+    try {
+      const value = JSON.parse(localStorage.getItem(PENDING) || "{}");
+      return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  };
+  let pending = loadPending();
+  const savePending = () => {
+    try {
+      localStorage.setItem(PENDING, JSON.stringify(pending));
+    } catch {
+      /* Storage may be refused; the in-memory map still covers this session. */
+    }
+  };
+  const pendingKey = (identity) => {
+    const saved = pending[identity];
+    const savedKey = typeof saved === "string" ? saved : saved?.key;
+    if (typeof savedKey === "string" && savedKey) {
+      pending[identity] = savedKey;
+      return savedKey;
+    }
+    const key = newKey();
+    pending[identity] = key;
+    savePending();
+    return key;
+  };
+  const settlePending = (identity, key) => {
+    const saved = pending[identity];
+    const savedKey = typeof saved === "string" ? saved : saved?.key;
+    if (savedKey !== key) return;
+    delete pending[identity];
+    savePending();
+  };
+  const resetPending = () => {
+    pending = {};
+    savePending();
+  };
 
   return {
     kind: "remote",
@@ -104,12 +168,13 @@ function remote() {
         REMOTE_KEY,
         JSON.stringify({ baseUrl, token: body.token, workspace: body.workspace }),
       );
-      pendingKey = null;
+      // Keys belong to the previous Mac; a new pairing starts clean.
+      resetPending();
       return body;
     },
     disconnect() {
       localStorage.removeItem(REMOTE_KEY);
-      pendingKey = null;
+      resetPending();
     },
     async listWorkspaces() {
       const state = saved();
@@ -125,22 +190,22 @@ function remote() {
       return call(`/v1/records?room=${encodeURIComponent(room)}&after=${after}`);
     },
     async send({ room, text, to, author }) {
-      if (!pendingKey) pendingKey = newKey();
+      const payload = payloadOf({ room, text, to, author });
+      const identity = identityOf(payload);
+      const key = pendingKey(identity);
       try {
         const result = await call("/v1/send", {
           method: "POST",
-          body: JSON.stringify({
-            room,
-            text,
-            to,
-            author,
-            key: pendingKey,
-          }),
+          body: JSON.stringify({ ...payload, key }),
         });
-        pendingKey = null;
-        return { record: result.record, warning: null };
+        settlePending(identity, key);
+        // A saved record whose wake failed comes back as a warning; the
+        // composer shows it exactly as the desktop face does.
+        return { record: result.record, warning: result.warning ?? null };
       } catch (error) {
-        if (!error.message.startsWith("Cannot reach")) pendingKey = null;
+        // A definite refusal did not save; an uncertain failure keeps its
+        // key so retrying the same payload can only replay that record.
+        if (!error.uncertain) settlePending(identity, key);
         throw error;
       }
     },

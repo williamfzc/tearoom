@@ -57,6 +57,7 @@ const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePa
 
 const gateCard = document.getElementById("gate");
 const connectCard = document.getElementById("connect");
+
 const gates = initGates(
   {
     app: ui.app,
@@ -64,6 +65,7 @@ const gates = initGates(
     gateHint: document.getElementById("gate-hint"),
     gateError: document.getElementById("gate-error"),
     pick: document.getElementById("pick"),
+    reconnect: document.getElementById("reconnect"),
     connect: connectCard,
     connectForm: document.getElementById("connect-form"),
     connectAddress: document.getElementById("connect-address"),
@@ -76,16 +78,14 @@ const gates = initGates(
     afterPick: async () => {
       state.selected = null;
       messages.reset();
-      gateCard.hidden = true;
-      ui.app.hidden = false;
+      gates.showApp();
       await refreshState();
     },
     afterConnect: async () => {
-      connectCard.hidden = true;
-      ui.app.hidden = false;
+      // Let refreshState own the result: the error, the app, or the no-rooms hint.
+      gates.showApp();
       ui.app.classList.remove("in-room");
       await refreshState();
-      if (!totalRooms()) gates.showGate("");
     },
   },
 );
@@ -123,11 +123,12 @@ function renderEmpty() {
 function updateRoomChrome(room) {
   ui.roomName.textContent = room.name;
   avatarFill(ui.roomAvatar, room.name);
-  renderRoster(ui.roomRoles, room, openRolePanel);
+  renderRoster(ui.roomRoles, room, drawer ? openRolePanel : null);
   document.getElementById("text").placeholder = `Message ${room.name}`;
 }
 
 function isRoleSender(author) {
+  if (!drawer) return false;
   const room = selectedRoom();
   return Boolean(room?.roles?.includes(author));
 }
@@ -207,14 +208,14 @@ async function refreshState() {
   // connect screen up until a token exists.
   if (transport.kind === "remote" && !transport.connected()) {
     gates.showConnect();
-    return;
+    return false;
   }
   let data;
   try {
     data = await transport.listWorkspaces();
   } catch (error) {
     gates.showGate(String(error));
-    return;
+    return false;
   }
   composer.setAuthor(data.actor);
   const workspaces = Array.isArray(data.workspaces) ? data.workspaces : [];
@@ -254,6 +255,11 @@ async function refreshState() {
       }
     }
   }
+  // A successful poll clears a reconnect gate; an empty workspace keeps its
+  // hint instead of showing an empty dashboard.
+  if (totalRooms()) gates.showApp();
+  else gates.showGate("");
+  return true;
 }
 
 /* Wiring ------------------------------------------------------------------- */
@@ -289,7 +295,6 @@ setInterval(() => {
     gates.showConnect();
     return;
   }
-  ui.app.hidden = false;
+  gates.showApp();
   await refreshState();
-  if (!totalRooms()) gates.showGate("");
 })();

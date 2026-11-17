@@ -230,7 +230,10 @@ fn send(workspace: &Path, sender: &Sender, body: &[u8]) -> Response {
         key: key.to_owned(),
     };
     match sender(&args) {
-        Ok(record) => respond(200, &json!({"record": record})),
+        Ok(sent) => respond(
+            200,
+            &json!({"record": sent.record, "warning": sent.warning}),
+        ),
         Err(issue) => error(400, &format!("{issue:#}")),
     }
 }
