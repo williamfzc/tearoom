@@ -49,7 +49,7 @@ GET  /v1/records?room=<room>&after=<e seq>
 POST /v1/send   {"room": "<room>", "text": "<text>",
                  "author": "<signature>", "key": "<idempotency key>",
                  "to": ["<role>", …]}   (room, text, key required)
-              → {"record": Record}
+              → {"record": Record, "warning": "<message>" | null}
 OPTIONS *                      → 204 with CORS headers
 ```
 
@@ -60,7 +60,11 @@ accepts an id or a name, and `after` takes either
 `e<seq>` or a plain integer. The send path shells out to the CLI `send`
 command with `--idempotency-key`, so retries with the same `key` and content
 replay the original record and conflicting content is refused — a phone that
-loses connectivity resends safely. Errors are
+loses connectivity resends safely. When the CLI saves the record but the
+background wake fails to start, the response is still 200: `record` carries
+the saved record and `warning` carries the wake error, so the phone shows the
+same saved-with-warning message as the desktop instead of a refusal. A 400
+means nothing was saved. Errors are
 `{"error": "<message>"}` with 400 (malformed or refused request), 401
 (missing or unknown token), 403 (rejected pairing), 404 (unknown room or
 route), 405 (wrong method), 408/413/431 (request-shape limits: headers
