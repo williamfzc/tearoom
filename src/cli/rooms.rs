@@ -127,7 +127,7 @@ pub(super) fn send_command(args: &[String]) -> Result<()> {
         ],
         &[],
     )?;
-    if args.help("Usage: tearoom send [--room <room>] [--as <author>] [--text <text> | --json <json>] [--to @role] [--reply-to room#seq]") { return Ok(()); }
+    if args.help("Usage: tearoom send [--room <room>] [--as <author>] [--text <text> | --json <json>] [--to @role,...] [--reply-to room#seq]\n       --to addresses the listed roles and wakes each one to act on the message;\n       without --to the send is shared Room history and wakes nobody (@role in text does not wake).") { return Ok(()); }
     if args.values.contains_key("to") && args.get("to").trim().is_empty() {
         bail!("--to requires at least one role");
     }

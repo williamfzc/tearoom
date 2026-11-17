@@ -745,6 +745,8 @@ fn command_specific_flags_and_boolean_values_are_checked() {
     assert_eq!(run(&["read", "--subtree=maybe"]).status.code(), Some(1));
     let help = String::from_utf8(run(&["collab", "resolve", "--help"]).stdout).unwrap();
     assert!(help.contains("--outcome"));
+    let send_help = String::from_utf8(run(&["send", "--help"]).stdout).unwrap();
+    assert!(send_help.contains("wakes each one to act on the message"));
 }
 
 #[test]
