@@ -56,10 +56,13 @@ executable proof in [../evaluations.md](../evaluations.md).
   ios …`): one UI behind a transport seam (`app/ui/transport.js`) — the
   desktop keeps the local Store/CLI commands, the phone talks fetch to the
   paired Mac's LAN face. The desktop Rust command surface is compiled out
-  on iOS. The simulator bundle boots to the connect gate. Phone sends scope
+  on iOS. A simulator bundle booted to the connect gate on the earlier
+  snapshot recorded in [evaluations](../evaluations.md); that screenshot
+  predates behavior commit `50346ce`. Phone sends scope
   and persist one idempotency key per exact Room, text, recipient set, and
-  author; network loss, a 5xx, and a saved-record/wake-failure result keep the
-  key, while a definite refusal drops it, and a successful poll restores the
+  author; network loss and a 5xx keep the key, a saved-record/wake-failure
+  result is a confirmed 200 and settles it, while a definite refusal drops it.
+  A successful poll restores the
   selected Room after a reconnect. The scripted phone journey (pair → rooms →
   addressed send → dispatch → reconcile) is hand-run evidence; a real-device
   journey and a real process restart remain open. See
