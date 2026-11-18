@@ -71,13 +71,13 @@ mediator has its work started by the first wake.
 
 Custom Agent TUIs: configure the interactive launch command and its arguments
 as a Role. Read `tearoom hc --skill`, then check startup, input delivery, and
-lifecycle status in the actual working directory. hc observes OSC 7501 status reports;
-if they are missing, inspect the TUI's hooks or other reliable lifecycle events
-and map them to hc's status protocol when the integration can do so. Verify
-startup and multiple turns through the built-in runtime before relying on
-unattended delivery.
-If no reliable events are available, record the blocker rather than guessing
-from screen text or assuming a delivered task is complete.
+lifecycle status in the actual working directory. hc observes OSC 7501 status
+reports. Prefer a build that emits them natively. If reports are missing,
+inspect supported lifecycle hooks before attempting an adapter.
+If the Agent cannot report readiness to hc, record the blocker and use a
+verified Agent command for unattended work. Use the Room history for
+supervised work. Check readiness and consecutive turns in a test Room before
+assigning work or naming a role as mediator.
 
 Optional Pi integration: if a role uses Pi, the installed binary can print its
 hc lifecycle extension with `tearoom skill --pi-extension`. After workspace

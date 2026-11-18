@@ -147,6 +147,14 @@ status vary by agent; a tool without reliable status cannot be assumed idle or
 done. When readiness cannot be established, the delivery remains pending or is
 escalated.
 
+Agent-specific integration may translate reliable native lifecycle events
+into hc's OSC 7501 protocol. Tearoom refuses optimistic input to a newly
+launched panel with unknown readiness, including per-role opt-in. Startup can
+still be in a dialog, and a Room reply can arrive while a turn is running.
+Revisit support for an Agent when its integration can show safe startup and
+repeated turns through hc without reading screen text to infer state. See the
+[Agent setup guide](../reference/agent-integration.md#startup-and-observed-readiness).
+
 hc 0.1.18 accepts an atomic `--if idle` guard but has no `--if done`. For a
 panel reporting `done`, the current adapter rechecks its status and then sends
 without `--force`; the check and send are not atomic. A concurrent actor could

@@ -302,9 +302,8 @@ start a turn and the delivery becomes uncertain. Open the panel and leave it
 at its prompt before relying on the next delivery. See the
 [continuity and replacement contract](../architecture/collaboration.md#conversation-continuity-and-replacement).
 
-Codex roles must use `--no-daemon`. Agents that do not report a reliable hc
-status remain pending after their first turn; the dispatcher does not infer
-readiness from terminal text.
+Codex roles must use `--no-daemon`. For Agent readiness and queued delivery
+behavior, see [delivery and recovery](../architecture/collaboration.md#delivery-and-recovery).
 
 `collab resolve` changes only an `unknown` delivery and takes the same
 workspace lock as the dispatcher. `delivered` stops retries while awaiting an

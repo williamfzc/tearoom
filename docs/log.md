@@ -8,6 +8,15 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-19 — Verify an Agent before relying on unattended delivery
+
+Aligned the setup example and [S4](domain/user-stories.md#s4-a-message-reaches-its-intended-collaborator)
+with the [delivery contract](architecture/collaboration.md#delivery-and-recovery).
+The [Agent setup guide](reference/agent-integration.md#startup-and-observed-readiness)
+now leads with native status and verifies readiness before work is assigned.
+Restored the [one-wake recovery guarantee](architecture/collaboration.md#silence-mediation)
+when a first wake survives an interruption before its progress marker is saved.
+
 ## 2026-11-18 — A quiet Room is adjudicated once per stop
 
 Rooms can now name a mediator. `room roles --mediator <role>` binds one roster

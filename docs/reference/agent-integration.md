@@ -33,11 +33,6 @@ This roster routes addressed messages and is not an access-control list.
 set -eu
 tearoom room init --name project
 
-mkdir -p .tearoom
-if [ -e .tearoom/claude-settings.json ]; then cat .tearoom/claude-settings.json; exit 1; fi
-cat > .tearoom/claude-settings.json <<'JSON'
-{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}
-JSON
 (set -C; tearoom skill --pi-extension > .tearoom/pi-hc-status.ts)
 export PI_HC_STATUS_EXTENSION="$PWD/.tearoom/pi-hc-status.ts"
 export PI_BIN="${PI_BIN:-pi}"
@@ -45,10 +40,9 @@ test -r "$PI_HC_STATUS_EXTENSION"
 "$PI_BIN" --version
 
 tearoom role init --name builder --description 'Implement the requested change' \
-  --agent-type claude --command claude \
-  --arg=--settings --arg="$PWD/.tearoom/claude-settings.json" \
-  --arg=--permission-mode --arg=dontAsk \
-  --instructions 'Implement and record evidence. If a command is denied, try simpler permitted commands; never disable the sandbox. Record unresolved blockers.'
+  --agent-type pi --command "$PI_BIN" \
+  --arg=--extension --arg="$PI_HC_STATUS_EXTENSION" \
+  --instructions 'Implement the change and record evidence. Address @reviewer with --to when ready for review.'
 
 tearoom role init --name reviewer --description 'Review implementation evidence' \
   --agent-type pi --command "$PI_BIN" \
@@ -56,18 +50,17 @@ tearoom role init --name reviewer --description 'Review implementation evidence'
   --instructions 'Review the implementation and its evidence. Record a verdict with concrete findings.'
 
 tearoom room roles --room project --add builder,reviewer
-tearoom room roles --room project --observe
-tearoom collab run
 )
 ```
 
-The example assumes a host with `claude`, `pi`, and a configured Pi provider and
-model. The shell redirection refuses to overwrite an existing extension file;
-inspect and reuse a suitable file if one already exists. The `PI_BIN` override
-selects the Pi executable; the version check confirms what it resolves to,
+The example assumes Pi and a configured provider and model. The two roles use
+separate Pi instances. The shell redirection refuses to overwrite an existing
+extension file. Inspect and reuse a suitable file if one already exists.
+The `PI_BIN` override selects the Pi executable. The version check confirms what it resolves to,
 while provider and model availability still need local verification. Replace the
 command and repeated `--arg` values with the local Agent CLI and its
-configuration.
+configuration. Finish [readiness checks](#startup-and-observed-readiness) before
+sending the Room's goal.
 Role definitions and Room bindings are stored
 in the project's `.tearoom` workspace metadata. Do not put tokens or passwords
 in these records or in role instructions.
@@ -160,8 +153,8 @@ coordination; one Room's roster does not include roles from a sibling Room.
 
 ## Claude permissions are per launch
 
-The example passes `--settings <path>` to the Claude process started for this
-role. Claude's `--settings` option loads settings for that process invocation;
+For a supervised Claude role, pass `--settings <path>` in the role command.
+Claude's `--settings` option loads settings for that process invocation;
 it does not edit a user's global Claude configuration. The sandbox example
 allows Bash commands that remain inside Claude's sandbox and refuses to fall
 back when sandboxing cannot be provided. `dontAsk` denies operations requiring
@@ -170,6 +163,12 @@ or record a blocker; this does not ensure every task will complete. Review the
 [Claude permissions guide](https://code.claude.com/docs/en/permissions)
 and [sandboxing guide](https://code.claude.com/docs/en/sandboxing) for the
 current behavior of the installed Claude version.
+
+This settings file enables the sandbox for that invocation.
+
+```json
+{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":false,"failIfUnavailable":true}}
+```
 
 If a Go test cannot write its build cache, set a writable `GOCACHE` in the
 role's per-session settings. Some `goenv` shims overwrite `GOCACHE`; in that
@@ -184,10 +183,11 @@ the full Tearoom collaboration journey. Keep the settings file local, review
 the policy before enabling unattended work, and resolve any initial trust or
 login prompt interactively before dispatching.
 
-The Claude Code CLI probed here did not emit hc's OSC lifecycle status, so a
-direct launch stays pending for the dispatcher. Run it as a human-supervised
-panel, or use an Agent that reports status, before relying on unattended
-delivery.
+Claude permissions configure tool access. For unattended use, choose an
+interactive build that supports [native terminal status](https://code.claude.com/docs/en/terminal-config#see-session-status-in-your-terminal)
+and follow [startup and observed readiness](#startup-and-observed-readiness).
+Claude's [command hook output](https://code.claude.com/docs/en/hooks#emit-terminal-notifications)
+cannot emit OSC 7501.
 
 ## Pi lifecycle status
 
@@ -201,7 +201,7 @@ and remaining validation are recorded in [evaluations](../evaluations.md).
 
 ## Startup and observed readiness
 
-Before `tearoom collab run`, read `tearoom hc --skill` and authenticate the
+Before sending a test task, read `tearoom hc --skill` and authenticate the
 Agent CLIs. Resolve one-time trust, hooks, and login prompts in the actual
 working directory. A terminal that is blocked on a first-run dialog is not
 ready. The Agent setting up the Room checks readiness and
@@ -209,10 +209,24 @@ handles authorized trust prompts; unresolved login or approval needs a person.
 The built-in guide is unmodified upstream text and prints commands beginning
 with `hc`; prefix those examples with `tearoom hc` when using Tearoom's binary.
 
-Codex direct launches require `--no-daemon` so the dispatcher controls the
-panel it observes. Use `--observe` as defined in the [CLI
+Prefer an interactive Agent build with native OSC 7501 support.
+[Codex reports terminal status](https://github.com/openai/codex/pull/52725)
+in compatible builds. See the [Codex launch flag](cli.md#delivery-boundary)
+before configuring its role. Use `--observe` as defined in the [CLI
 contract](cli.md#room-lifecycle) to ask hc about bound panels. The result is a
 snapshot, not proof of task completion.
+
+In a test Room, address a short task to the role. Confirm that hc reports
+readiness, receives the turn, and returns to a state that accepts a second
+addressed task in the same panel. Check both results in the Room. Do this
+before assigning important work or naming the role as mediator.
+
+If `collab deliveries` shows a pending task waiting for idle, inspect the panel
+with `tearoom hc get` and `tearoom hc read`. Clear any authorized setup
+prompt. If the Agent cannot report readiness, update the role to use a verified
+launch command and restart its panel before sending more addressed work.
+The [CLI contract](cli.md#delivery-boundary) describes restart and recovery
+commands. Use the Room's history to coordinate supervised work.
 
 The dispatcher persists delivery intents and serializes work per Room-role.
 `tearoom collab deliveries` displays the ledger. Submitted means hc accepted

@@ -148,7 +148,8 @@ boundary:
 - A handoff should make progress, blockers, and the next step clear.
 - Which wake happens, and how, is decided by the collaboration runtime: a
   broadcast starts no panel, and an explicit recipient is routed to that role's
-  Room-scoped panel.
+  Room-scoped panel. [Agent setup](reference/agent-integration.md#startup-and-observed-readiness)
+  covers readiness checks before relying on unattended wakes.
 - A Room may configure one of its roles as its mediator. When the Room goes
   quiet — no delivery in flight — the runtime wakes that role once per stop
   through an ordinary addressed record, and the mediator closes the Room,

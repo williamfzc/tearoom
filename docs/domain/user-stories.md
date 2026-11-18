@@ -52,13 +52,16 @@ whether acceptance is met, and the next step.
 
 ### S4: A message reaches its intended collaborator
 
-**When** a Room message explicitly addresses a configured collaborator,
+**When** a Room message explicitly addresses a configured collaborator
+whose Agent can report readiness,
 **the collaboration runtime can** use hc to notify or start that Agent and
 deliver new Room records.
 
 **Accept when:** only the selected Agent receives the handoff without a human
 relay, and it writes its result to the same Room. Text that merely mentions a
-role does not wake it.
+role does not wake it. If readiness cannot be established, the addressed
+record remains visible and the delivery state explains why it is waiting.
+See [delivery and recovery](../architecture/collaboration.md#delivery-and-recovery).
 
 ### S5: An Agent discovers who can help
 
@@ -150,7 +153,8 @@ adjudicate the stop, through an ordinary addressed record in the Room stream.
 mediator closes the Room, addresses the next step, or records a blocker; and a
 Room that falls quiet again after a wake is treated as ended, waking nobody,
 until a record from someone other than the runtime and the mediator begins a
-new stop. Silence is detected immediately, with no timeout.
+new stop. Silence is detected immediately, with no timeout. The wake uses
+the same readiness and recovery behavior as [S4](#s4-a-message-reaches-its-intended-collaborator).
 
 ## Current design boundaries
 
