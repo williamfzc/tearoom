@@ -46,12 +46,9 @@ const composer = new Composer({
   send: document.getElementById("send"),
 });
 
-// selected: { root, id } | null. roomsKey gates re-renders; rolesKey tracks
-// the room's roster; request and poll gate stale reads from history and polls.
 const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, poll: 0, rolesKey: null };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 /* Boot gates: the desktop workspace picker and the phone's connect screen. */
-
 const gateCard = document.getElementById("gate");
 const connectCard = document.getElementById("connect");
 const gates = initGates(
@@ -117,6 +114,7 @@ function updateRoomChrome(room) {
   ui.roomName.textContent = room.name;
   avatarFill(ui.roomAvatar, room.name);
   renderRoster(ui.roomRoles, room, drawer ? openRolePanel : null);
+  refreshSelectedRoster();
   document.getElementById("text").placeholder = `Message ${room.name}`;
 }
 
@@ -255,9 +253,13 @@ async function refreshState() {
   // hint instead of showing an empty dashboard.
   if (totalRooms()) gates.showApp();
   else gates.showGate("");
-  const selection = state.selected;
-  if (drawer && selection && selectedRoom()) refreshRoster(ui.roomRoles, selection.root, selectedRoom(), () => state.selected === selection);
+  refreshSelectedRoster();
   return true;
+}
+
+function refreshSelectedRoster() {
+  const selection = state.selected;
+  if (drawer && selection) refreshRoster(ui.roomRoles, selection, () => state.selected === selection);
 }
 
 /* Wiring ------------------------------------------------------------------- */
@@ -282,7 +284,6 @@ document.addEventListener("visibilitychange", () => {
     refreshState().then(() => loadHistory());
   }
 });
-// The poll keeps records AND the dashboard (workspaces, roles) current.
 setInterval(() => {
   if (document.hidden) return;
   refreshState().then(() => loadHistory());

@@ -8,6 +8,13 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-19 — Show each macOS Room role's status independently
+
+The [desktop roster](reference/app.md#role-panel-drawer) checks statuses on
+Room entry and keeps a slow lookup from holding up other roles. A live panel
+without status reports now has its own label. The desktop shows the avatars
+and status dots together, and reveals names and labels on hover or focus.
+
 ## 2026-11-19 — Address Room roles from the app composer
 
 The [app composer](reference/app.md#behavior) now uses an implicit sender and

@@ -62,8 +62,8 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
 ## Role panel drawer
 
 Clicking a sender that is a configured role of the Room — its name above a
-bubble, the `▸` expand button under one of its messages, or its pill in the
-`with @role` roster — opens an inline terminal attached to that role's
+bubble, the `▸` expand button under one of its messages, or its avatar in the
+role strip — opens an inline terminal attached to that role's
 panel. The stream is herdr-core's framed `terminal.attach` over the hc
 socket (the same bytes Herdr's panes show), wrapped by `tearoom::hc::attach`;
 the webview renders it with the vendored xterm.js.
@@ -77,9 +77,16 @@ the webview renders it with the vendored xterm.js.
   scroll views are protected: resizing or opening the drawer never yanks a
   scrolled-up viewport — the terminal's place returns after a relayout, and
   the chat list keeps its position when the drawer rewraps it.
-- The roster shows each role's observed status, including an unavailable or
-  missing panel; the open drawer refreshes and connects if a panel appears.
-  These observations do not establish that work is complete.
+- The desktop role strip shows avatars and status dots. Hover or focus an
+  avatar to see the role name and full status.
+  It checks each role as soon as the Room opens,
+  then refreshes each result independently. A live panel without a lifecycle
+  report shows `No status reported`. `No active panel` means hc has no live
+  panel for the role, and `Status unavailable` means the lookup failed.
+  A brief pulse marks a role entering Working. Reduced Motion keeps the
+  same status cues static.
+  The drawer uses the same labels and connects if a panel appears.
+  `Turn ended` describes the Agent's turn. Judge the work from its evidence.
 - **No live panel** means there is no currently running panel; address the
   role when its participation is needed to start one. Previously used missing
   panels can require reconciliation rather than an automatic restart. See the

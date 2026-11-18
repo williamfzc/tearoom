@@ -53,8 +53,12 @@ impl TerminalState {
 
 /// Whether a role has a live panel, and its health if so.
 #[tauri::command]
-pub fn panel_info(root: String, room: String, role: String) -> Result<Value, String> {
-    panel_info_json(Path::new(&root), &room, &role).map_err(|e| format!("{e:#}"))
+pub async fn panel_info(root: String, room: String, role: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        panel_info_json(Path::new(&root), &room, &role).map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| format!("panel lookup failed: {e}"))?
 }
 
 fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
@@ -62,30 +66,26 @@ fn panel_info_json(root: &Path, room: &str, role: &str) -> Result<Value> {
     let id = store.resolve_room(room)?;
     let panel = panel_name(store.root(), &id, role)?;
     let client = hc::HcClient::from_env()?;
-    let listed = client.call_existing(
-        "terminal.list",
-        json!({ "all": false }),
+    let details = match client.call_existing(
+        "terminal.get",
+        json!({ "terminal": panel }),
         std::time::Duration::from_secs(5),
-    )?;
-    let terminals = listed["terminals"]
-        .as_array()
-        .ok_or_else(|| anyhow::anyhow!("invalid terminal list"))?;
-    let live = terminals
-        .iter()
-        .find(|t| t["name"] == panel && t["state"] == "live");
-    Ok(match live {
+    ) {
+        Ok(terminal) if terminal["state"] == "live" => Some(terminal),
+        Ok(_) => None,
+        Err(hc::HcError::Remote(error)) if error["data"]["kind"] == "not_found" => None,
+        Err(error) => return Err(error.into()),
+    };
+    Ok(match details {
         Some(terminal) => {
-            // hc reports the health word at `status.state`; older shapes put
-            // the bare word at `status`.
-            let details = client.call_existing(
-                "terminal.get",
-                json!({ "terminal": panel }),
-                std::time::Duration::from_secs(5),
-            )?;
-            let status = details["status"]["state"]
+            let status = terminal["status"]["state"]
                 .as_str()
-                .or_else(|| details["status"].as_str())
-                .unwrap_or("unknown");
+                .or_else(|| terminal["status"].as_str())
+                .unwrap_or(if terminal["reported"] == true {
+                    "unknown"
+                } else {
+                    "unreported"
+                });
             json!({
                 "panel": panel,
                 "live": true,

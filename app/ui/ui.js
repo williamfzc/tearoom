@@ -1,4 +1,4 @@
-// Tearoom desktop face: DOM renderers for the conversation list and bubbles.
+// Tearoom room interface: DOM renderers for the room list, roster, and messages.
 // No state lives here; app.js owns selection, polling, and sending.
 
 export function element(tag, className, text) {
@@ -113,48 +113,66 @@ export function renderRoster(node, room, onRole) {
     return;
   }
   node.hidden = false;
-  node.replaceChildren("with");
+  const list = element("div", "roster-list");
+  node.replaceChildren(list);
   roles.forEach((role) => {
-    // The phone face has no terminal stream: render a static pill there
-    // instead of a button that would advertise an unavailable panel.
-    const pill = element(onRole ? "button" : "span", "roster-pill");
+    const card = element(onRole ? "button" : "span", onRole ? "roster-card" : "roster-card static");
+    const avatar = element("span", "role-avatar");
+    avatar.setAttribute("aria-hidden", "true");
+    avatarFill(avatar, role);
+    const detail = element("span", "role-detail");
+    detail.append(element("span", "role-name", `@${role}`));
     if (onRole) {
-      pill.type = "button";
-      pill.title = `Open @${role}'s live panel`;
-      pill.addEventListener("click", () => onRole(role));
-    } else {
-      pill.classList.add("static");
-    }
-    const dot = element("span", "pill-avatar", role.slice(0, 1).toUpperCase());
-    dot.style.background = avatarColor(role);
-    pill.append(dot, element("span", null, `@${role}`));
-    if (onRole) {
+      card.type = "button";
+      card.setAttribute("aria-label", `Open @${role}'s terminal. Checking status.`);
+      card.addEventListener("click", () => onRole(role));
+      const positionDetails = () => {
+        const left = Math.min(card.offsetLeft, node.clientWidth - detail.offsetWidth);
+        detail.style.left = `${Math.max(0, left)}px`;
+      };
+      card.addEventListener("pointerenter", positionDetails);
+      card.addEventListener("focus", positionDetails);
+      card.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") card.dataset.dismissed = "";
+      });
+      card.addEventListener("blur", () => delete card.dataset.dismissed);
+      card.addEventListener("pointerleave", () => delete card.dataset.dismissed);
       const status = element("span", "role-status", "Checking…");
       status.dataset.role = role;
-      pill.append(status);
+      detail.append(status);
     }
-    node.append(pill);
+    card.append(avatar, detail);
+    list.append(card);
   });
 }
 
 export function roleStatus(info) {
   if (!info) return "Status unavailable";
   if (!info.live) return "No active panel";
-  return ({ working: "Working", idle: "Idle", done: "Turn ended", blocked: "Needs attention", error: "Needs attention" })[info.status] || "Status unknown";
+  const labels = {
+    working: "Working", idle: "Idle", done: "Turn ended", blocked: "Needs attention",
+    error: "Needs attention", unreported: "No status reported",
+  };
+  return Object.hasOwn(labels, info.status) ? labels[info.status] : "Status unknown";
 }
 
-let rosterPoll = 0;
-export async function refreshRoster(node, root, room, isCurrent) {
-  const poll = ++rosterPoll;
-  const roles = [...(room.roles || [])];
-  const results = await Promise.all(roles.map((role) =>
-    window.__TAURI__.core.invoke("panel_info", { root, room: room.id, role }).catch(() => null),
-  ));
-  if (poll !== rosterPoll || !isCurrent()) return;
-  for (const status of node.querySelectorAll(".role-status")) {
-    const index = roles.indexOf(status.dataset.role);
-    if (index !== -1) status.textContent = roleStatus(results[index]);
-  }
+const checkingStatus = new WeakSet();
+export function refreshRoster(node, { root, id }, isCurrent) {
+  node.querySelectorAll(".role-status").forEach(async (status) => {
+    if (checkingStatus.has(status)) return;
+    checkingStatus.add(status);
+    const info = await window.__TAURI__.core.invoke("panel_info", {
+      root, room: id, role: status.dataset.role,
+    }).catch(() => null);
+    checkingStatus.delete(status);
+    if (!status.isConnected || !isCurrent()) return;
+    const label = roleStatus(info);
+    if (status.textContent !== label) {
+      status.textContent = label;
+      status.closest("button").setAttribute("aria-label", `Open @${status.dataset.role}'s terminal. ${label}.`);
+    }
+    status.dataset.state = info ? (info.live ? info.status : "missing") : "unavailable";
+  });
 }
 
 function withMentions(text) {

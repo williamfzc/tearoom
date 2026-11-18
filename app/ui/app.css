@@ -182,33 +182,10 @@ body {
   color: #fff; font-weight: 600; font-size: 16px; user-select: none;
 }
 
-.chat-title { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.chat-title { display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
 .chat-title h2 {
   margin: 0; font-size: 13px; font-weight: 600;
   background: var(--panel); border-radius: 999px; padding: 2px 12px;
-}
-
-.roster {
-  margin: 2px 0 0; display: flex; align-items: center; gap: 6px;
-  font-size: 12px; color: var(--muted);
-}
-
-.roster-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  border: 1px solid var(--line); background: var(--panel);
-  border-radius: 999px; padding: 2px 10px 2px 3px;
-  font: inherit; font-size: 12px; color: var(--ink); cursor: pointer;
-}
-.roster-pill:hover { border-color: var(--accent); color: var(--accent); }
-.roster-pill.static { cursor: default; }
-.roster-pill.static:hover { border-color: var(--line); color: var(--ink); }
-.role-status { color: var(--muted); font-size: 11px; }
-
-.pill-avatar {
-  width: 16px; height: 16px; border-radius: 50%;
-  font-size: 9px; font-weight: 700; color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-  flex: none;
 }
 
 .stream-status { position: absolute; right: 16px; top: 14px; margin: 0; font-size: 11px; color: var(--faint); }
