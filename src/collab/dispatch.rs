@@ -864,16 +864,22 @@ mod tests {
         let records = dispatcher.store.read("project", 0).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].author, silence::SILENCE_AUTHOR);
+        // Simulate a crash after the first wake was appended and before its marker was saved.
+        let root = dispatcher.store.root();
+        let mut state = DispatchState::load(root).unwrap();
+        assert_eq!(state.mediated.remove("project"), Some(records[0].seq));
+        state.save(root).unwrap();
         // The next pass routes the wake like any addressed record.
         dispatcher.pump().unwrap();
         assert_eq!(
             dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Submitted
         );
-        // The turn ends with no third party speaking: the stop stays mediated.
+        // The turn ends with no third party speaking: recover the marker without appending.
         dispatcher.runtime.status.set(PanelStatus::Done);
         dispatcher.pump().unwrap();
         assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 1);
+        assert_eq!(DispatchState::load(root).unwrap().mediated["project"], 1);
         // A third-party broadcast arms the next stop.
         append(
             &dispatcher.store,

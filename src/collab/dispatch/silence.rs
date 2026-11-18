@@ -64,16 +64,17 @@ pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState)
         if !quiet(state, &card.id) {
             continue;
         }
-        let after = state.mediated.get(&card.id).copied().unwrap_or(0);
-        let records = store.read(&card.id, after)?;
+        let mut last_wake = state.mediated.get(&card.id).copied().unwrap_or(0);
+        let records = store.read(&card.id, last_wake)?;
         let since_wake = match records.iter().rposition(|record| wake(record, &mediator)) {
             Some(at) => {
-                state.mediated.insert(card.id.clone(), records[at].seq);
+                last_wake = records[at].seq;
+                state.mediated.insert(card.id.clone(), last_wake);
                 &records[at + 1..]
             }
             None => &records[..],
         };
-        if !rearmed(since_wake, after != 0, &mediator) {
+        if !rearmed(since_wake, last_wake != 0, &mediator) {
             continue;
         }
         let seq = records.last().map_or(1, |record| record.seq + 1);
