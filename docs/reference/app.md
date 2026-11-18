@@ -31,6 +31,12 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   activation therefore have one owner (the CLI path). If the record was
   saved but the service did not start, the app shows the CLI's
   "record saved" warning instead of a failure.
+- **Composer** — the Mac uses `TEAROOM_ACTOR` when set, then the macOS
+  account name, with `me` as a fallback. The phone keeps a previously saved
+  sender name or uses `me`. Type `@` to find a role in the current Room and
+  select it to add a removable recipient. Selected roles become explicit
+  delivery targets. Text left in the message body follows the
+  [ordinary addressing rule](cli.md#append-and-read).
 - **Workspace discovery** — the dashboard shows every Tearoom workspace on
   this machine side by side; there is no switching ceremony. Three sources
   merge: the collaboration service's registry (workspaces activated at
@@ -47,7 +53,7 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   `PATH` so the service and Agent terminals it starts later resolve tools
   the way a person's shell would.
 - **Conversation view** — records render as group-chat clusters grouped by
-  author; the person's own messages (matching the composer name) align
+  author; the person's own messages (matching the current sender) align
   right. Mentions are highlighted, addressed messages show a
   `→ @role` route line, and `reply_to` references render as `↩ room#seq`.
   Content that is neither plain text nor a message object renders verbatim.

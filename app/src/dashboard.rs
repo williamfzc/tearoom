@@ -51,8 +51,14 @@ pub fn workspaces_json(
         .collect();
     workspaces.sort_by_key(|workspace| std::cmp::Reverse(activity(workspace)));
 
+    let actor = ["TEAROOM_ACTOR", "USER", "LOGNAME"]
+        .into_iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .map(|value| value.trim().to_owned())
+        .find(|value| !value.is_empty())
+        .unwrap_or_else(|| "me".into());
     Ok(json!({
-        "actor": std::env::var("TEAROOM_ACTOR").unwrap_or_default(),
+        "actor": actor,
         "workspaces": workspaces,
     }))
 }

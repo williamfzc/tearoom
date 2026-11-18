@@ -1,8 +1,5 @@
-// Manual regression check for the phone face's overlapping-poll contract:
-// an older listWorkspaces response must never overwrite newer state. It
-// serves the production app/ui unmodified and injects only at the fetch
-// boundary. Hand-run via `make phone-poll`; it needs Playwright and a
-// Chromium build, so it is deliberately not part of `make check`.
+// Manual regression checks for phone polling and sending. Serves production
+// app/ui with controlled HTTP responses via Playwright (`make phone-poll`).
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -86,24 +83,27 @@ const check = (name, ok, detail = "") => {
 };
 
 // Each scenario gets a fresh page so its call plan and interval are isolated.
-async function scenario(name, { keepInterval }, body) {
+async function scenario(name, { keepInterval, savedAuthor }, body) {
   const browser = await chromium.launch({ executablePath, headless: true });
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
     viewport: { width: 390, height: 844 },
+    hasTouch: true,
   });
-  await context.addInitScript(({ base, keep }) => {
+  await context.addInitScript(({ base, keep, author }) => {
     localStorage.setItem("tearoom.remote", JSON.stringify({ baseUrl: base, token: "tok", workspace: "demo" }));
     localStorage.setItem("tearoom.pendingSends", "{}");
+    if (author) localStorage.setItem("tearoom.author", author);
     if (!keep) {
       const native = window.setInterval;
       window.setInterval = (fn, ms, ...args) => (ms === 2500 ? 0 : native(fn, ms, ...args));
     }
-  }, { base: BASE, keep: keepInterval });
+  }, { base: BASE, keep: keepInterval, author: savedAuthor });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   const calls = [];
+  const sends = [];
   let plan = [];
   await page.route("**/v1/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -116,6 +116,10 @@ async function scenario(name, { keepInterval }, body) {
     }
     if (path === "/v1/records") {
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ records: [] }) });
+    }
+    if (path === "/v1/send" && route.request().method() === "POST") {
+      sends.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, json: {} });
     }
     return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "unknown route" }) });
   });
@@ -130,7 +134,7 @@ async function scenario(name, { keepInterval }, body) {
     await page.locator("#app").waitFor({ state: "visible", timeout: 5000 });
     await page.waitForTimeout(350);
     check(`${name}: baseline`, (await visible("#app")) && (await page.textContent("#room-name")) === "Main");
-    await body({ page, calls, visible, fire, arm: (steps) => { plan = steps; } });
+    await body({ page, calls, sends, visible, fire, arm: (steps) => { plan = steps; } });
     check(`${name}: no page errors`, errors.length === 0, errors.join(" | "));
   } catch (error) {
     check(`${name}: completed`, false, String(error?.stack || error));
@@ -180,6 +184,52 @@ await scenario("visibility poll plus production interval", { keepInterval: true 
     "visibility poll + interval: the older failed poll does not hide the newer success",
     (await visible("#app")) && !(await visible("#gate")),
     `app=${await visible("#app")} gate=${await visible("#gate")} calls=${calls.length}`,
+  );
+});
+
+await scenario("composer with a cached sender", { savedAuthor: "Casey" }, async ({ page, sends }) => {
+  const message = page.getByRole("textbox", { name: "Message" });
+  const option = page.locator("#mention-options").getByText("@worker", { exact: true });
+  const chip = page.locator("#selected-recipients").getByRole("button", { name: /worker/ });
+  const send = page.getByRole("button", { name: "Send message" });
+
+  await message.fill("Review this @w");
+  await option.waitFor({ state: "visible", timeout: 5000 });
+  await message.press("Enter");
+  await chip.waitFor({ state: "visible", timeout: 5000 });
+  check("Enter selects the recipient without sending", sends.length === 0);
+  await chip.tap();
+  await chip.waitFor({ state: "hidden", timeout: 5000 });
+
+  await message.fill("Review this @w");
+  await option.tap({ timeout: 5000 });
+  await chip.waitFor({ state: "visible", timeout: 5000 });
+  await Promise.all([
+    page.waitForResponse((response) => response.url() === `${BASE}/v1/send`),
+    send.tap(),
+  ]);
+  check(
+    "tap selects a recipient and sends it once with the cached sender",
+    sends.length === 1 && sends[0].author === "Casey" &&
+      sends[0].to.length === 1 && sends[0].to[0] === "worker" && sends[0].text.trimEnd() === "Review this",
+    JSON.stringify(sends),
+  );
+});
+
+await scenario("composer with no cached sender", {}, async ({ page, sends, visible }) => {
+  const text = "Email person@worker.example or write (@worker).";
+  const message = page.getByRole("textbox", { name: "Message" });
+  await message.fill("Email person@w");
+  check("an email prefix does not open recipient suggestions", !(await visible("#mention-options")));
+  await message.fill(text);
+  await Promise.all([
+    page.waitForResponse((response) => response.url() === `${BASE}/v1/send`),
+    page.getByRole("button", { name: "Send message" }).tap(),
+  ]);
+  check(
+    "literal text is sent unchanged without recipients using the default sender",
+    sends.length === 1 && sends[0].author === "me" && sends[0].to.length === 0 && sends[0].text === text,
+    JSON.stringify(sends),
   );
 });
 

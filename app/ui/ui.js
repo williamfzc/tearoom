@@ -157,22 +157,6 @@ export async function refreshRoster(node, root, room, isCurrent) {
   }
 }
 
-export function renderAddresses(container, room, selected) {
-  const roles = Array.isArray(room?.roles) ? room.roles : [];
-  container.replaceChildren(
-    ...roles.map((role) => {
-      const chip = element("label", "address-chip");
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.name = "address";
-      input.value = role;
-      input.checked = selected.has(role);
-      chip.append(input, element("span", null, `@${role}`));
-      return chip;
-    }),
-  );
-}
-
 function withMentions(text) {
   const frag = document.createDocumentFragment();
   let last = 0;

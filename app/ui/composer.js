@@ -1,24 +1,33 @@
-// The composer: recipient chips, the text field, and the send flow. Sends
-// go through the face's transport — the CLI's send command on the desktop,
-// the LAN service's /v1/send on a phone; a saved record whose collaboration
-// failed to start comes back as a warning.
+// The composer owns draft text and explicit Room-role selection at the UI boundary.
+// It sends both through the desktop or LAN transport.
 
-import { renderAddresses } from "./ui.js";
 import { transport } from "./transport.js";
 
 export class Composer {
   constructor(els) {
     this.els = els;
     this.sending = false;
+    this.roles = [];
+    this.recipients = new Set();
+    this.roomVersion = 0;
+    this.mention = null;
+    this.dismissed = null;
+    this.active = 0;
+    this.composing = false;
+    this.options = [];
+    this.setAuthor();
     this.#wire();
   }
 
-  get author() {
-    return this.els.author.value.trim();
-  }
-
   setAuthor(value) {
-    if (!this.els.author.value && value) this.els.author.value = value;
+    if (transport.kind === "remote") {
+      try {
+        value = localStorage.getItem("tearoom.author");
+      } catch {
+        value = "";
+      }
+    }
+    this.author = value?.trim() || "me";
   }
 
   error(text, warn = false) {
@@ -28,21 +37,21 @@ export class Composer {
     node.classList.toggle("warn", warn);
   }
 
-  // Renders the recipient chips for a room, keeping whatever was checked.
-  // Switching rooms collapses the recipient panel.
-  setRoom(room) {
-    const selected = new Set(
-      Array.from(
-        this.els.addresses.querySelectorAll('input[name="address"]:checked'),
-        (input) => input.value,
-      ),
-    );
-    renderAddresses(this.els.addresses, room, selected);
-    this.els.recipientToggle.hidden = !(room?.roles || []).length;
-    this.els.recipients.hidden = true;
-    this.els.recipientToggle.setAttribute("aria-expanded", "false");
-    this.#updateRecipients();
-    this.error("");
+  setRoom(room, reset = false) {
+    this.roles = Array.isArray(room?.roles) ? room.roles : [];
+    if (reset) {
+      this.roomVersion += 1;
+      this.recipients.clear();
+      this.dismissed = null;
+      this.#closeSuggestions();
+      this.error("");
+    } else {
+      for (const role of this.recipients) {
+        if (!this.roles.includes(role)) this.recipients.delete(role);
+      }
+      this.#updateSuggestions();
+    }
+    this.#renderRecipients();
   }
 
   focus() {
@@ -50,20 +59,18 @@ export class Composer {
   }
 
   async send(target, loadHistory) {
-    // target: { root, id } — the room's own workspace, not a global one.
     if (!target || this.sending) return;
     const text = this.els.text.value;
     if (!text.trim()) {
       this.error("Write a message first.");
-      this.els.text.focus();
+      this.focus();
       return;
     }
-    const to = Array.from(
-      this.els.addresses.querySelectorAll('input[name="address"]:checked'),
-      (input) => input.value,
-    );
+    const to = [...this.recipients];
+    const roomVersion = this.roomVersion;
     this.sending = true;
     this.#updateSendState();
+    this.#closeSuggestions();
     this.error("");
     try {
       const result = await transport.send({
@@ -73,16 +80,22 @@ export class Composer {
         to,
         author: this.author,
       });
-      this.els.text.value = "";
-      this.#resize();
+      if (this.roomVersion === roomVersion) {
+        if (this.els.text.value === text) this.els.text.value = "";
+        for (const role of to) this.recipients.delete(role);
+        this.#renderRecipients();
+        this.#resize();
+      }
       await loadHistory();
       if (result.warning) {
-        this.error(`Message saved, but collaboration did not start: ${result.warning}`, true);
+        if (this.roomVersion === roomVersion) {
+          this.error(`Message saved, but collaboration did not start: ${result.warning}`, true);
+        }
         return "warning";
       }
       return "sent";
     } catch (error) {
-      this.error(String(error));
+      if (this.roomVersion === roomVersion) this.error(String(error));
       return "failed";
     } finally {
       this.sending = false;
@@ -90,14 +103,93 @@ export class Composer {
     }
   }
 
-  #updateRecipients() {
-    const chosen = Array.from(
-      this.els.addresses.querySelectorAll('input[name="address"]:checked'),
-      (input) => input.value,
+  #renderRecipients() {
+    const { selected } = this.els;
+    selected.hidden = !this.recipients.size;
+    selected.replaceChildren(...[...this.recipients].map((role) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "address-chip";
+      chip.textContent = `@${role} ×`;
+      chip.setAttribute("aria-label", `Remove @${role}`);
+      chip.addEventListener("click", () => {
+        this.recipients.delete(role);
+        this.#renderRecipients();
+        this.focus();
+        this.#updateSuggestions();
+      });
+      return chip;
+    }));
+  }
+
+  #closeSuggestions() {
+    this.mention = null;
+    this.options = [];
+    this.els.suggestions.hidden = true;
+    this.els.suggestions.replaceChildren();
+    this.els.text.removeAttribute("aria-activedescendant");
+  }
+
+  #updateSuggestions() {
+    const { text, suggestions } = this.els;
+    const caret = text.selectionStart;
+    // Han text can start a mention without a space before the trigger.
+    const match = text.value.slice(0, caret).match(
+      /(?:^|[\s\p{Script=Han}，。；：、！？])[@＠]([\p{L}\p{Nd}][\p{L}\p{Nd}_-]*|)$/u,
     );
-    this.els.recipientToggle.textContent = chosen.length
-      ? `To · @${chosen[0]}${chosen.length > 1 ? ` +${chosen.length - 1}` : ""}`
-      : "To";
+    if (this.composing || document.activeElement !== text || caret !== text.selectionEnd || !match) {
+      this.#closeSuggestions();
+      return;
+    }
+    const start = caret - match[1].length - 1;
+    const key = `${start}:${match[1]}`;
+    const prefix = match[1].toLowerCase();
+    const options = this.roles.filter((role) =>
+      !this.recipients.has(role) && role.toLowerCase().startsWith(prefix),
+    );
+    if (key === this.dismissed || !options.length) {
+      this.#closeSuggestions();
+      return;
+    }
+    if (key === this.mention?.key && options.length === this.options.length &&
+        options.every((role, index) => role === this.options[index])) return;
+    this.mention = { start, end: caret, key };
+    this.options = options;
+    this.active = 0;
+    suggestions.replaceChildren(...options.map((role, index) => {
+      const option = document.createElement("li");
+      option.id = `${suggestions.id}-${index}`;
+      option.className = "mention-option";
+      option.setAttribute("role", "option");
+      option.textContent = `@${role}`;
+      option.addEventListener("pointerdown", (event) => event.preventDefault());
+      option.addEventListener("click", () => this.#choose(role));
+      return option;
+    }));
+    suggestions.hidden = false;
+    this.#highlight();
+  }
+
+  #highlight() {
+    const { suggestions, text } = this.els;
+    for (const [index, option] of [...suggestions.children].entries()) {
+      option.setAttribute("aria-selected", String(index === this.active));
+    }
+    const current = suggestions.children[this.active];
+    text.setAttribute("aria-activedescendant", current.id);
+    current.scrollIntoView({ block: "nearest" });
+  }
+
+  #choose(role) {
+    const { text } = this.els;
+    const { start, end } = this.mention;
+    this.recipients.add(role);
+    text.setRangeText("", start, end, "end");
+    this.#closeSuggestions();
+    this.#renderRecipients();
+    this.#resize();
+    this.#updateSendState();
+    this.focus();
   }
 
   #updateSendState() {
@@ -111,43 +203,61 @@ export class Composer {
   }
 
   #wire() {
-    this.els.composer.addEventListener("submit", (event) => {
+    const { composer, text } = this.els;
+    composer.addEventListener("submit", (event) => {
       event.preventDefault();
-      // The send flow itself is owned by the app controller.
-      this.els.composer.dispatchEvent(
-        new CustomEvent("tearoom:send", { bubbles: true }),
-      );
+      composer.dispatchEvent(new CustomEvent("tearoom:send", { bubbles: true }));
     });
-    this.els.recipientToggle.addEventListener("click", () => {
-      this.els.recipients.hidden = !this.els.recipients.hidden;
-      this.els.recipientToggle.setAttribute(
-        "aria-expanded",
-        String(!this.els.recipients.hidden),
-      );
-    });
-    this.els.addresses.addEventListener("change", () => this.#updateRecipients());
-    this.els.author.addEventListener("input", () => {
-      try {
-        localStorage.setItem("tearoom.author", this.els.author.value);
-      } catch {
-        /* Storage may be refused; the field still works. */
-      }
-    });
-    this.els.text.addEventListener("input", () => {
+    text.addEventListener("input", (event) => {
+      this.dismissed = null;
       this.#resize();
       this.#updateSendState();
+      if (!event.isComposing) this.#updateSuggestions();
     });
-    this.els.text.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+    text.addEventListener("compositionstart", () => {
+      this.composing = true;
+      this.#closeSuggestions();
+    });
+    text.addEventListener("compositionend", () => {
+      this.composing = false;
+      this.#updateSuggestions();
+    });
+    text.addEventListener("blur", () => this.#closeSuggestions());
+    text.addEventListener("click", () => this.#updateSuggestions());
+    text.addEventListener("selectionchange", () => this.#updateSuggestions());
+    text.addEventListener("keydown", (event) => {
+      if (this.composing || event.isComposing || event.keyCode === 229) return;
+      if (["ArrowUp", "ArrowDown", "Escape", "Enter", "Tab"].includes(event.key)) {
+        this.#updateSuggestions();
+      }
+      if (this.mention) {
+        switch (event.key) {
+          case "ArrowUp":
+          case "ArrowDown": {
+            event.preventDefault();
+            const step = event.key === "ArrowUp" ? -1 : 1;
+            this.active = (this.active + step + this.options.length) % this.options.length;
+            this.#highlight();
+            return;
+          }
+          case "Escape":
+            event.preventDefault();
+            this.dismissed = this.mention.key;
+            this.#closeSuggestions();
+            return;
+          case "Tab":
+          case "Enter":
+            if (event.shiftKey) break;
+            event.preventDefault();
+            this.#choose(this.options[this.active]);
+            return;
+        }
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (!this.els.send.disabled) this.els.composer.requestSubmit();
+        if (!this.els.send.disabled) composer.requestSubmit();
       }
     });
-    try {
-      this.els.author.value = localStorage.getItem("tearoom.author") || "";
-    } catch {
-      this.els.author.value = "";
-    }
     this.#updateSendState();
   }
 }

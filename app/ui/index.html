@@ -90,25 +90,21 @@
         <ol id="records" class="messages" aria-label="Room history"></ol>
 
         <form id="composer" class="composer" autocomplete="off">
-          <div id="recipients" class="recipients" hidden>
-            <div id="addresses" class="addresses"></div>
-          </div>
+          <ul id="mention-options" class="mention-options" role="listbox"
+              aria-label="Room roles" hidden></ul>
           <div class="input-shell">
-            <label class="sr-only" for="text">Message</label>
-            <textarea id="text" name="text" rows="1" required
-                      placeholder="Message"></textarea>
+            <div class="draft">
+              <div id="selected-recipients" class="selected-recipients"
+                   role="group" aria-label="Selected recipients" hidden></div>
+              <label class="sr-only" for="text">Message</label>
+              <textarea id="text" name="text" rows="1" required
+                        aria-autocomplete="list" aria-controls="mention-options"
+                        placeholder="Message"></textarea>
+            </div>
             <button id="send" class="send" type="submit"
                     aria-label="Send message">↑</button>
           </div>
-          <div class="compose-meta">
-            <label class="as-field">as
-              <input id="author" name="author" type="text"
-                     placeholder="name" aria-label="Your name">
-            </label>
-            <button id="recipient-toggle" class="recipient-toggle" type="button"
-                    aria-controls="recipients" aria-expanded="false">To</button>
-            <p id="compose-error" class="error" role="alert" hidden></p>
-          </div>
+          <p id="compose-error" class="error" role="alert" hidden></p>
         </form>
       </section>
     </main>

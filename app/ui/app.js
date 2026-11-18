@@ -39,11 +39,9 @@ const drawer = transport.capabilities.terminal
 
 const composer = new Composer({
   composer: document.getElementById("composer"),
-  recipients: document.getElementById("recipients"),
-  recipientToggle: document.getElementById("recipient-toggle"),
-  addresses: document.getElementById("addresses"),
+  suggestions: document.getElementById("mention-options"),
+  selected: document.getElementById("selected-recipients"),
   text: document.getElementById("text"),
-  author: document.getElementById("author"),
   error: document.getElementById("compose-error"),
   send: document.getElementById("send"),
 });
@@ -180,7 +178,7 @@ function selectRoom(root, room) {
   ui.panel.hidden = false;
   ui.empty.hidden = true;
   updateRoomChrome(room);
-  composer.setRoom(room);
+  composer.setRoom(room, true);
   renderDashboard(ui.rooms, state.workspaces, state.selected, selectRoom);
   messages.status("Reading…");
   loadHistory();

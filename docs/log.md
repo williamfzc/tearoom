@@ -8,6 +8,12 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-19 — Address Room roles from the app composer
+
+The [app composer](reference/app.md#behavior) now uses an implicit sender and
+offers Room roles when the user types `@`. Selecting a role keeps the existing
+explicit delivery contract and replaces the separate recipient selector.
+
 ## 2026-11-19 — Default mediation to the first Room role
 
 Applied the [mediator selection rule](architecture/collaboration.md#silence-mediation)
