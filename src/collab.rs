@@ -67,9 +67,19 @@ impl Role {
 pub struct RoomRoles {
     #[serde(default, deserialize_with = "null_default")]
     pub roles: Vec<String>,
-    /// The role the runtime wakes when this Room goes quiet; must be on the roster.
+    /// Explicit roster role, an empty string to disable, or absent for the first role.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mediator: Option<String>,
+}
+
+impl RoomRoles {
+    pub fn effective_mediator(&self) -> Option<&str> {
+        match self.mediator.as_deref() {
+            Some("") => None,
+            Some(role) => Some(role),
+            None => self.roles.iter().min().map(String::as_str),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -156,7 +166,7 @@ impl Config {
                     bail!("room {name:?} lists role {role:?} more than once");
                 }
             }
-            if let Some(mediator) = &room.mediator {
+            if let Some(mediator) = room.mediator.as_ref().filter(|role| !role.is_empty()) {
                 if !room.roles.contains(mediator) {
                     bail!("room {name:?} mediator {mediator:?} is not on its roster");
                 }

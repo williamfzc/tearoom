@@ -59,8 +59,10 @@ substituting the intended recipient's role name.
 These handoffs use explicit --to @role addresses, not names in message text.
 Use separate Agent instances for implementation and independent review.
 
-A Room may name one roster role as its silence mediator:
+A Room defaults to the first role listed by `tearoom room roles` for silence
+mediation. To select a different role, run
   tearoom room roles --room project --mediator referee
+Set `--mediator ""` to disable mediation.
 When every delivery of that Room is terminal, the runtime appends one
 addressed record (signed tearoom) waking the mediator to adjudicate the stop:
 record a closing sentence, address the next step with --to, or record a
@@ -103,7 +105,8 @@ How work moves:
     --reply-to project#1 --text "Implemented; verify these commands and files: ..."
   tearoom collab deliveries
 
-An unaddressed message is shared history (broadcast) and does not wake a panel.
+An unaddressed message is shared history (broadcast). The message itself has
+no delivery target. It can rearm the Room's silence mediation.
 Only explicit --to directs a message to the listed roles; @role in text is
 ordinary shared Room content. Only use --to when the recipient's participation
 is needed and the message asks them to act. Each address wakes that role and

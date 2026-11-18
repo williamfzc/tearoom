@@ -142,8 +142,10 @@ tearoom send --room project --as builder \
   --text 'Implementation is ready. Please review the diff and the recorded test output.'
 ```
 
-Addressed records remain in the shared Room stream. An unaddressed record
-does not start or notify an offline panel. A reply reference is a coordination
+Addressed records remain in the shared Room stream. An unaddressed record has
+no direct delivery target and can rearm
+[silence mediation](../architecture/collaboration.md#silence-mediation).
+A reply reference is a coordination
 pointer; it does not verify identity or prove that the referenced work was
 done.
 

@@ -106,7 +106,16 @@ impl ServiceSandbox {
         );
         self.success(
             path,
-            &["room", "roles", "--room", "project", "--add", "worker"],
+            &[
+                "room",
+                "roles",
+                "--room",
+                "project",
+                "--add",
+                "worker",
+                "--mediator",
+                "",
+            ],
         );
     }
 

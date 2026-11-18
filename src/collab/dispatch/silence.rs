@@ -1,4 +1,4 @@
-//! Silence mediation: waking the configured role when a Room goes quiet.
+//! Silence mediation: waking the Room's mediator when it goes quiet.
 //! The wake is an ordinary addressed record — signed by the runtime and routed
 //! by the normal pipeline — and each stop is mediated once: a new wake needs
 //! third-party records after the previous one.
@@ -11,10 +11,15 @@ use anyhow::Result;
 /// Signature the runtime signs silence-wake records with.
 pub const SILENCE_AUTHOR: &str = "tearoom";
 
-fn wake(record: &Record, mediator: &str) -> bool {
-    record.author == SILENCE_AUTHOR
-        && serde_json::from_str::<Message>(record.content.get())
-            .is_ok_and(|message| message.mentions.iter().any(|role| role == mediator))
+fn wake(record: &Record) -> Option<String> {
+    if record.author != SILENCE_AUTHOR {
+        return None;
+    }
+    let mut message = serde_json::from_str::<Message>(record.content.get()).ok()?;
+    if message.mentions.len() != 1 {
+        return None;
+    }
+    message.mentions.pop()
 }
 
 fn third_party(record: &Record, mediator: &str) -> bool {
@@ -49,7 +54,7 @@ fn quiet(state: &DispatchState, room: &str) -> bool {
 /// Append one silence-wake record for every mediated Room that went quiet.
 /// Runs under the dispatch lock. `state.mediated` is the durable progress
 /// marker — the seq of the last known wake — so each pass reads only the
-/// records since it; a first pass without a marker scans the whole Room once.
+/// records from that wake onward; a first pass without a marker scans the Room.
 /// The append precedes the marker update, so a crash between them is healed
 /// by the next pass reading the already-appended wake.
 pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState) -> Result<()> {
@@ -57,24 +62,32 @@ pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState)
         let Some(mediator) = config
             .rooms
             .get(&card.id)
-            .and_then(|binding| binding.mediator.clone())
+            .and_then(|binding| binding.effective_mediator())
         else {
             continue;
         };
         if !quiet(state, &card.id) {
             continue;
         }
-        let mut last_wake = state.mediated.get(&card.id).copied().unwrap_or(0);
-        let records = store.read(&card.id, last_wake)?;
-        let since_wake = match records.iter().rposition(|record| wake(record, &mediator)) {
-            Some(at) => {
-                last_wake = records[at].seq;
-                state.mediated.insert(card.id.clone(), last_wake);
-                &records[at + 1..]
+        let last_wake = state.mediated.get(&card.id).copied().unwrap_or(0);
+        let records = store.read(&card.id, last_wake.saturating_sub(1))?;
+        let previous = records
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(at, record)| wake(record).map(|role| (at, role)));
+        let (since_wake, previous_mediator) = match &previous {
+            Some((at, role)) => {
+                state.mediated.insert(card.id.clone(), records[*at].seq);
+                (&records[at + 1..], role.as_str())
             }
-            None => &records[..],
+            None => (&records[..], mediator),
         };
-        if !rearmed(since_wake, last_wake != 0, &mediator) {
+        if !rearmed(
+            since_wake,
+            previous.is_some() || last_wake != 0,
+            previous_mediator,
+        ) {
             continue;
         }
         let seq = records.last().map_or(1, |record| record.seq + 1);
@@ -90,7 +103,7 @@ pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState)
             AppendRequest {
                 content: &message_content(&Message {
                     text,
-                    mentions: vec![mediator],
+                    mentions: vec![mediator.to_owned()],
                     reply_to: None,
                 })?,
                 idempotency_key: &format!("silence-{seq}"),
@@ -141,12 +154,15 @@ mod tests {
     }
 
     #[test]
-    fn a_wake_is_identified_by_signature_and_addressed_mediator() {
+    fn a_wake_identifies_its_addressed_mediator() {
         let mediator = "referee";
-        assert!(wake(&record("r", 1, SILENCE_AUTHOR, &[mediator]), mediator));
-        assert!(!wake(&record("r", 1, SILENCE_AUTHOR, &[]), mediator));
-        assert!(!wake(&record("r", 1, "builder", &[mediator]), mediator));
-        assert!(!wake(&record("r", 1, SILENCE_AUTHOR, &["other"]), mediator));
+        assert_eq!(
+            wake(&record("r", 1, SILENCE_AUTHOR, &[mediator])).as_deref(),
+            Some(mediator)
+        );
+        assert!(wake(&record("r", 1, SILENCE_AUTHOR, &[])).is_none());
+        assert!(wake(&record("r", 1, "builder", &[mediator])).is_none());
+        assert!(wake(&record("r", 1, SILENCE_AUTHOR, &[mediator, "other"])).is_none());
     }
 
     #[test]
@@ -186,7 +202,7 @@ mod tests {
             "project".into(),
             crate::collab::RoomRoles {
                 roles: vec!["referee".into()],
-                mediator: Some("referee".into()),
+                mediator: None,
             },
         );
         let mut state = DispatchState::default();
@@ -201,7 +217,11 @@ mod tests {
         // The same quiet state mediates nothing more.
         mediate(&config, &store, &mut state).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 1);
-        // The mediator answering alone does not rearm the stop.
+        let binding = config.rooms.get_mut("project").unwrap();
+        binding.roles.push("auditor".into());
+        mediate(&config, &store, &mut state).unwrap();
+        assert_eq!(store.read("project", 0).unwrap().len(), 1);
+        // A reply from the role originally woken leaves the stop closed.
         store
             .append(
                 "project",
@@ -229,6 +249,8 @@ mod tests {
         let records = store.read("project", 0).unwrap();
         assert_eq!(records.len(), 4);
         assert_eq!(records[3].author, SILENCE_AUTHOR);
+        let message: Message = serde_json::from_str(records[3].content.get()).unwrap();
+        assert_eq!(message.mentions, ["auditor"]);
         assert_eq!(state.mediated.get("project"), Some(&4));
     }
 }

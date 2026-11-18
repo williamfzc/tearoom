@@ -66,8 +66,9 @@ pub(super) fn show_room_command(args: &[String]) -> Result<()> {
     let config = Config::load(store.root())?;
     let parent = super::room_display(&store, &room.parent);
     let binding = config.rooms.get(&id);
-    let roles = binding.map_or_else(Vec::new, |b| b.roles.clone());
-    let mediator = binding.and_then(|b| b.mediator.clone());
+    let mut roles = binding.map_or_else(Vec::new, |b| b.roles.clone());
+    roles.sort();
+    let mediator = binding.and_then(|b| b.effective_mediator());
     print_json(&serde_json::json!({
         "id": room.id,
         "name": room.name,

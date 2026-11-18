@@ -94,10 +94,12 @@ coordination across branches, with the relevant roles configured there.
 
 ## Silence mediation
 
-A Room may name one of its roster roles as its mediator
-(`room roles --room <room> --mediator <role>`; an empty value clears it). The
-mediator is an ordinary Role with its own command and instructions; mediation
-adds no entity, no Room status field, and no second delivery contract.
+By default, a Room uses the first role in its roster by name as its mediator.
+This applies to existing Rooms that have no mediator setting.
+An explicit roster role overrides the default, and an explicit empty setting
+disables mediation. A Room with an empty roster has no mediator. See the
+[CLI reference](../reference/cli.md#room-lifecycle) for the available flags.
+The mediator is an ordinary Role with its own command and instructions.
 
 When every delivery of the Room is terminal — nothing pending, submitted, or
 awaiting inspection — the Room is quiet, and the next dispatch pass appends
@@ -109,9 +111,10 @@ the record routes through hc like any addressed message, appears in
 
 One stop is mediated once. If the Room falls quiet again after a wake, it has
 ended normally and the runtime does nothing; a new stop requires a record
-authored by someone other than the runtime and the mediator after the previous
-wake. The dispatch state records the last wake's sequence, so each pass reads
-only records since it; the wake's idempotency key makes a crashed append
+authored by someone other than the runtime and the recipient of the previous
+wake. This remains true if the roster or mediator selection changes. The
+dispatch state records the last wake's sequence, so each pass reads from that
+wake onward. The wake's idempotency key makes a crashed append
 retry-safe. Consequences of the immediate, timeout-free detection: every
 broadcast in a mediated Room is followed by one adjudication once the ledger
 settles; a service start mediates each historically quiet mediated Room once;

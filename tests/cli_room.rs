@@ -325,7 +325,16 @@ fn roles_and_room_mentions_are_discoverable() {
         serde_json::json!(["pi-new", "--model", "other-model"])
     );
     assert_eq!(launch_change["role"]["directory"], "workdir");
-    run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
+    run(&[
+        "room",
+        "roles",
+        "--room",
+        "project",
+        "--add",
+        "reviewer",
+        "--mediator",
+        "",
+    ]);
     run(&[
         "role",
         "init",
@@ -507,35 +516,40 @@ fn room_mediators_are_configured_and_shown() {
         .unwrap();
     assert!(!unknown.status.success());
     assert!(String::from_utf8_lossy(&unknown.stderr).contains("unknown role"));
+    run(&["room", "roles", "--room", "project", "--add", "watcher"]);
+    let show = || -> serde_json::Value {
+        serde_json::from_slice(&run(&["room", "show", "--room", "project"])).unwrap()
+    };
+    assert_eq!(show()["mediator"], "reviewer");
+    let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
+    let entry: serde_json::Value = serde_json::from_str(roster.lines().next().unwrap()).unwrap();
+    assert_eq!(entry["role"], "reviewer");
+    assert_eq!(entry["mediator"], serde_json::json!(true));
+    run(&["room", "roles", "--room", "project", "--remove", "reviewer"]);
+    assert_eq!(show()["mediator"], "watcher");
+    run(&["room", "roles", "--room", "project", "--add", "reviewer"]);
+    assert_eq!(show()["mediator"], "reviewer");
     run(&[
         "room",
         "roles",
         "--room",
         "project",
         "--mediator",
-        "reviewer",
+        "watcher",
     ]);
-    let card: serde_json::Value =
-        serde_json::from_slice(&run(&["room", "show", "--room", "project"])).unwrap();
-    assert_eq!(card["mediator"], "reviewer");
-    let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
-    let entry: serde_json::Value = serde_json::from_str(roster.lines().next().unwrap()).unwrap();
-    assert_eq!(entry["mediator"], serde_json::json!(true));
-    // Removing the mediating role without clearing the mediator is refused.
+    assert_eq!(show()["mediator"], "watcher");
     let conflict = command(dir.path())
-        .args(["room", "roles", "--room", "project", "--remove", "reviewer"])
+        .args(["room", "roles", "--room", "project", "--remove", "watcher"])
         .output()
         .unwrap();
     assert!(!conflict.status.success());
     assert!(String::from_utf8_lossy(&conflict.stderr).contains("mediator"));
-    // An empty --mediator clears the binding.
     run(&["room", "roles", "--room", "project", "--mediator", ""]);
-    let card: serde_json::Value =
-        serde_json::from_slice(&run(&["room", "show", "--room", "project"])).unwrap();
-    assert!(card["mediator"].is_null());
-    run(&["room", "roles", "--room", "project", "--remove", "reviewer"]);
+    assert!(show()["mediator"].is_null());
+    run(&["room", "roles", "--room", "project", "--remove", "watcher"]);
+    assert!(show()["mediator"].is_null());
     let roster = String::from_utf8(run(&["room", "roles", "--room", "project"])).unwrap();
-    assert!(!roster.contains("reviewer"));
+    assert!(!roster.contains("watcher"));
 }
 
 #[test]
@@ -645,11 +659,18 @@ fn concurrent_send_and_role_delete_do_not_drop_a_cli_handoff() {
     ])
     .status
     .success());
-    assert!(
-        run(&["room", "roles", "--room", "project", "--add", "reviewer"])
-            .status
-            .success()
-    );
+    assert!(run(&[
+        "room",
+        "roles",
+        "--room",
+        "project",
+        "--add",
+        "reviewer",
+        "--mediator",
+        "",
+    ])
+    .status
+    .success());
 
     let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
     let workspace = dir.path().to_path_buf();

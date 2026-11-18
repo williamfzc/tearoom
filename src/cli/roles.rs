@@ -204,7 +204,7 @@ fn delete_role(root: &std::path::Path, name: &str) -> Result<()> {
 pub(super) fn room_roles(args: &[String]) -> Result<()> {
     let args = parse(args, &["room", "add", "remove", "mediator"], &["observe"])?;
     if args.help(
-        "Usage: tearoom room roles --room <name> [--add <roles>] [--remove <roles>] [--mediator <role>] [--observe]\n       --mediator names the role the runtime wakes when this Room goes quiet with no work in flight;\n       one role, already on the roster; --mediator \"\" clears it.",
+        "Usage: tearoom room roles --room <name> [--add <roles>] [--remove <roles>] [--mediator <role>] [--observe]\n       The first listed role mediates by default. --mediator selects another roster role;\n       --mediator \"\" disables mediation.",
     ) {
         return Ok(());
     }
@@ -223,7 +223,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
         bail!("--mediator takes one role");
     }
     let mediator = mediator.pop();
-    // Absent flag preserves the binding; an empty flag clears it.
+    // Absent flag preserves the setting; an empty flag disables mediation.
     let wanted = args
         .values
         .contains_key("mediator")
@@ -245,8 +245,7 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
             let mediator = match wanted {
                 // Flag absent: keep the binding's mediator.
                 None => binding.mediator.clone(),
-                // Empty flag: clear it.
-                Some(None) => None,
+                Some(None) => Some(String::new()),
                 Some(Some(name)) => {
                     if !config.roles.contains_key(name) {
                         bail!("unknown role {name:?}; init it first with 'tearoom role init'");
@@ -264,10 +263,11 @@ pub(super) fn room_roles(args: &[String]) -> Result<()> {
     }
     let config = Config::load(root)?;
     let binding = config.rooms.get(&id);
+    let mediator = binding.and_then(|b| b.effective_mediator());
     let mut names = binding.map_or_else(Vec::new, |r| r.roles.clone());
     names.sort();
     for name in names {
-        let mut entry = serde_json::json!({"room":super::room_display(&store, &id),"role":name,"definition":config.roles.get(&name),"mediator":binding.and_then(|b| b.mediator.as_deref()) == Some(name.as_str())});
+        let mut entry = serde_json::json!({"room":super::room_display(&store, &id),"role":name,"definition":config.roles.get(&name),"mediator":mediator == Some(name.as_str())});
         if args.switches.contains("observe") {
             let panel = crate::collab::panel_name(root, &id, &name)?;
             let observed = hc_runtime().and_then(|runtime| runtime.status(&panel));

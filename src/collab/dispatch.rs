@@ -370,7 +370,7 @@ mod tests {
                 "project".into(),
                 RoomRoles {
                     roles: vec!["reviewer".into()],
-                    ..Default::default()
+                    mediator: Some(String::new()),
                 },
             );
             Ok(())
@@ -846,10 +846,10 @@ mod tests {
     }
 
     #[test]
-    fn a_quiet_mediated_room_wakes_once_per_stop() {
+    fn a_quiet_room_wakes_its_default_mediator_once_per_stop() {
         let (_temp, existing) = setup(false);
         Config::update(existing.store.root(), |config| {
-            config.rooms.get_mut("project").unwrap().mediator = Some("reviewer".into());
+            config.rooms.get_mut("project").unwrap().mediator = None;
             Ok(())
         })
         .unwrap();
@@ -864,6 +864,8 @@ mod tests {
         let records = dispatcher.store.read("project", 0).unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].author, silence::SILENCE_AUTHOR);
+        let wake: Message = serde_json::from_str(records[0].content.get()).unwrap();
+        assert_eq!(wake.mentions, ["reviewer"]);
         // Simulate a crash after the first wake was appended and before its marker was saved.
         let root = dispatcher.store.root();
         let mut state = DispatchState::load(root).unwrap();

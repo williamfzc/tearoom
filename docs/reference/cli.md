@@ -64,7 +64,7 @@ tearoom --version
   is its id and stays reserved for as long as the Room lives.
 - `room show --room <room>` prints one Room's info card: its id, current
   name, parent's current name, description, creation time, bound roles, and
-  its mediator (null when unset).
+  its effective mediator (null when the Room has none).
 - `room delete --room <name>` removes a leaf Room: its directory and record
   stream, its roster binding, its dispatch intents and cursor, and its Herdr
   binding go with it, and its Herdr session is stopped best-effort. Role
@@ -86,15 +86,12 @@ tearoom --version
   shown as unknown. The roster does not grant or restrict read/write access.
   Removing a binding does not stop its running process or cancel an existing
   delivery intent.
-- `room roles --mediator <role>` names one roster role as the Room's silence
-  mediator; an empty `--mediator ""` clears it. The role must already be on the
-  roster, and removing the mediating role is refused until the mediator is
-  cleared. When every delivery of the Room is terminal, the dispatch service
-  appends one runtime-signed addressed record waking the mediator to adjudicate
-  the stop; a Room quiet again after a wake is ended and wakes nobody until a
-  third-party record begins a new stop. The listing marks the mediating role
-  with `"mediator": true`. See
-  [silence mediation](../architecture/collaboration.md#silence-mediation).
+- `room roles --mediator <role>` explicitly selects a roster role.
+  `--mediator ""` disables mediation. Change or disable an explicit selection
+  before removing that role. The role listing is sorted by name and marks the
+  effective mediator with `"mediator": true`. See
+  [silence mediation](../architecture/collaboration.md#silence-mediation) for the
+  default selection and wake behavior.
 - A Role is a reusable launch definition. A Room's roster binds selected Role
   definitions for message routing; it is not an access-control list. A given
   Room and Role pair has its own hc panel.

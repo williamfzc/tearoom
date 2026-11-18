@@ -76,12 +76,14 @@ write a Room.
 ### S6: A Room behaves like a group conversation
 
 When someone writes a normal message, all collaborators can read it in the
-shared Room history, but no Agent is woken. Only roles explicitly selected as
-recipients are woken. A role name in message text is ordinary shared content.
+shared Room history. Direct message delivery wakes only explicitly selected
+recipients. A role name in message text is ordinary shared content.
 The shipped syntax is in the [CLI reference](../reference/cli.md).
 
 **Accept when:** broadcast visibility is preserved, only selected recipients
-are woken, and ordinary discussion does not wake Agents.
+are woken by direct delivery, and ordinary discussion remains unaddressed.
+[Silence mediation](#s12-a-quiet-room-is-adjudicated-once-per-stop) may
+independently write an addressed wake.
 
 ### S7: Review and revision continue in one Room
 
@@ -145,7 +147,7 @@ once execution of external side effects.
 
 ### S12: A quiet Room is adjudicated once per stop
 
-**When** a Room with a configured mediator goes quiet — no delivery pending,
+**When** a Room with an effective mediator goes quiet — no delivery pending,
 submitted, or awaiting inspection — **the runtime can** wake that one role to
 adjudicate the stop, through an ordinary addressed record in the Room stream.
 
@@ -153,8 +155,10 @@ adjudicate the stop, through an ordinary addressed record in the Room stream.
 mediator closes the Room, addresses the next step, or records a blocker; and a
 Room that falls quiet again after a wake is treated as ended, waking nobody,
 until a record from someone other than the runtime and the mediator begins a
-new stop. Silence is detected immediately, with no timeout. The wake uses
-the same readiness and recovery behavior as [S4](#s4-a-message-reaches-its-intended-collaborator).
+new stop. A Room with a roster and no mediator setting uses its first role
+without a separate setup step. Silence is detected immediately, with no
+timeout. The wake uses the readiness and recovery behavior of
+[S4](#s4-a-message-reaches-its-intended-collaborator).
 
 ## Current design boundaries
 

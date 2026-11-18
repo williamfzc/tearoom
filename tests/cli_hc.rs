@@ -220,6 +220,8 @@ fn cli_delivers_a_room_mention_to_hc() {
         "project",
         "--add",
         "builder,reviewer",
+        "--mediator",
+        "",
     ]);
     run(&[
         "send",

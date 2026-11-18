@@ -8,6 +8,13 @@ timestamp: 2026-09-10
 
 # Change log
 
+## 2026-11-19 — Default mediation to the first Room role
+
+Applied the [mediator selection rule](architecture/collaboration.md#silence-mediation)
+to existing and new Room rosters. The CLI shows the effective role and still
+supports explicit disablement. A roster change leaves the previous wake
+subject to the same rearm rule as before.
+
 ## 2026-11-19 — Verify an Agent before relying on unattended delivery
 
 Aligned the setup example and [S4](domain/user-stories.md#s4-a-message-reaches-its-intended-collaborator)
