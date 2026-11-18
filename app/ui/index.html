@@ -109,7 +109,7 @@
       </section>
     </main>
 
-    <aside id="drawer" class="drawer" hidden>
+    <aside id="drawer" class="drawer" aria-labelledby="drawer-name" hidden>
       <div id="drawer-resize" class="drawer-resize" aria-hidden="true"></div>
       <header class="drawer-head">
         <span id="drawer-avatar" class="avatar drawer-avatar" aria-hidden="true"></span>
@@ -118,6 +118,7 @@
         <button id="drawer-close" class="drawer-close" type="button"
                 aria-label="Close panel view">✕</button>
       </header>
+      <div id="drawer-feedback" class="drawer-feedback" role="status" hidden></div>
       <div id="drawer-term" class="drawer-term"></div>
     </aside>
   </div>

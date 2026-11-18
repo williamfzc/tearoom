@@ -14,6 +14,8 @@ The [desktop roster](reference/app.md#role-panel-drawer) checks statuses on
 Room entry and keeps a slow lookup from holding up other roles. A live panel
 without status reports now has its own label. The desktop shows the avatars
 and status dots together, and reveals names and labels on hover or focus.
+The [terminal drawer](reference/app.md#role-panel-drawer) stays visible at
+narrow desktop widths and explains when it is waiting for a live panel.
 
 ## 2026-11-19 — Address Room roles from the app composer
 

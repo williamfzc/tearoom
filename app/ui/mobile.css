@@ -49,8 +49,11 @@
   }
 
   .drawer {
-    display: none;
+    position: absolute; z-index: 3; inset: 0 0 0 auto;
+    width: min(100%, 500px); max-width: 100%;
   }
+
+  .drawer-resize { display: none; }
 
   /* The connect card fills the width instead of floating. */
   .gate-card {

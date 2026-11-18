@@ -32,6 +32,7 @@ const drawer = transport.capabilities.terminal
       name: document.getElementById("drawer-name"),
       status: document.getElementById("drawer-status"),
       close: document.getElementById("drawer-close"),
+      feedback: document.getElementById("drawer-feedback"),
       term: document.getElementById("drawer-term"),
       onLayoutChange: chatScrollGuard,
     })

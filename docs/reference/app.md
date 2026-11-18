@@ -87,9 +87,9 @@ the webview renders it with the vendored xterm.js.
   same status cues static.
   The drawer uses the same labels and connects if a panel appears.
   `Turn ended` describes the Agent's turn. Judge the work from its evidence.
-- **No live panel** means there is no currently running panel; address the
-  role when its participation is needed to start one. Previously used missing
-  panels can require reconciliation rather than an automatic restart. See the
+- The drawer explains when it is waiting for output, when no panel is live,
+  and when a connection fails. It stays reachable at narrow desktop widths.
+  A previously used missing panel can require reconciliation. See the
   [delivery contract](../architecture/collaboration.md#conversation-continuity-and-replacement).
 - This is a view over an existing Role's runtime state — no new entity, no
   admission change; whoever can reach the hc socket can already attach.

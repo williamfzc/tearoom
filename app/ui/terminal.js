@@ -35,6 +35,8 @@ export class TerminalDrawer {
     this.attaching = Promise.resolve();
     this.els.close.addEventListener("click", () => this.close());
     window.addEventListener("resize", () => this.#fit());
+    window.addEventListener("focus", () => this.#refreshVisible());
+    document.addEventListener("visibilitychange", () => this.#refreshVisible());
     this.#wireResize();
   }
 
@@ -79,6 +81,12 @@ export class TerminalDrawer {
     this.els.status.textContent = text || "";
   }
 
+  #feedback(text) {
+    if (this.els.feedback.textContent === text) return;
+    this.els.feedback.textContent = text;
+    this.els.feedback.hidden = !text;
+  }
+
   async show(root, room, role) {
     this.close();
     const generation = this.generation;
@@ -92,18 +100,27 @@ export class TerminalDrawer {
     }
     this.els.drawer.hidden = false;
     this.status("connecting…");
+    this.#feedback("Checking for a live terminal…");
     const refresh = async () => {
       try {
         const info = await core().invoke("panel_info", { root, room, role });
         if (generation !== this.generation) return;
         this.status(roleStatus(info));
         if (info.live && !this.term) {
+          this.#feedback("Waiting for terminal output…");
           const attaching = this.#start(root, room, role, generation);
-          this.attaching = attaching.catch(() => {});
-          await attaching;
+          this.attaching = attaching.catch(() => {
+            if (generation === this.generation) this.#feedback("Could not connect to the terminal.");
+          });
+          await this.attaching;
+        } else if (!info.live && !this.term) {
+          this.#feedback("Use @ in the Room to request work from this role.");
         }
       } catch {
-        if (generation === this.generation) this.status("Status unavailable");
+        if (generation === this.generation) {
+          this.status("Status unavailable");
+          if (!this.term) this.#feedback("Could not check for a live terminal.");
+        }
       }
       if (generation === this.generation) this.timer = setTimeout(refresh, 2500);
     };
@@ -120,6 +137,16 @@ export class TerminalDrawer {
     this.fit = new window.FitAddon.FitAddon();
     this.term.loadAddon(this.fit);
     this.term.open(this.els.term);
+    this.term.onRender(() => {
+      if (generation !== this.generation || this.els.feedback.hidden) return;
+      const view = this.term.buffer.active;
+      for (let row = 0; row < this.term.rows; row += 1) {
+        if (view.getLine(view.viewportY + row)?.translateToString(true).trim()) {
+          this.#feedback("");
+          return;
+        }
+      }
+    });
     this.fit.fit();
 
     const channel = new (core().Channel)();
@@ -136,6 +163,7 @@ export class TerminalDrawer {
         this.term = null;
         this.els.term.replaceChildren();
         this.status(message.reason ? `panel ended: ${message.reason}` : "detached");
+        this.#feedback("The terminal disconnected.");
       }
     };
     let result;
@@ -190,6 +218,12 @@ export class TerminalDrawer {
     } catch {
       /* the container can be briefly unmeasured mid-transition */
     }
+  }
+
+  #refreshVisible() {
+    if (document.hidden || !this.open || !this.term) return;
+    this.#fit();
+    this.term.refresh(0, this.term.rows - 1);
   }
 
   // Forwards the viewer size to the core, which relayouts the panel's PTY.

@@ -42,5 +42,12 @@
 }
 .drawer-close:hover { color: var(--ink); }
 
+.drawer-feedback {
+  position: absolute; z-index: 1; inset: 48px 12px 12px;
+  display: grid; place-content: center; text-align: center;
+  padding: 20px; pointer-events: none;
+  color: color-mix(in srgb, var(--ink) 72%, var(--bg)); font-size: 13px;
+}
+
 .drawer-term { flex: 1; min-height: 0; padding: 4px 8px 8px; }
 .drawer-term .xterm { height: 100%; }
