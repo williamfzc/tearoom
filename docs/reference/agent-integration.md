@@ -198,11 +198,6 @@ extension reports Pi lifecycle events to hc. The installed binary prints it
 with `tearoom skill --pi-extension`. A Pi `done` event means its turn
 ended; it does not mean Tearoom's acceptance criteria passed. Probe results
 and remaining validation are recorded in [evaluations](../evaluations.md).
-Verify which binary the role's command actually resolves to: on some hosts
-`pi` is a wrapper around a different agent CLI — a wrapper may reject
-`--extension`, report no hc lifecycle status, and need environment the
-collaboration service does not forward, while the real Pi binary beside it
-works.
 
 ## Startup and observed readiness
 
