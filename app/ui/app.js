@@ -251,7 +251,8 @@ async function refreshState() {
 
 function refreshSelectedRoster() {
   const selection = state.selected;
-  if (drawer && selection) refreshRoster(ui.roomRoles, selection, () => state.selected === selection, composer.setRoleStates);
+  if (drawer && selection) refreshRoster(ui.roomRoles, selection, () => state.selected === selection,
+    (states) => composer.setRoleStates(states));
 }
 
 /* Wiring ------------------------------------------------------------------- */
