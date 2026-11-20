@@ -12,5 +12,9 @@ app/gen/
 # append-only there.
 .tearoom/
 
+# The coding agent's local workspace (plans, session state) is likewise
+# machine-local working state, not repository history.
+.zcode/
+
 .DS_Store
 
