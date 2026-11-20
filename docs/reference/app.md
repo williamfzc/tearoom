@@ -88,7 +88,9 @@ the webview renders it with the vendored xterm.js.
   and terminal approach equal widths, and its indicator yields slightly at
   the width limits. Reduced Motion removes the indicator movement. The
   terminal relayouts live and both scroll positions are preserved.
-- The desktop role strip shows avatars and status dots. Hover or focus an
+- The desktop role strip shows avatars and status dots. Each avatar keeps a
+  slow organic morph and a faint light sweep, faster while the role reports
+  Working; Reduced Motion keeps them static. Hover or focus an
   avatar to see the role name and full status.
   It checks each role as soon as the Room opens,
   then refreshes each result independently. A live panel without a lifecycle
