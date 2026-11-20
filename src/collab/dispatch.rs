@@ -98,7 +98,9 @@ impl<R: Runtime> Dispatcher<R> {
                 state.save(root)?;
             }
         }
-        silence::mediate(&config, &self.store, &mut state)?;
+        silence::mediate(&config, &self.store, &mut state, |panel| {
+            self.runtime.status(panel)
+        })?;
         state.save(root)?;
         Ok(())
     }
@@ -857,9 +859,13 @@ mod tests {
     /// A runtime whose observed panel status the test flips between pumps.
     struct Panel {
         status: Cell<PanelStatus>,
+        on_observe: RefCell<Option<Box<dyn FnOnce()>>>,
     }
     impl Runtime for Panel {
         fn status(&self, _: &str) -> Result<PanelStatus> {
+            if let Some(observe) = self.on_observe.borrow_mut().take() {
+                observe();
+            }
             Ok(self.status.get())
         }
         fn launch(&self, _: &str, _: &str, _: &str, _: &Role, _: &std::path::Path) -> Result<()> {
@@ -896,6 +902,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Working),
+                on_observe: Default::default(),
             },
         };
         append(
@@ -919,6 +926,93 @@ mod tests {
     }
 
     #[test]
+    fn working_panel_blocks_silence_after_a_task_receipt() {
+        let (_temp, existing) = setup(false);
+        Config::update(existing.store.root(), |config| {
+            config.rooms.get_mut("project").unwrap().mediator = None;
+            Ok(())
+        })
+        .unwrap();
+        let dispatcher = Dispatcher {
+            store: existing.store,
+            runtime: Panel {
+                status: Cell::new(PanelStatus::Idle),
+                on_observe: Default::default(),
+            },
+        };
+        let task = append(
+            &dispatcher.store,
+            "builder",
+            &Message {
+                text: "review".into(),
+                mentions: vec!["reviewer".into()],
+                reply_to: None,
+            },
+        );
+        dispatcher.pump().unwrap();
+        dispatcher.runtime.status.set(PanelStatus::Working);
+        append(
+            &dispatcher.store,
+            "reviewer",
+            &Message {
+                text: "started".into(),
+                reply_to: Some(RecordRef {
+                    room: "project".into(),
+                    seq: task,
+                }),
+                ..Message::default()
+            },
+        );
+        dispatcher.pump().unwrap();
+        assert_eq!(
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
+            DeliveryState::Completed
+        );
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 2);
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        let records = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[2].author, silence::SILENCE_AUTHOR);
+    }
+
+    #[test]
+    fn task_appended_after_dispatch_scan_blocks_silence() {
+        let (_temp, existing) = setup(false);
+        Config::update(existing.store.root(), |config| {
+            config.rooms.get_mut("project").unwrap().mediator = None;
+            Ok(())
+        })
+        .unwrap();
+        let writer = Store::open(existing.store.root()).unwrap();
+        let dispatcher = Dispatcher {
+            store: existing.store,
+            runtime: Panel {
+                status: Cell::new(PanelStatus::Idle),
+                on_observe: RefCell::new(Some(Box::new(move || {
+                    append(
+                        &writer,
+                        "builder",
+                        &Message {
+                            text: "review".into(),
+                            mentions: vec!["reviewer".into()],
+                            reply_to: None,
+                        },
+                    );
+                }))),
+            },
+        };
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 1);
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 1);
+        assert_eq!(
+            dispatcher.deliveries().unwrap()[0].deliveries[0].state,
+            DeliveryState::Submitted
+        );
+    }
+
+    #[test]
     fn a_quiet_room_wakes_its_default_mediator_once_per_stop() {
         let (_temp, existing) = setup(false);
         Config::update(existing.store.root(), |config| {
@@ -930,6 +1024,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Idle),
+                on_observe: Default::default(),
             },
         };
         // An empty ledger with no work in flight is the first stop: one wake.

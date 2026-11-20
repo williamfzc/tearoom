@@ -101,13 +101,14 @@ disables mediation. A Room with an empty roster has no mediator. See the
 [CLI reference](../reference/cli.md#room-lifecycle) for the available flags.
 The mediator is an ordinary Role with its own command and instructions.
 
-When every delivery of the Room is terminal — nothing pending, submitted, or
-awaiting inspection — the Room is quiet, and the next dispatch pass appends
-one silence-wake record: signed by the runtime (`tearoom`), addressed to the
-mediator with `--to` semantics, asking it to close the Room, direct the next
-step, or record a blocker. From there the normal pipeline owns everything:
-the record routes through hc like any addressed message, appears in
-`collab deliveries`, and completes on the mediator's turn or reply.
+The dispatcher considers a quiet stop once every delivery is terminal and no
+roster panel is observed working or blocked. It appends a silence wake only
+if the Room still ends at the last scanned record. If another record arrives
+first, the next pass evaluates the updated Room. The runtime signs the wake
+`tearoom` and addresses it to the mediator, asking it to close the Room,
+direct the next step, or record a blocker. The wake routes through hc like any
+addressed message, appears in `collab deliveries`, and completes on the
+mediator's turn or reply.
 
 One stop is mediated once. If the Room falls quiet again after a wake, it has
 ended normally and the runtime does nothing; a new stop requires a record

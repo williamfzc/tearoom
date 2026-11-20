@@ -127,6 +127,28 @@ impl Store {
             .collect())
     }
     pub fn append(&self, room: &str, author: &str, request: AppendRequest<'_>) -> Result<Record> {
+        self.append_record(room, author, request, None)?
+            .context("unconditional append skipped")
+    }
+
+    /// Append only while the room still ends at the observed sequence.
+    pub(crate) fn append_at_tip(
+        &self,
+        room: &str,
+        author: &str,
+        request: AppendRequest<'_>,
+        observed: u64,
+    ) -> Result<Option<Record>> {
+        self.append_record(room, author, request, Some(observed))
+    }
+
+    fn append_record(
+        &self,
+        room: &str,
+        author: &str,
+        request: AppendRequest<'_>,
+        observed: Option<u64>,
+    ) -> Result<Option<Record>> {
         let room = room.trim();
         validate_name(room)?;
         let author = author.trim();
@@ -138,6 +160,10 @@ impl Store {
         self.recover(room)?;
         let ledger: Vec<Ledger> = read_jsonl(&self.path(room, "idempotency.jsonl"))?;
         let records = self.records(room)?;
+        let tip = records.last().map_or(0, |r| r.seq);
+        if observed.is_some_and(|seq| seq != tip) {
+            return Ok(None);
+        }
         if !key.is_empty() {
             if let Some(entry) = ledger.iter().find(|e| e.author == author && e.key == key) {
                 if entry.fingerprint != digest {
@@ -146,12 +172,13 @@ impl Store {
                 return records
                     .into_iter()
                     .find(|r| r.seq == entry.seq)
+                    .map(Some)
                     .context("idempotency key lost its original record");
             }
         }
         let record = Record {
             room: room.into(),
-            seq: records.last().map_or(1, |r| r.seq + 1),
+            seq: tip + 1,
             author: author.into(),
             at: now(),
             content: RawValue::from_string(content)?,
@@ -174,7 +201,7 @@ impl Store {
             )?;
             self.recover(room)?;
         }
-        Ok(record)
+        Ok(Some(record))
     }
     fn path(&self, room: &str, name: &str) -> PathBuf {
         self.root.join("rooms").join(room).join(name)
@@ -274,6 +301,40 @@ mod tests {
             )
             .is_err());
         assert_eq!(fs::read_to_string(path).unwrap(), content);
+    }
+
+    #[test]
+    fn conditional_append_checks_the_locked_room_tip() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init(dir.path()).unwrap();
+        store.create_room("root", "").unwrap();
+        store
+            .append(
+                "root",
+                "worker",
+                AppendRequest {
+                    content: "\"new task\"",
+                    idempotency_key: "",
+                },
+            )
+            .unwrap();
+        let request = || AppendRequest {
+            content: "\"silence wake\"",
+            idempotency_key: "silence",
+        };
+        assert!(store
+            .append_at_tip("root", "tearoom", request(), 0)
+            .unwrap()
+            .is_none());
+        assert_eq!(store.read("root", 0).unwrap().len(), 1);
+        assert_eq!(
+            store
+                .append_at_tip("root", "tearoom", request(), 1)
+                .unwrap()
+                .unwrap()
+                .seq,
+            2
+        );
     }
 
     #[test]

@@ -2,8 +2,9 @@
 //! The wake is an ordinary addressed record — signed by the runtime and routed
 //! by the normal pipeline — and each stop is mediated once: a new wake needs
 //! third-party records after the previous one.
+use super::super::runtime::PanelStatus;
 use super::super::state::{DeliveryState, DispatchState};
-use super::super::{message_content, Config, Message};
+use super::super::{message_content, panel_name, Config, Message};
 use crate::core::{AppendRequest, Record};
 use crate::store::Store;
 use anyhow::Result;
@@ -19,7 +20,7 @@ fn wake(record: &Record) -> Option<String> {
     if message.mentions.len() != 1 {
         return None;
     }
-    message.mentions.pop()
+    message.mentions.pop().filter(|role| !role.is_empty())
 }
 
 fn third_party(record: &Record, mediator: &str) -> bool {
@@ -57,20 +58,32 @@ fn quiet(state: &DispatchState, room: &str) -> bool {
 /// records from that wake onward; a first pass without a marker scans the Room.
 /// The append precedes the marker update, so a crash between them is healed
 /// by the next pass reading the already-appended wake.
-pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState) -> Result<()> {
-    for card in store.rooms()? {
-        let Some(mediator) = config
-            .rooms
-            .get(&card.id)
-            .and_then(|binding| binding.effective_mediator())
-        else {
+pub(super) fn mediate(
+    config: &Config,
+    store: &Store,
+    state: &mut DispatchState,
+    panel_status: impl Fn(&str) -> Result<PanelStatus>,
+) -> Result<()> {
+    'rooms: for card in store.rooms()? {
+        let Some(binding) = config.rooms.get(&card.id) else {
+            continue;
+        };
+        let Some(mediator) = binding.effective_mediator() else {
             continue;
         };
         if !quiet(state, &card.id) {
             continue;
         }
         let last_wake = state.mediated.get(&card.id).copied().unwrap_or(0);
-        let records = store.read(&card.id, last_wake.saturating_sub(1))?;
+        let mut records = store.read(&card.id, last_wake.saturating_sub(1))?;
+        if records
+            .first()
+            .is_some_and(|record| record.seq == last_wake && wake(record).is_none())
+        {
+            // An older build could track a wake addressed to the empty string.
+            state.mediated.remove(&card.id);
+            records = store.read(&card.id, 0)?;
+        }
         let previous = records
             .iter()
             .enumerate()
@@ -83,21 +96,30 @@ pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState)
             }
             None => (&records[..], mediator),
         };
-        if !rearmed(
-            since_wake,
-            previous.is_some() || last_wake != 0,
-            previous_mediator,
-        ) {
+        if !rearmed(since_wake, previous.is_some(), previous_mediator) {
             continue;
         }
-        let seq = records.last().map_or(1, |record| record.seq + 1);
+        let scanned = state.cursor.get(&card.id).copied().unwrap_or_default();
+        if records.last().is_some_and(|record| record.seq > scanned) {
+            continue;
+        }
+        for role in &binding.roles {
+            let panel = panel_name(store.root(), &card.id, role)?;
+            if matches!(
+                panel_status(&panel)?,
+                PanelStatus::Working | PanelStatus::Blocked
+            ) {
+                continue 'rooms;
+            }
+        }
+        let seq = scanned + 1;
         let text = format!(
             "Room {} is quiet with no work in flight. Mediate the stop: if the goal is met, \
              record a closing sentence; if work should continue, address the next role with \
              --to; if blocked, record the blocker and stop.",
             card.name
         );
-        let record = store.append(
+        if let Some(record) = store.append_at_tip(
             &card.id,
             SILENCE_AUTHOR,
             AppendRequest {
@@ -108,8 +130,10 @@ pub(super) fn mediate(config: &Config, store: &Store, state: &mut DispatchState)
                 })?,
                 idempotency_key: &format!("silence-{seq}"),
             },
-        )?;
-        state.mediated.insert(card.id.clone(), record.seq);
+            scanned,
+        )? {
+            state.mediated.insert(card.id.clone(), record.seq);
+        }
     }
     Ok(())
 }
@@ -206,7 +230,8 @@ mod tests {
             },
         );
         let mut state = DispatchState::default();
-        mediate(&config, &store, &mut state).unwrap();
+        let idle = |_: &str| Ok(PanelStatus::Idle);
+        mediate(&config, &store, &mut state, idle).unwrap();
         let wake = store.read("project", 0).unwrap();
         assert_eq!(wake.len(), 1);
         assert_eq!(wake[0].author, SILENCE_AUTHOR);
@@ -214,12 +239,13 @@ mod tests {
         assert_eq!(message.mentions, ["referee"]);
         assert!(message.text.contains("Mediate the stop"));
         assert_eq!(state.mediated.get("project"), Some(&1));
+        state.cursor.insert("project".into(), 1);
         // The same quiet state mediates nothing more.
-        mediate(&config, &store, &mut state).unwrap();
+        mediate(&config, &store, &mut state, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 1);
         let binding = config.rooms.get_mut("project").unwrap();
         binding.roles.push("auditor".into());
-        mediate(&config, &store, &mut state).unwrap();
+        mediate(&config, &store, &mut state, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 1);
         // A reply from the role originally woken leaves the stop closed.
         store
@@ -232,7 +258,8 @@ mod tests {
                 },
             )
             .unwrap();
-        mediate(&config, &store, &mut state).unwrap();
+        state.cursor.insert("project".into(), 2);
+        mediate(&config, &store, &mut state, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 2);
         // A third party speaking arms the next stop.
         store
@@ -245,12 +272,52 @@ mod tests {
                 },
             )
             .unwrap();
-        mediate(&config, &store, &mut state).unwrap();
+        state.cursor.insert("project".into(), 3);
+        mediate(&config, &store, &mut state, idle).unwrap();
         let records = store.read("project", 0).unwrap();
         assert_eq!(records.len(), 4);
         assert_eq!(records[3].author, SILENCE_AUTHOR);
         let message: Message = serde_json::from_str(records[3].content.get()).unwrap();
         assert_eq!(message.mentions, ["auditor"]);
         assert_eq!(state.mediated.get("project"), Some(&4));
+    }
+
+    #[test]
+    fn disabled_mediator_stays_quiet_and_a_blank_wake_does_not_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::init(dir.path()).unwrap();
+        store.create_room("project", "").unwrap();
+        let mut config = Config::default();
+        config.rooms.insert(
+            "project".into(),
+            crate::collab::RoomRoles {
+                roles: vec!["referee".into()],
+                mediator: Some(String::new()),
+            },
+        );
+        let mut state = DispatchState::default();
+        mediate(&config, &store, &mut state, |_| {
+            unreachable!("disabled mediator does not observe panels")
+        })
+        .unwrap();
+        assert!(store.read("project", 0).unwrap().is_empty());
+        store
+            .append(
+                "project",
+                SILENCE_AUTHOR,
+                AppendRequest {
+                    content: record("project", 1, SILENCE_AUTHOR, &[""]).content.get(),
+                    idempotency_key: "silence-1",
+                },
+            )
+            .unwrap();
+        state.cursor.insert("project".into(), 1);
+        state.mediated.insert("project".into(), 1);
+        config.rooms.get_mut("project").unwrap().mediator = None;
+        mediate(&config, &store, &mut state, |_| Ok(PanelStatus::Idle)).unwrap();
+        let records = store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(wake(&records[1]).as_deref(), Some("referee"));
+        assert_eq!(state.mediated.get("project"), Some(&2));
     }
 }
