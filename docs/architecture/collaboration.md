@@ -165,13 +165,14 @@ start work in that gap. A blocked panel is still refused by hc. This remains
 an open reliability limit, not an exactly-once or exclusive-use guarantee.
 
 The runtime distinguishes pending, submission in progress, submitted, and
-uncertain delivery. A successful terminal submission is not proof that the
-Agent completed the work. A finished turn or matching Room reply can move a
-submitted delivery to completed, but a reply is an unverified claim: a
-signature and reference do not authenticate its author. Replies cannot
-complete pending or uncertain deliveries. The Agent records its result or
-blocker in the Room and references the triggering record; inspect that evidence
-when deciding whether the claimed work is complete.
+uncertain delivery. A finished turn can complete a submitted delivery. A
+reply can complete a pending, submitted, or uncertain delivery when it is
+written in the same Room, signed by the target role, and references the exact
+addressed record. The first dispatch pass with these reply rules also checks
+already-scanned replies for outstanding deliveries. A matching reply releases
+later deliveries for that role in queue order. Signatures and reply
+references are unverified. Inspect the Room and panel evidence when deciding
+whether the Agent finished the claimed work.
 
 On interruption, refresh hc's terminal snapshot and inspect the Room before
 deciding what to do. hc event sequence numbers restart and missed events yield
@@ -207,8 +208,8 @@ registered workspaces. It does not stop the shared hc service or unrelated
 terminals. If cleanup fails, dispatch stays stopped and `service stop` must be
 retried before another activation. After a successful stop, the persistent
 registry lets a later activation recover registered workspaces. On service
-startup, submitted deliveries are changed to unknown and require inspection;
-the service does not replay them automatically.
+startup, submitted deliveries become unknown and follow the
+[delivery recovery rules](#delivery-and-recovery).
 
 ```mermaid
 flowchart TD
@@ -268,9 +269,8 @@ operating-system permissions of that user.
   and does not stop independent hc terminals or another user's work. The
   workspace registry is retained for later activation.
 - A service restart changes submitted deliveries to unknown before resuming
-  dispatch. The operator must inspect and resolve them; the service does not
-  silently replay possibly submitted work or claim that an Agent conversation
-  resumed.
+  dispatch. If no matching Room reply exists, inspect the Room and panel
+  before resolving the delivery.
 - The per-user state directory and Unix socket use user-only permissions. The
   service protocol is local to the user's account; it is not a remote hosting
   interface or a separate workspace authorization boundary.

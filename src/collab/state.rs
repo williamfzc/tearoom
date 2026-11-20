@@ -44,6 +44,9 @@ pub struct DispatchState {
     pub version: u32,
     #[serde(default, deserialize_with = "null_default")]
     pub cursor: BTreeMap<String, u64>,
+    /// Whether a pump checked receipts ignored by the previous routing rules.
+    #[serde(default)]
+    pub historical_replies_reconciled: bool,
     #[serde(default, deserialize_with = "null_default")]
     pub intents: Vec<Intent>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -58,6 +61,7 @@ impl Default for DispatchState {
         Self {
             version: 1,
             cursor: BTreeMap::new(),
+            historical_replies_reconciled: false,
             intents: Vec::new(),
             fresh: BTreeMap::new(),
             mediated: BTreeMap::new(),
@@ -121,6 +125,7 @@ mod tests {
         let state: DispatchState =
             serde_json::from_str(r#"{"version":1,"cursor":null,"intents":null}"#).unwrap();
         assert!(state.intents.is_empty());
+        assert!(!state.historical_replies_reconciled);
     }
 
     #[test]

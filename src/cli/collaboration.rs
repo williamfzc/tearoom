@@ -236,10 +236,6 @@ mod tests {
     fn record_delivery(dispatcher: &Dispatcher<Recorder>, state: DeliveryState) {
         let panel = panel_name(dispatcher.store.root(), "project", "reviewer").unwrap();
         DispatchState {
-            version: 1,
-            cursor: Default::default(),
-            fresh: Default::default(),
-            mediated: Default::default(),
             intents: vec![Intent {
                 room: "project".into(),
                 seq: 1,
@@ -251,6 +247,7 @@ mod tests {
                     error: String::new(),
                 }],
             }],
+            ..DispatchState::default()
         }
         .save(dispatcher.store.root())
         .unwrap();

@@ -11,7 +11,7 @@ use super::state::{dispatch_lock, DeliveryState, DispatchState, Intent};
 use super::{panel_name, Config};
 use crate::store::Store;
 use anyhow::{bail, Context, Result};
-use routing::{head_of_queue, mark_reply, record_intent};
+use routing::head_of_queue;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -69,17 +69,7 @@ impl<R: Runtime> Dispatcher<R> {
         state.recover_submitting();
         state.save(root)?;
         let config = Config::load(root)?;
-        for room in self.store.rooms()? {
-            for record in self
-                .store
-                .read(&room.id, *state.cursor.get(&room.id).unwrap_or(&0))?
-            {
-                mark_reply(&mut state, &record);
-                record_intent(&mut state, &config, root, &record)?;
-                state.cursor.insert(room.id.clone(), record.seq);
-                state.save(root)?;
-            }
-        }
+        routing::scan(&self.store, &config, &mut state)?;
         for intent in &mut state.intents {
             for delivery in &mut intent.deliveries {
                 if delivery.state == DeliveryState::Submitted {
@@ -306,11 +296,13 @@ mod tests {
     struct Fake {
         root: PathBuf,
         sends: Cell<usize>,
+        status: Cell<PanelStatus>,
+        started: Cell<bool>,
         fail: bool,
     }
     impl Runtime for Fake {
         fn status(&self, _: &str) -> Result<PanelStatus> {
-            Ok(PanelStatus::Idle)
+            Ok(self.status.get())
         }
         fn launch(&self, _: &str, _: &str, _: &str, _: &Role, _: &std::path::Path) -> Result<()> {
             unreachable!("dispatch tests reach submit through an idle panel")
@@ -322,17 +314,18 @@ mod tests {
             unreachable!("dispatch tests reach submit through an idle panel")
         }
         fn submit(&self, _: &str, _: &str, _: PanelStatus) -> Result<SubmitResult> {
-            assert_eq!(
-                DispatchState::load(&self.root)?.intents[0].deliveries[0].state,
-                DeliveryState::Submitting
-            );
+            assert!(DispatchState::load(&self.root)?
+                .intents
+                .iter()
+                .flat_map(|intent| &intent.deliveries)
+                .any(|delivery| delivery.state == DeliveryState::Submitting));
             self.sends.set(self.sends.get() + 1);
             if self.fail {
                 bail!("transport disconnected after submission");
             }
             Ok(SubmitResult {
                 accepted: true,
-                started: Some(true),
+                started: Some(self.started.get()),
                 pending: false,
             })
         }
@@ -379,6 +372,8 @@ mod tests {
         let runtime = Fake {
             root: store.root().into(),
             sends: Cell::new(0),
+            status: Cell::new(PanelStatus::Idle),
+            started: Cell::new(true),
             fail,
         };
         (temp, Dispatcher { store, runtime })
@@ -391,10 +386,6 @@ mod tests {
         let panel = panel_name(root, "project", "reviewer").unwrap();
         let other = panel_name(root, "other", "reviewer").unwrap();
         DispatchState {
-            version: 1,
-            cursor: Default::default(),
-            fresh: Default::default(),
-            mediated: Default::default(),
             intents: vec![
                 Intent {
                     room: "project".into(),
@@ -430,6 +421,7 @@ mod tests {
                     }],
                 },
             ],
+            ..DispatchState::default()
         }
         .save(root)
         .unwrap();
@@ -527,6 +519,87 @@ mod tests {
             dispatcher.deliveries().unwrap()[0].deliveries[0].state,
             DeliveryState::Pending
         );
+    }
+
+    #[test]
+    fn exact_reply_recovers_dispatch_queue() {
+        for initial in [DeliveryState::Unknown, DeliveryState::Pending] {
+            let (_temp, dispatcher) = setup(false);
+            let (store, runtime) = (&dispatcher.store, &dispatcher.runtime);
+            store.create_room("other", "").unwrap();
+            let addressed = |text: &str| Message {
+                text: text.into(),
+                mentions: vec!["reviewer".into()],
+                reply_to: None,
+            };
+            let first = append(store, "builder", &addressed("first"));
+            if initial == DeliveryState::Pending {
+                runtime.status.set(PanelStatus::Working);
+            }
+            runtime.started.set(false);
+            dispatcher.pump().unwrap();
+            let reply = |seq| Message {
+                text: "review finished".into(),
+                reply_to: Some(RecordRef {
+                    room: "project".into(),
+                    seq,
+                }),
+                ..Message::default()
+            };
+            append(store, "builder", &reply(first));
+            // A reply written before its target remains invalid during reconciliation.
+            append(store, "reviewer", &reply(first + 3));
+            let second = append(store, "builder", &addressed("second"));
+            let third = append(store, "builder", &addressed("third"));
+            store
+                .append(
+                    "other",
+                    "reviewer",
+                    AppendRequest {
+                        content: &serde_json::to_string(&reply(first)).unwrap(),
+                        idempotency_key: "",
+                    },
+                )
+                .unwrap();
+            dispatcher.pump().unwrap();
+            dispatcher.pump().unwrap();
+            let sends = usize::from(initial == DeliveryState::Unknown);
+            assert_eq!(runtime.sends.get(), sends);
+            let intents = dispatcher.deliveries().unwrap();
+            assert_eq!(intents[0].deliveries[0].state, initial);
+            if initial == DeliveryState::Unknown {
+                assert_eq!(
+                    intents[0].deliveries[0].error,
+                    "hc did not confirm that the task started"
+                );
+            }
+            assert_eq!(intents[1].deliveries[0].state, DeliveryState::Pending);
+
+            let receipt = append(store, "reviewer", &reply(first));
+            if initial == DeliveryState::Unknown {
+                // The previous dispatcher had already scanned the receipt.
+                let mut state = DispatchState::load(store.root()).unwrap();
+                state.cursor.insert("project".into(), receipt);
+                state.historical_replies_reconciled = false;
+                state.save(store.root()).unwrap();
+            }
+            runtime.status.set(PanelStatus::Idle);
+            runtime.started.set(true);
+            dispatcher.pump().unwrap();
+            dispatcher.pump().unwrap();
+            let intents = dispatcher.deliveries().unwrap();
+            assert_eq!(intents.len(), 3);
+            assert_eq!(intents[0].deliveries[0].state, DeliveryState::Completed);
+            assert!(intents[0].deliveries[0].error.is_empty());
+            assert_eq!(intents[1].seq, second);
+            assert_eq!(intents[1].deliveries[0].state, DeliveryState::Submitted);
+            assert_eq!(intents[2].seq, third);
+            assert_eq!(intents[2].deliveries[0].state, DeliveryState::Pending);
+            assert_eq!(runtime.sends.get(), sends + 1);
+            let state = DispatchState::load(store.root()).unwrap();
+            assert!(state.historical_replies_reconciled);
+            assert_eq!(state.cursor["project"], receipt);
+        }
     }
 
     #[test]

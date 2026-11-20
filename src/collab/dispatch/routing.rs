@@ -1,18 +1,51 @@
-//! Pure record-to-delivery routing and per-role queue ordering.
+//! Routes Room records into the dispatch ledger and orders each role's queue.
 use super::super::state::{Delivery, DeliveryState, DispatchState, Intent};
 use super::super::{panel_name, Config, Message};
 use crate::core::Record;
+use crate::store::Store;
 use anyhow::Result;
 use std::collections::BTreeSet;
 
-pub(super) fn mark_reply(state: &mut DispatchState, record: &Record) {
+pub(super) fn scan(store: &Store, config: &Config, state: &mut DispatchState) -> Result<()> {
+    let root = store.root();
+    for room in store.rooms()? {
+        let cursor = state.cursor.get(&room.id).copied().unwrap_or(0);
+        let mut after = cursor;
+        if !state.historical_replies_reconciled {
+            for intent in &state.intents {
+                if intent.room == room.id && intent.deliveries.iter().any(awaits_reply) {
+                    after = after.min(intent.seq);
+                }
+            }
+        }
+        for record in store.read(&room.id, after)? {
+            mark_reply(state, &record);
+            if record.seq > cursor {
+                record_intent(state, config, root, &record)?;
+                state.cursor.insert(room.id.clone(), record.seq);
+                state.save(root)?;
+            }
+        }
+    }
+    state.historical_replies_reconciled = true;
+    Ok(())
+}
+
+fn awaits_reply(delivery: &Delivery) -> bool {
+    matches!(
+        delivery.state,
+        DeliveryState::Pending | DeliveryState::Submitted | DeliveryState::Unknown
+    )
+}
+
+fn mark_reply(state: &mut DispatchState, record: &Record) {
     let Ok(message) = serde_json::from_str::<Message>(record.content.get()) else {
         return;
     };
     let Some(reply) = message.reply_to else {
         return;
     };
-    if record.author.is_empty() || record.room != reply.room {
+    if record.author.is_empty() || record.room != reply.room || reply.seq >= record.seq {
         return;
     }
     if let Some(delivery) = state
@@ -22,7 +55,7 @@ pub(super) fn mark_reply(state: &mut DispatchState, record: &Record) {
         .and_then(|i| {
             i.deliveries
                 .iter_mut()
-                .find(|d| d.role == record.author && d.state == DeliveryState::Submitted)
+                .find(|d| d.role == record.author && awaits_reply(d))
         })
     {
         delivery.state = DeliveryState::Completed;
@@ -30,7 +63,7 @@ pub(super) fn mark_reply(state: &mut DispatchState, record: &Record) {
     }
 }
 
-pub(super) fn record_intent(
+fn record_intent(
     state: &mut DispatchState,
     config: &Config,
     root: &std::path::Path,
