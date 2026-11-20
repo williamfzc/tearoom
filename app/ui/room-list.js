@@ -1,6 +1,6 @@
 // Room navigation for the shared app rail: workspace groups, room trees, and search.
 
-import { avatarFill, element, timeLabel } from "./ui.js";
+import { avatarFill, element, ageLabel } from "./ui.js";
 
 function roomPreview(room) {
   const last = room.last;
@@ -20,7 +20,7 @@ function roomButton(room, selected) {
   const text = element("span", "row-text");
   const top = element("span", "row-top");
   top.append(element("span", "row-name", room.name));
-  const time = room.last ? timeLabel(room.last.at) : "";
+  const time = room.last ? ageLabel(room.last.at) : "";
   if (time) top.append(element("time", "row-time", time));
   text.append(top, element("span", "row-preview", roomPreview(room)));
   button.append(avatar, text);

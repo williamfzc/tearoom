@@ -70,13 +70,19 @@
 .msg.mine .routes { text-align: right; }
 .routes .route { color: var(--accent); font-weight: 600; }
 
-/* The small expand button under a role's message: opens its live panel. */
-.panel-jump {
+/* The small expand button under a role's message: opens its live panel.
+   Its neighbor copies the message text. */
+.panel-jump, .msg-copy {
   margin: 4px 4px 0; border: 1px solid var(--line); background: transparent;
   color: var(--muted); font-size: 10px; line-height: 1;
   border-radius: 6px; padding: 3px 7px; cursor: pointer;
 }
-.panel-jump:hover { color: var(--accent); border-color: var(--accent); }
+.panel-jump:hover, .msg-copy:hover { color: var(--accent); border-color: var(--accent); }
+.msg-copy { opacity: 0; }
+.msg:hover .msg-copy, .msg-copy:focus-visible { opacity: 1; }
+.msg-copy:disabled { cursor: default; }
+/* Touch faces have no hover: the copy affordance stays visible there. */
+@media (hover: none) { .msg-copy { opacity: 1; } }
 .msg.mine .routes .route { color: var(--accent); }
 /* The role strip keeps details outside its layout. */
 .roster { position: relative; margin: 0 16px; padding: 7px 0; border-block: 1px solid var(--line); }

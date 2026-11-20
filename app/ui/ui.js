@@ -81,21 +81,51 @@ export function roleStatus(info) {
 }
 
 const checkingStatus = new WeakSet();
-export function refreshRoster(node, { root, id }, isCurrent) {
-  node.querySelectorAll(".role-status").forEach(async (status) => {
-    if (checkingStatus.has(status)) return;
+
+// The hc report carries no clock, so the strip times Working from the
+// transition it observes. Until one is seen, no duration shows: a count
+// invented from an unknown start would lie.
+const workingSince = new WeakMap();
+
+function elapsedLabel(since, at) {
+  const total = Math.max(0, Math.round((at - since) / 1000));
+  const minutes = Math.floor(total / 60);
+  return total < 60 ? `${total}s` : minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+// Refreshes every role pill in the strip and, once a full round of lookups
+// settles, reports each role's observed state to `onStates` (a Map).
+export function refreshRoster(node, { root, id }, isCurrent, onStates = null) {
+  const statuses = [...node.querySelectorAll(".role-status")];
+  const observe = async (status) => {
+    if (checkingStatus.has(status)) return null;
     checkingStatus.add(status);
     const info = await window.__TAURI__.core.invoke("panel_info", {
       root, room: id, role: status.dataset.role,
     }).catch(() => null);
     checkingStatus.delete(status);
-    if (!status.isConnected || !isCurrent()) return;
-    const label = roleStatus(info);
+    if (!status.isConnected || !isCurrent()) return null;
+    const state = info ? (info.live ? info.status : "missing") : "unavailable";
+    const watch = workingSince.get(status);
+    // The count starts only at an observed return to Working; joining
+    // mid-work shows no invented start time.
+    if (!watch) workingSince.set(status, { state, since: undefined });
+    else if (state !== watch.state) {
+      watch.state = state;
+      watch.since = state === "working" ? Date.now() : undefined;
+    }
+    const since = state === "working" ? workingSince.get(status)?.since : undefined;
+    const label = since ? `${roleStatus(info)} · ${elapsedLabel(since, Date.now())}` : roleStatus(info);
     if (status.textContent !== label) {
       status.textContent = label;
       status.closest("button").setAttribute("aria-label", `Open @${status.dataset.role}'s terminal. ${label}.`);
     }
-    status.dataset.state = info ? (info.live ? info.status : "missing") : "unavailable";
+    status.dataset.state = state;
+    return [status.dataset.role, state];
+  };
+  Promise.all(statuses.map(observe)).then((entries) => {
+    const settled = entries.filter(Boolean);
+    if (settled.length === statuses.length && isCurrent()) onStates?.(new Map(settled));
   });
 }
 
@@ -134,6 +164,50 @@ export function timeLabel(at) {
   return Number.isNaN(date.getTime())
     ? ""
     : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+// Rail rows age better with coarse labels than with clock times: a row that
+// said 14:02 yesterday should not still say 14:02.
+export function ageLabel(at) {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return "";
+  const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+// Clipboard write without the Tauri clipboard plugin: the async API first,
+// then the selection fallback the webviews still honor.
+function legacyCopy(text) {
+  const area = Object.assign(document.createElement("textarea"), { value: text, readOnly: true });
+  area.style.cssText = "position:fixed;opacity:0";
+  document.body.append(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  return copied;
+}
+
+async function copyText(button, text) {
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch {
+    copied = legacyCopy(text);
+  }
+  button.textContent = copied ? "✓" : "×";
+  button.disabled = true;
+  setTimeout(() => {
+    button.textContent = "⧉";
+    button.disabled = false;
+  }, 1200);
 }
 
 export class MessageList {
@@ -213,6 +287,12 @@ export class MessageList {
       jump.addEventListener("click", () => this.onRole?.(record.author));
       node.append(jump);
     }
+    const copy = element("button", "msg-copy", "⧉");
+    copy.type = "button";
+    copy.title = "Copy message";
+    copy.setAttribute("aria-label", "Copy message");
+    copy.addEventListener("click", () => copyText(copy, info.text));
+    node.append(copy);
     this.list.append(node);
     this.count += 1;
     this.lastSeq = Math.max(this.lastSeq, record.seq);

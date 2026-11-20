@@ -42,6 +42,7 @@ export class Composer {
     const key = target ? JSON.stringify([target.root, target.id]) : null;
     const field = this.els.text;
     this.roles = Array.isArray(room?.roles) ? room.roles : [];
+    this.roomName = room?.name || "";
     if (key !== this.draftKey) {
       if (this.draftKey && (field.value || this.recipients.size)) {
         this.drafts.set(this.draftKey, { text: field.value, to: this.recipients });
@@ -61,6 +62,13 @@ export class Composer {
     this.#renderRecipients();
     this.#resize();
     this.#updateSendState();
+  }
+
+  // Roster-observed role states: addressed roles that are working make the
+  // runtime queue the message, so the placeholder says so.
+  setRoleStates(states) {
+    this.roleStates = states;
+    this.#renderRecipients();
   }
 
   clearDrafts() {
@@ -144,6 +152,10 @@ export class Composer {
       });
       return chip;
     }));
+    const busy = [...this.recipients].filter((role) => this.roleStates?.get(role) === "working");
+    this.els.text.placeholder = busy.length
+      ? `Queue for ${busy.map((role) => `@${role}`).join(", ")} — working…`
+      : `Message ${this.roomName}`.trimEnd();
   }
 
   #closeSuggestions() {

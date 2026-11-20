@@ -115,7 +115,6 @@ function updateRoomChrome(room) {
   avatarFill(ui.roomAvatar, room.name);
   renderRoster(ui.roomRoles, room, drawer ? openRolePanel : null);
   refreshSelectedRoster();
-  document.getElementById("text").placeholder = `Message ${room.name}`;
 }
 
 function isRoleSender(author) {
@@ -252,7 +251,7 @@ async function refreshState() {
 
 function refreshSelectedRoster() {
   const selection = state.selected;
-  if (drawer && selection) refreshRoster(ui.roomRoles, selection, () => state.selected === selection);
+  if (drawer && selection) refreshRoster(ui.roomRoles, selection, () => state.selected === selection, composer.setRoleStates);
 }
 
 /* Wiring ------------------------------------------------------------------- */

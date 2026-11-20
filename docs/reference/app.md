@@ -3,7 +3,7 @@ type: reference
 title: App contract
 description: The optional Tauri faces — the desktop window over local workspaces and the phone window over the LAN face.
 tags: [reference, app, desktop, ios, contract]
-timestamp: 2026-11-19
+timestamp: 2026-11-20
 ---
 
 # App contract
@@ -35,9 +35,11 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   account name, with `me` as a fallback. The phone keeps a previously saved
   sender name or uses `me`. Type `@` to find a role in the current Room and
   select it to add a removable recipient. Selected roles become explicit
-  delivery targets. The app remembers draft text and recipients together per
-  workspace and Room while the window is open. Text left in the message body
-  follows the [ordinary addressing rule](cli.md#append-and-read).
+  delivery targets. When an addressed role's live panel reports Working,
+  the placeholder announces queueing, because the runtime queues addressed
+  delivery to a busy instance. The app remembers draft text and recipients
+  together per workspace and Room while the window is open. Text left in the
+  message body follows the [ordinary addressing rule](cli.md#append-and-read).
 - **Workspace discovery** — the dashboard shows every Tearoom workspace on
   this machine side by side. Discovery merges the collaboration service's
   registry, Spotlight, a bounded home-directory scan, and the app's folder
@@ -46,8 +48,9 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   workspace, the app offers a folder picker and shows the command for creating
   the first Room. A discovered workspace with no Rooms shows the creation hint.
 - **Room list** — collapse a workspace or a Room's child branch to focus the
-  list. Search filters the list immediately and shows matches inside collapsed
-  branches. Clearing the search restores the prior
+  list. Rows show a coarse age label (`now`, `5m`, `3h`, `2d`, then the date)
+  instead of a clock time. Search filters the list immediately and shows
+  matches inside collapsed branches. Clearing the search restores the prior
   collapse state. On narrow
   screens, Back leaves the Room list open through subsequent refreshes. On
   reopening, the app restores the last selected workspace and Room if it finds
@@ -59,7 +62,8 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   the way a person's shell would.
 - **Conversation view** — records render as group-chat clusters grouped by
   author; the person's own messages (matching the current sender) align
-  right. Mentions are highlighted, addressed messages show a
+  right. Hover or focus a message to reveal a copy action for its text.
+  Mentions are highlighted, addressed messages show a
   `→ @role` route line, and `reply_to` references render as `↩ room#seq`.
   Content that is neither plain text nor a message object renders verbatim.
   New records arrive by polling with an explicit `after` boundary.
@@ -90,7 +94,10 @@ the webview renders it with the vendored xterm.js.
   then refreshes each result independently. A live panel without a lifecycle
   report shows `No status reported`. `No active panel` means hc has no live
   panel for the role, and `Status unavailable` means the lookup failed.
-  A brief pulse marks a role entering Working. Reduced Motion keeps the
+  A brief pulse marks a role entering Working. A Working pill also counts
+  the time since the strip observed the role enter Working; a Working state
+  joined without a visible transition shows no count, because a start time
+  read from the hc report would be invented. Reduced Motion keeps the
   same status cues static.
   The drawer uses the same labels and connects if a panel appears.
   `Turn ended` describes the Agent's turn. Judge the work from its evidence.
