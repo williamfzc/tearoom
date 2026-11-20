@@ -40,6 +40,14 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   delivery to a busy instance. The app remembers draft text and recipients
   together per workspace and Room while the window is open. Text left in the
   message body follows the [ordinary addressing rule](cli.md#append-and-read).
+- **Room deletion** — the chat head offers a Delete affordance for the
+  selected Room. The first click runs the CLI's guards unarmed and reads its
+  confirmation sentence (the record count); the second click deletes. The
+  webview confirm replaces the CLI's `--confirm` repeat, never its guards:
+  leaf checks, unresolved deliveries, and confirmation all run on both
+  clicks, and the CLI stays the single owner of the refusal wording. A
+  delete closes the Room and clears the remembered selection. The phone
+  face has no deletion; the LAN face carries no destructive endpoint.
 - **Workspace discovery** — the dashboard shows every Tearoom workspace on
   this machine side by side. Discovery merges the collaboration service's
   registry, Spotlight, a bounded home-directory scan, and the app's folder
@@ -113,7 +121,9 @@ the webview renders it with the vendored xterm.js.
 ## What it refuses
 
 - No editing of records, moving of Rooms, or room creation: setup stays with
-  the CLI (`tearoom room init`, `role init`).
+  the CLI (`tearoom room init`, `role init`). Deletion is the one Room
+  mutation the app offers, and only as a subprocess of the CLI's
+  `room delete`.
 - No network serving from the desktop window: it is a client of the local
   Store and CLI, never a server. The phone face is likewise a client only —
   its serving counterpart is the paired Mac's LAN face (see

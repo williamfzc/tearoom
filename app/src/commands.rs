@@ -118,6 +118,51 @@ fn records_json(root: &Path, room: &str, after: u64) -> Result<Value> {
     Ok(json!({ "records": store.read(&id, after)? }))
 }
 
+/// Deletion runs off the main thread like sends: the CLI's guards touch the
+/// dispatch lock, the collab config, and the store.
+#[tauri::command]
+pub async fn delete_room(root: String, room: String, confirm: bool) -> Result<Value, String> {
+    let cli = cli_path().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        delete_json(Path::new(&root), &cli, &room, confirm)
+    })
+    .await
+    .map_err(|e| format!("delete task failed: {e}"))?
+    .map_err(|e| format!("{e:#}"))
+}
+
+fn delete_json(root: &Path, cli: &Path, room: &str, confirm: bool) -> Result<Value> {
+    if room.trim().is_empty() {
+        bail!("room is required");
+    }
+    let mut command = Command::new(cli);
+    command
+        .current_dir(root)
+        .env("PATH", child_path())
+        .args(["room", "delete", "--room", room]);
+    if confirm {
+        command.arg("--confirm");
+    }
+    let output = command.output().context("cannot run the tearoom CLI")?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let payload: Option<Value> = stdout
+        .lines()
+        .rev()
+        .find_map(|line| serde_json::from_str(line).ok());
+    if output.status.success() {
+        return payload.ok_or_else(|| anyhow!("the tearoom CLI did not return a result"));
+    }
+    bail!(
+        "{}",
+        stderr
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("the tearoom CLI refused the deletion")
+    );
+}
+
 fn send_json(
     root: &Path,
     cli: &Path,
@@ -339,6 +384,37 @@ mod tests {
         let error = send_json(&root, &cli, "missing", "hi", &[], "").unwrap_err();
         assert!(format!("{error:#}").contains("not found"));
         assert!(send_json(&root, &cli, "project", "  ", &[], "").is_err());
+    }
+
+    #[test]
+    fn delete_builds_cli_arguments_and_confirmation_stays_explicit() {
+        let (_dir, root) = workspace();
+        let stub_dir = tempfile::tempdir().unwrap();
+        let cli = stub_cli(
+            stub_dir.path(),
+            "tearoom-del",
+            "printf '%s\\n' \"$*\" > args.txt\necho '{\"name\":\"project\",\"deleted\":true,\"records\":3}'",
+        );
+        let value = delete_json(&root, &cli, "project", false).unwrap();
+        assert_eq!(value["deleted"], true);
+        assert!(std::fs::read_to_string(root.join("args.txt")).unwrap().contains("room delete --room project"));
+        assert!(!std::fs::read_to_string(root.join("args.txt")).unwrap().contains("--confirm"));
+        delete_json(&root, &cli, "project", true).unwrap();
+        assert!(std::fs::read_to_string(root.join("args.txt")).unwrap().contains("--confirm"));
+    }
+
+    #[test]
+    fn delete_surfaces_cli_refusals_and_requires_a_room() {
+        let (_dir, root) = workspace();
+        let stub_dir = tempfile::tempdir().unwrap();
+        let cli = stub_cli(
+            stub_dir.path(),
+            "tearoom-delfail",
+            "echo 'room \"x\": has unresolved deliveries' >&2\nexit 1",
+        );
+        let error = delete_json(&root, &cli, "x", true).unwrap_err();
+        assert!(format!("{error:#}").contains("unresolved deliveries"));
+        assert!(delete_json(&root, &cli, "  ", false).is_err());
     }
 
     #[test]

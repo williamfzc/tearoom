@@ -42,6 +42,7 @@ mod desktop {
             commands::workspace_pick,
             commands::room_records,
             commands::send_message,
+            commands::delete_room,
             terminal::panel_info,
             terminal::attach_panel,
             terminal::terminal_write,

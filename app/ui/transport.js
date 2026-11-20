@@ -19,7 +19,7 @@ function desktop() {
   const { invoke } = window.__TAURI__.core;
   return {
     kind: "desktop",
-    capabilities: { terminal: true, pick: true },
+    capabilities: { terminal: true, pick: true, remove: true },
     async listWorkspaces() {
       return invoke("workspaces");
     },
@@ -31,6 +31,9 @@ function desktop() {
     },
     async send({ root, room, text, to, author }) {
       return invoke("send_message", { root, room, text, to, author });
+    },
+    async deleteRoom({ root, room, confirm }) {
+      return invoke("delete_room", { root, room, confirm });
     },
   };
 }

@@ -1,6 +1,24 @@
-// Room navigation for the shared app rail: workspace groups, room trees, and search.
+// Room navigation for the shared app rail: workspace groups, room trees,
+// search, and the remembered selection across reopenings.
 
 import { avatarFill, element, ageLabel } from "./ui.js";
+
+const ROOM_SELECTION = "tearoom.selectedRoom";
+export function rememberRoom(selection) {
+  try {
+    localStorage.setItem(ROOM_SELECTION, JSON.stringify(selection));
+  } catch { /* Storage may be unavailable. */ }
+}
+
+export function restoreRoom(workspaces, onRestore) {
+  let selection;
+  try {
+    selection = JSON.parse(localStorage.getItem(ROOM_SELECTION) || "null");
+  } catch { return; }
+  const workspace = selection && workspaces.find((w) => w.root === selection.root);
+  const room = workspace?.rooms?.find((room) => room.id === selection.id);
+  if (room) onRestore(selection.root, room);
+}
 
 function roomPreview(room) {
   const last = room.last;

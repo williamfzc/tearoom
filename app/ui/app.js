@@ -2,9 +2,10 @@
 // for the local desktop and paired-Mac app.
 
 import { renderRoster, refreshRoster, avatarFill, MessageList } from "./ui.js";
-import { RoomList } from "./room-list.js";
+import { RoomList, rememberRoom, restoreRoom } from "./room-list.js";
 import { Composer } from "./composer.js";
 import { TerminalDrawer } from "./terminal.js";
+import { initRoomDelete } from "./room-delete.js";
 import { transport } from "./transport.js";
 import { initGates } from "./gate.js";
 
@@ -46,6 +47,14 @@ const composer = new Composer({
 const state = { workspaces: [], workspacesKey: null, selected: null, request: 0, poll: 0, rolesKey: null, autoOpen: true };
 const messages = new MessageList(ui.records, ui.status, isRoleSender, openRolePanel);
 const roomList = new RoomList(document.getElementById("rooms"), document.getElementById("room-search"), selectRoom);
+const roomDelete = initRoomDelete(document.getElementById("room-delete"), transport, {
+  status: (text) => messages.status(text),
+  onDeleted: () => {
+    rememberRoom(null);
+    closeRoom();
+    refreshState();
+  },
+});
 /* Boot gates: the desktop workspace picker and the phone's connect screen. */
 const gateCard = document.getElementById("gate");
 const connectCard = document.getElementById("connect");
@@ -93,21 +102,6 @@ function totalRooms() {
 function selectedRoom(selection = state.selected) {
   const workspace = selection && state.workspaces.find((w) => w.root === selection.root);
   return workspace?.rooms?.find((room) => room.id === selection.id) || null;
-}
-
-const ROOM_SELECTION = "tearoom.selectedRoom";
-function rememberRoom(selection) {
-  try {
-    localStorage.setItem(ROOM_SELECTION, JSON.stringify(selection));
-  } catch { /* Storage may be unavailable. */ }
-}
-function restoreRoom() {
-  let selection;
-  try {
-    selection = JSON.parse(localStorage.getItem(ROOM_SELECTION) || "null");
-  } catch { return; }
-  const room = selectedRoom(selection);
-  if (room) selectRoom(selection.root, room);
 }
 
 function updateRoomChrome(room) {
@@ -178,6 +172,7 @@ function selectRoom(root, room) {
   ui.empty.hidden = true;
   updateRoomChrome(room);
   composer.setRoom(state.selected, room);
+  roomDelete.target({ root, id: room.id, name: room.name });
   roomList.render(state.workspaces, state.selected);
   messages.status("Reading…");
   loadHistory();
@@ -188,6 +183,7 @@ function selectRoom(root, room) {
 function closeRoom() {
   drawer?.close();
   state.selected = null;
+  roomDelete.target(null);
   composer.setRoom(null);
   state.request += 1;
   messages.reset();
@@ -233,7 +229,7 @@ async function refreshState() {
       }
     }
     roomList.render(state.workspaces, state.selected);
-    if (state.autoOpen) restoreRoom();
+    if (state.autoOpen) restoreRoom(state.workspaces, selectRoom);
   }
   if (state.autoOpen && totalRooms() === 1) {
     for (const workspace of state.workspaces) {

@@ -219,6 +219,16 @@ button.ws-head:hover { color: var(--ink); background: var(--hover); }
 
 .stream-status { position: absolute; right: 16px; top: 14px; margin: 0; font-size: 11px; color: var(--faint); }
 
+/* Room deletion: a quiet corner affordance that turns loud when armed. */
+.head-danger {
+  position: absolute; right: 16px; bottom: 6px;
+  border: 1px solid var(--line); background: transparent;
+  color: var(--muted); font: inherit; font-size: 11px;
+  border-radius: 999px; padding: 2px 10px; cursor: pointer;
+}
+.head-danger:hover, .head-danger.armed { color: #ff6b57; border-color: #ff6b57; }
+.head-danger.armed { background: color-mix(in srgb, #ff6b57 14%, transparent); }
+
 /* Composer ----------------------------------------------------------------- */
 
 .composer { position: relative; padding: 10px 18px 14px; }
