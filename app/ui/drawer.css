@@ -1,12 +1,11 @@
-/* Tearoom desktop face: the role-panel drawer — an inline terminal attached
-   to a role's live hc panel (see terminal.js). The drawer is a layout
-   sibling of the conversation: opening it indents the chat instead of
-   covering it, like a pane growing out of the window's right edge. */
+/* Tearoom desktop face: the role-panel drawer and its placement beside or
+   over the conversation. terminal.js attaches to the role's live hc panel. */
 
 .drawer {
   position: relative;
   flex: none;
-  width: min(46vw, 720px);
+  width: max(320px, var(--drawer-width, min(46vw, 720px)));
+  max-width: calc(100% - var(--rail-width) - 400px);
   display: flex; flex-direction: column;
   min-height: 0;
   background: var(--bg);
@@ -15,12 +14,40 @@
   border-radius: 14px 0 0 14px;
 }
 
+/* Below the rail (300px), readable chat (400px), and terminal (320px) total,
+   give the whole conversation column to the drawer until it closes. */
+@media (width < 1020px) {
+  .app { position: relative; }
+  .app:has(.drawer:not([hidden])) .conversation { visibility: hidden; }
+  .drawer {
+    position: absolute; z-index: 3; inset: 0 0 0 var(--rail-width);
+    width: auto; max-width: none;
+  }
+  .drawer-resize { display: none; }
+}
+
+@media (max-width: 768px) {
+  .app.in-room .drawer { left: 0; }
+}
+
 /* Drag this edge to resize; the width is remembered. */
 .drawer-resize {
   position: absolute; left: -3px; top: 0; bottom: 0; width: 7px;
   cursor: col-resize; touch-action: none;
 }
-.drawer-resize:hover, .drawer-resize.dragging { background: var(--accent); opacity: 0.35; }
+
+.drawer-resize::after {
+  content: ""; position: absolute; inset: 0;
+  background: var(--accent); opacity: 0; pointer-events: none;
+  transform: translateX(var(--resize-offset, 0px));
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms ease-out;
+}
+.drawer-resize:hover::after, .drawer-resize.dragging::after { opacity: 0.35; }
+.drawer-resize.dragging::after { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-resize::after { transform: none; transition: none; }
+}
 
 .drawer-head {
   display: flex; align-items: center; gap: 10px;

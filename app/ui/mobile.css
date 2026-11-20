@@ -7,10 +7,6 @@
 }
 
 @media (max-width: 768px) {
-  .app {
-    position: relative;
-  }
-
   .back-button {
     display: inline-flex;
     align-items: center;
@@ -27,9 +23,10 @@
   }
 
   /* The conversation covers the rail while a room is open. */
-  .app.in-room .rail {
-    display: none;
-  }
+  .rail { width: 100%; min-width: 0; }
+  .app.in-room .rail,
+  .app:not(.in-room) .conversation { display: none; }
+  .room-search input { font-size: 16px; }
 
   .conversation {
     width: 100%;
@@ -47,13 +44,6 @@
   .composer {
     padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
-
-  .drawer {
-    position: absolute; z-index: 3; inset: 0 0 0 auto;
-    width: min(100%, 500px); max-width: 100%;
-  }
-
-  .drawer-resize { display: none; }
 
   /* The connect card fills the width instead of floating. */
   .gate-card {

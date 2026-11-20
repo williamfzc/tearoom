@@ -3,7 +3,7 @@ type: reference
 title: App contract
 description: The optional Tauri faces — the desktop window over local workspaces and the phone window over the LAN face.
 tags: [reference, app, desktop, ios, contract]
-timestamp: 2026-11-16
+timestamp: 2026-11-19
 ---
 
 # App contract
@@ -35,18 +35,23 @@ talks to the paired Mac's [LAN face](lan-face.md) over fetch.
   account name, with `me` as a fallback. The phone keeps a previously saved
   sender name or uses `me`. Type `@` to find a role in the current Room and
   select it to add a removable recipient. Selected roles become explicit
-  delivery targets. Text left in the message body follows the
-  [ordinary addressing rule](cli.md#append-and-read).
+  delivery targets. The app remembers draft text and recipients together per
+  workspace and Room while the window is open. Text left in the message body
+  follows the [ordinary addressing rule](cli.md#append-and-read).
 - **Workspace discovery** — the dashboard shows every Tearoom workspace on
-  this machine side by side; there is no switching ceremony. Three sources
-  merge: the collaboration service's registry (workspaces activated at
-  least once), Spotlight (`mdfind -name .tearoom`), and the app's own
-  history (the config dir's known roots). Every candidate is validated by
-  opening the Store before it reaches the dashboard, and the rail groups
-  rooms under their workspace directory. Selecting a room selects its
-  workspace implicitly — reads, sends, and panel attach all take that
-  workspace root explicitly. The folder picker remains only as the fallback
-  for the zero-workspaces case.
+  this machine side by side. Discovery merges the collaboration service's
+  registry, Spotlight, a bounded home-directory scan, and the app's folder
+  history. It validates each candidate by opening the Store. Selecting a Room
+  selects its workspace for reads, sends, and panel attach. With no discovered
+  workspace, the app offers a folder picker and shows the command for creating
+  the first Room. A discovered workspace with no Rooms shows the creation hint.
+- **Room list** — collapse a workspace or a Room's child branch to focus the
+  list. Search filters the list immediately and shows matches inside collapsed
+  branches. Clearing the search restores the prior
+  collapse state. On narrow
+  screens, Back leaves the Room list open through subsequent refreshes. On
+  reopening, the app restores the last selected workspace and Room if it finds
+  them and reads their saved history from the beginning.
 - **CLI discovery** — sends need the `tearoom` binary: `TEAROOM_CLI` if set,
   otherwise `tearoom` on `PATH`, `~/.cargo/bin`, `~/.local/bin`,
   `/opt/homebrew/bin`, or `/usr/local/bin`. The child gets an extended
@@ -72,11 +77,13 @@ the webview renders it with the vendored xterm.js.
   first-use prompts can be resolved without leaving the app. herdr-core
   allows several viewers per panel; the most recently active one owns the
   size. Closing the drawer detaches the viewer; the panel keeps running.
-- **The drawer's left edge drags to resize**, and the width is remembered.
-  Resizing forwards to the panel, so the agent's TUI relayouts live. Both
-  scroll views are protected: resizing or opening the drawer never yanks a
-  scrolled-up viewport — the terminal's place returns after a relayout, and
-  the chat list keeps its position when the drawer rewraps it.
+- **The drawer docks when there is room for both the terminal and chat**.
+  At narrower widths it covers the conversation until closed. In the docked
+  view, drag the drawer's left edge to resize it. The app remembers the width
+  and fits it to the available space. The divider snaps when the conversation
+  and terminal approach equal widths, and its indicator yields slightly at
+  the width limits. Reduced Motion removes the indicator movement. The
+  terminal relayouts live and both scroll positions are preserved.
 - The desktop role strip shows avatars and status dots. Hover or focus an
   avatar to see the role name and full status.
   It checks each role as soon as the Room opens,

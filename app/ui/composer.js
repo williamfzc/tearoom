@@ -9,7 +9,8 @@ export class Composer {
     this.sending = false;
     this.roles = [];
     this.recipients = new Set();
-    this.roomVersion = 0;
+    this.drafts = new Map();
+    this.draftKey = null;
     this.mention = null;
     this.dismissed = null;
     this.active = 0;
@@ -37,21 +38,34 @@ export class Composer {
     node.classList.toggle("warn", warn);
   }
 
-  setRoom(room, reset = false) {
+  setRoom(target, room) {
+    const key = target ? JSON.stringify([target.root, target.id]) : null;
+    const field = this.els.text;
     this.roles = Array.isArray(room?.roles) ? room.roles : [];
-    if (reset) {
-      this.roomVersion += 1;
-      this.recipients.clear();
+    if (key !== this.draftKey) {
+      if (this.draftKey && (field.value || this.recipients.size)) {
+        this.drafts.set(this.draftKey, { text: field.value, to: this.recipients });
+      } else {
+        this.drafts.delete(this.draftKey);
+      }
+      this.draftKey = key;
+      const draft = this.drafts.get(key);
+      field.value = draft?.text ?? "";
+      this.recipients = draft?.to ?? new Set();
       this.dismissed = null;
       this.#closeSuggestions();
       this.error("");
     } else {
-      for (const role of this.recipients) {
-        if (!this.roles.includes(role)) this.recipients.delete(role);
-      }
       this.#updateSuggestions();
     }
     this.#renderRecipients();
+    this.#resize();
+    this.#updateSendState();
+  }
+
+  clearDrafts() {
+    this.setRoom(null);
+    this.drafts = new Map();
   }
 
   focus() {
@@ -67,7 +81,8 @@ export class Composer {
       return;
     }
     const to = [...this.recipients];
-    const roomVersion = this.roomVersion;
+    const { draftKey, drafts } = this;
+    const stillInRoom = () => this.drafts === drafts && this.draftKey === draftKey;
     this.sending = true;
     this.#updateSendState();
     this.#closeSuggestions();
@@ -80,22 +95,31 @@ export class Composer {
         to,
         author: this.author,
       });
-      if (this.roomVersion === roomVersion) {
-        if (this.els.text.value === text) this.els.text.value = "";
-        for (const role of to) this.recipients.delete(role);
+      const draft = stillInRoom()
+        ? { text: this.els.text.value, to: this.recipients }
+        : drafts.get(draftKey);
+      // An in-flight send may finish after the person has edited or switched drafts.
+      if (draft?.text === text && draft.to.size === to.length && to.every((role) => draft.to.has(role))) {
+        drafts.delete(draftKey);
+        if (stillInRoom()) {
+          this.els.text.value = "";
+          this.recipients.clear();
+        }
+      }
+      if (stillInRoom()) {
         this.#renderRecipients();
         this.#resize();
       }
       await loadHistory();
       if (result.warning) {
-        if (this.roomVersion === roomVersion) {
+        if (stillInRoom()) {
           this.error(`Message saved, but collaboration did not start: ${result.warning}`, true);
         }
         return "warning";
       }
       return "sent";
     } catch (error) {
-      if (this.roomVersion === roomVersion) this.error(String(error));
+      if (stillInRoom()) this.error(String(error));
       return "failed";
     } finally {
       this.sending = false;

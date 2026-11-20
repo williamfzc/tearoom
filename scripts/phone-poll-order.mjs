@@ -233,6 +233,45 @@ await scenario("composer with no cached sender", {}, async ({ page, sends, visib
   );
 });
 
+await scenario("navigation keeps drafts with their room", {}, async ({ page, calls, visible, fire, arm }) => {
+  const message = page.getByRole("textbox", { name: "Message" });
+  const back = page.getByRole("button", { name: "Back to the room list" });
+  const chip = page.getByRole("button", { name: "Remove @worker" });
+  await message.fill("Review this @w");
+  await message.press("Enter");
+  await chip.waitFor({ state: "visible" });
+  await back.click();
+  const before = calls.length;
+  await fire(1);
+  await page.waitForTimeout(150);
+  check("refresh after Back leaves the only room closed", calls.length > before && !(await visible("#room-panel")));
+
+  const twoRooms = { status: 200, body: { rooms: [...rooms, { ...rooms[0], id: "other", name: "Other" }] } };
+  arm([twoRooms]);
+  await fire(1);
+  await page.getByRole("button", { name: /Other/ }).click();
+  check("a different room opens with an empty composer", (await message.inputValue()) === "" && !(await chip.isVisible()));
+  await message.fill("Separate draft");
+  await back.click();
+  await page.getByRole("button", { name: /Main/ }).click();
+  check("the original room restores text and explicit recipient", (await message.inputValue()).trimEnd() === "Review this" && await chip.isVisible());
+
+  arm([twoRooms]);
+  const restored = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/v1/records" && url.searchParams.get("room") === "main" &&
+      url.searchParams.get("after") === "0";
+  });
+  await Promise.all([page.reload(), restored]);
+  check("reopening restores the saved room and requests history from the beginning", (await page.textContent("#room-name")) === "Main");
+
+  await back.click();
+  arm([twoRooms]);
+  await Promise.all([page.reload(), page.waitForResponse((response) => new URL(response.url()).pathname === "/v1/rooms")]);
+  await page.getByRole("button", { name: /Main/ }).waitFor();
+  check("returning to the list clears the saved room", !(await visible("#room-panel")));
+});
+
 server.close();
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed; ${failed.length} failed`);

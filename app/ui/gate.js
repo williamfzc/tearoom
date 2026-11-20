@@ -4,19 +4,22 @@
 // The app controller supplies the hooks that run once a gate is passed.
 
 export function initGates(els, transport, hooks) {
-  const showGate = (message) => {
+  const firstRoom = "tearoom room init --name project";
+  const showGate = (message, hasWorkspace = false) => {
     els.gateError.textContent = message || "";
     els.gateError.hidden = !message;
-    els.pick.hidden = transport.kind !== "desktop";
+    els.pick.hidden = transport.kind !== "desktop" || hasWorkspace;
     els.reconnect.hidden = transport.kind !== "remote";
     els.gateHint.textContent =
       transport.kind === "remote"
         ? message
           ? "The phone could not read the paired workspace. Tearoom keeps trying; check the Mac's service."
-          : "Your Mac's workspace has no rooms yet. Create one with tearoom room init."
+          : `Your Mac's workspace has no rooms yet. Create one with ${firstRoom}.`
         : message
           ? "Tearoom could not discover workspaces."
-          : "No Tearoom workspaces found on this machine yet. Point at one to get started.";
+          : hasWorkspace
+            ? `No rooms yet. In your workspace folder, run ${firstRoom}.`
+            : `Choose an existing Tearoom workspace, or run ${firstRoom} in your project folder.`;
     els.app.hidden = true;
     els.gate.hidden = false;
   };

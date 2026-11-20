@@ -33,6 +33,7 @@ export class TerminalDrawer {
     this.generation = 0;
     this.timer = null;
     this.attaching = Promise.resolve();
+    this.previousFocus = null;
     this.els.close.addEventListener("click", () => this.close());
     window.addEventListener("resize", () => this.#fit());
     window.addEventListener("focus", () => this.#refreshVisible());
@@ -42,31 +43,49 @@ export class TerminalDrawer {
 
   // Drag the drawer's left edge to resize; the width is remembered.
   #wireResize() {
-    const handle = this.els.resize;
+    const { drawer, resize: handle } = this.els;
     let startX = 0;
     let startWidth = 0;
-    const clamp = (width) =>
-      // Leave the 300px rail plus a usable chat column.
-      Math.max(320, Math.min(width, window.innerWidth - 680));
+    let railWidth = 0;
+    let moved = false;
     const onMove = (event) => {
-      const width = clamp(startWidth + (startX - event.clientX));
-      this.els.drawer.style.width = `${width}px`;
-      this.#fit();
+      if (!handle.offsetWidth || (!moved && event.clientX === startX)) return;
+      moved = true;
+      const requested = startWidth + startX - event.clientX;
+      const midpoint = (drawer.parentElement.clientWidth - railWidth) / 2;
+      const offset = requested - midpoint;
+      // Hold the equal split within 5px and ease back to direct tracking at 20px.
+      const release = Math.min(1, Math.max(0, (Math.abs(offset) - 5) / 15));
+      const width = `${Math.round(midpoint + offset * release)}px`;
+      if (drawer.style.getPropertyValue("--drawer-width") !== width) {
+        this.onLayoutChange?.();
+        drawer.style.setProperty("--drawer-width", width);
+        this.#fit();
+      }
+      // Only the indicator gives when the panes hit a layout limit.
+      const resisted = drawer.getBoundingClientRect().width - requested;
+      handle.style.setProperty("--resize-offset", `${5 * Math.tanh(resisted / 24)}px`);
     };
     const onUp = () => {
       handle.classList.remove("dragging");
+      handle.style.removeProperty("--resize-offset");
       document.removeEventListener("mousemove", onMove);
       document.removeEventListener("mouseup", onUp);
+      if (!moved || !handle.offsetWidth) return;
+      const width = `${Math.round(drawer.getBoundingClientRect().width)}px`;
+      drawer.style.setProperty("--drawer-width", width);
       try {
-        localStorage.setItem("tearoom.drawerWidth", this.els.drawer.style.width);
+        localStorage.setItem("tearoom.drawerWidth", width);
       } catch {
         /* Storage may be refused; the width just is not remembered. */
       }
     };
     handle.addEventListener("mousedown", (event) => {
       event.preventDefault();
+      moved = false;
       startX = event.clientX;
-      startWidth = this.els.drawer.getBoundingClientRect().width;
+      startWidth = drawer.getBoundingClientRect().width;
+      railWidth = parseFloat(getComputedStyle(drawer).getPropertyValue("--rail-width"));
       handle.classList.add("dragging");
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
@@ -90,15 +109,19 @@ export class TerminalDrawer {
   async show(root, room, role) {
     this.close();
     const generation = this.generation;
+    this.previousFocus = document.activeElement;
     this.onLayoutChange?.();
     this.#renderChrome(role);
     try {
       const saved = localStorage.getItem("tearoom.drawerWidth");
-      if (saved) this.els.drawer.style.width = saved;
+      if (/^\d+(\.\d+)?px$/.test(saved)) {
+        this.els.drawer.style.setProperty("--drawer-width", saved);
+      }
     } catch {
       /* Storage may be refused; the default width applies. */
     }
     this.els.drawer.hidden = false;
+    this.els.close.focus({ preventScroll: true });
     this.status("connecting…");
     this.#feedback("Checking for a live terminal…");
     const refresh = async () => {
@@ -195,7 +218,7 @@ export class TerminalDrawer {
       core().invoke("terminal_write", { session: this.session, data: toBase64(data) }).catch(() => {});
     });
     this.#syncSize();
-    this.term.focus();
+    if (document.activeElement === this.els.close) this.term.focus();
     this.#fit();
   }
 
@@ -244,7 +267,8 @@ export class TerminalDrawer {
   close() {
     this.generation += 1;
     clearTimeout(this.timer);
-    this.onLayoutChange?.();
+    if (this.open) this.onLayoutChange?.();
+    const restoreFocus = this.els.drawer.contains(document.activeElement);
     if (this.session != null) {
       const detached = core().invoke("detach_panel", { session: this.session }).catch(() => {});
       this.attaching = Promise.all([this.attaching, detached]);
@@ -254,5 +278,7 @@ export class TerminalDrawer {
     this.term = null;
     this.els.term.replaceChildren();
     this.els.drawer.hidden = true;
+    if (restoreFocus) this.previousFocus?.focus({ preventScroll: true });
+    this.previousFocus = null;
   }
 }

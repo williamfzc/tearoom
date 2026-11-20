@@ -1,5 +1,4 @@
-// Tearoom room interface: DOM renderers for the room list, roster, and messages.
-// No state lives here; app.js owns selection, polling, and sending.
+// Tearoom room interface: shared DOM primitives and renderers for the roster and messages.
 
 export function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -29,81 +28,6 @@ export function avatarFill(node, name) {
 }
 
 const MENTION = /@[\p{L}\p{N}_]+/gu;
-
-export function roomTree(rooms) {
-  const byParent = new Map();
-  for (const room of rooms) {
-    const siblings = byParent.get(room.parent) || [];
-    siblings.push(room);
-    byParent.set(room.parent, siblings);
-  }
-  const ordered = [];
-  const visit = (parentId, depth) => {
-    for (const room of byParent.get(parentId) || []) {
-      ordered.push({ room, depth });
-      visit(room.id, depth + 1);
-    }
-  };
-  visit("", 0);
-  return ordered;
-}
-
-export function previewText(room, depth) {
-  const last = room.last && typeof room.last === "object" ? room.last : null;
-  if (!last || typeof last.text !== "string" || !last.text) {
-    return depth ? "" : room.description || "";
-  }
-  const author = typeof last.author === "string" ? last.author : "";
-  return author ? `${author}: ${last.text}` : last.text;
-}
-
-function roomRow(room, depth, selected, onSelect) {
-  const item = element("button", "room-item");
-  item.style.paddingLeft = `${10 + depth * 12}px`;
-  const avatar = element("span", "avatar");
-  avatarFill(avatar, room.name);
-  const text = element("span", "row-text");
-  const top = element("span", "row-top");
-  top.append(element("span", "row-name", room.name));
-  const last = room.last && typeof room.last === "object" ? room.last : null;
-  const time = last ? timeLabel(last.at) : "";
-  if (time) top.append(element("time", "row-time", time));
-  text.append(top, element("span", "row-preview", previewText(room, depth)));
-  item.append(avatar, text);
-  if (selected) item.classList.add("selected");
-  item.title = room.description || room.name;
-  item.addEventListener("click", () => onSelect(room));
-  return item;
-}
-
-// The dashboard rail: one section per workspace, its room tree nested under
-// a header that names the workspace directory.
-export function renderDashboard(container, workspaces, selected, onSelect) {
-  container.replaceChildren(
-    ...workspaces.map((workspace) => {
-      const section = element("section", "ws");
-      const head = element("button", "ws-head");
-      head.title = workspace.root;
-      head.append(element("span", "ws-name", workspace.name || workspace.root));
-      const count = Array.isArray(workspace.rooms) ? workspace.rooms.length : 0;
-      head.append(element("span", "ws-count", `${count}`));
-      head.addEventListener("click", () => {
-        const first = (workspace.rooms || [])[0];
-        if (first) onSelect(workspace.root, first);
-      });
-      section.append(head);
-      for (const { room, depth } of roomTree(workspace.rooms || [])) {
-        const isSelected =
-          selected && selected.root === workspace.root && selected.id === room.id;
-        const item = roomRow(room, depth, isSelected, (room) =>
-          onSelect(workspace.root, room),
-        );
-        section.append(item);
-      }
-      return section;
-    }),
-  );
-}
 
 export function renderRoster(node, room, onRole) {
   const roles = Array.isArray(room?.roles) ? room.roles : [];
@@ -205,7 +129,7 @@ function contentOf(record) {
   return { text: JSON.stringify(content), mentions: [], replyTo: null, kind: "data" };
 }
 
-function timeLabel(at) {
+export function timeLabel(at) {
   const date = new Date(at);
   return Number.isNaN(date.getTime())
     ? ""

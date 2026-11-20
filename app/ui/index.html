@@ -37,7 +37,7 @@
   <div id="gate" class="gate" hidden>
     <div class="gate-card">
       <h1>Tearoom</h1>
-      <p id="gate-hint">Choose the folder that holds your Tearoom workspace.</p>
+      <p id="gate-hint"></p>
       <p id="gate-error" class="error" role="alert" hidden></p>
       <button id="pick" type="button" class="primary">Choose folder…</button>
       <button id="reconnect" type="button" class="primary" hidden>Pair again…</button>
@@ -67,12 +67,20 @@
         <button id="refresh" class="icon-button" type="button"
                 title="Refresh" aria-label="Refresh rooms and messages">↻</button>
       </header>
+      <form id="room-search" class="room-search" role="search" aria-label="Room search" autocomplete="off">
+        <div class="room-search-field">
+          <input type="search" name="query" aria-label="Search rooms" placeholder="Search rooms"
+                 aria-controls="rooms" enterkeyhint="search" spellcheck="false">
+          <button type="button" name="clear" aria-label="Clear room search" hidden>×</button>
+        </div>
+        <p class="room-search-status" role="status"></p>
+      </form>
       <nav id="rooms" class="room-list" aria-label="Rooms across workspaces"></nav>
     </aside>
 
     <main class="conversation">
       <section id="empty" class="empty">
-        <p>Select a room</p>
+        <p class="empty-hint">Select a room</p>
       </section>
 
       <section id="room-panel" class="room-panel" hidden>
