@@ -3,6 +3,7 @@ use super::Role;
 use crate::hc::HcClient;
 use anyhow::{bail, Context, Result};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -32,7 +33,16 @@ pub enum PanelStatus {
 }
 
 impl PanelStatus {
-    /// Stable lowercase name for CLI output.
+    fn reported(terminal: &Value) -> Self {
+        match terminal["status"]["state"].as_str() {
+            Some("idle") => Self::Idle,
+            Some("done") => Self::Done,
+            Some("working") => Self::Working,
+            Some("blocked" | "error") => Self::Blocked,
+            _ => Self::Unknown,
+        }
+    }
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Missing => "missing",
@@ -43,6 +53,13 @@ impl PanelStatus {
             Self::Unknown => "unknown",
         }
     }
+}
+
+#[derive(Clone)]
+pub struct BlockedPanel {
+    pub address: String,
+    pub episode: String,
+    pub reason: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,13 +75,14 @@ pub struct PanelRequest<'a> {
     pub role_name: &'a str,
     pub role: &'a Role,
     pub directory: &'a Path,
-    /// Complete dispatch prompt, including role instructions.
     pub task: &'a str,
 }
 
 pub trait Runtime {
     fn status(&self, panel: &str) -> Result<PanelStatus>;
-    /// Validate a role launch and start its panel without a task.
+    fn blocked_panels(&self) -> Result<BTreeMap<String, BlockedPanel>> {
+        Ok(BTreeMap::new())
+    }
     fn launch(
         &self,
         name: &str,
@@ -73,7 +91,6 @@ pub trait Runtime {
         role: &Role,
         directory: &Path,
     ) -> Result<()>;
-    /// End a live panel; its next delivery starts the configured command again.
     fn stop(&self, panel: &str) -> Result<()>;
     fn ensure(&self, request: &PanelRequest<'_>) -> Result<SubmitResult>;
     fn submit(&self, panel: &str, task: &str, status: PanelStatus) -> Result<SubmitResult>;
@@ -95,6 +112,11 @@ pub struct WorkspaceStop {
 impl HcRuntime {
     fn call(&self, method: &str, params: Value) -> Result<Value> {
         Ok(self.client.call(method, params, self.timeout)?)
+    }
+
+    fn live_terminals(&self, filter: Value) -> Result<Vec<Value>> {
+        let mut list = self.call("terminal.list", filter)?;
+        serde_json::from_value(list["terminals"].take()).context("invalid hc terminal list")
     }
 
     /// Stop this workspace's live terminals, plus known terminals created before workspace labels.
@@ -149,23 +171,42 @@ impl HcRuntime {
 
 impl Runtime for HcRuntime {
     fn status(&self, panel: &str) -> Result<PanelStatus> {
-        let list = self.call("terminal.list", json!({"all":false}))?;
-        let terminal = list["terminals"]
-            .as_array()
-            .context("invalid hc terminal list")?
+        Ok(self
+            .live_terminals(json!({}))?
             .iter()
-            .find(|terminal| terminal["name"] == panel && terminal["state"] == "live");
-        if terminal.is_none() {
-            return Ok(PanelStatus::Missing);
-        }
-        let details = self.call("terminal.get", json!({"terminal":panel}))?;
-        Ok(match details["status"]["state"].as_str() {
-            Some("idle") => PanelStatus::Idle,
-            Some("done") => PanelStatus::Done,
-            Some("working") => PanelStatus::Working,
-            Some("blocked" | "error") => PanelStatus::Blocked,
-            _ => PanelStatus::Unknown,
-        })
+            .find(|terminal| terminal["name"] == panel && terminal["state"] == "live")
+            .map_or(PanelStatus::Missing, PanelStatus::reported))
+    }
+
+    fn blocked_panels(&self) -> Result<BTreeMap<String, BlockedPanel>> {
+        let Some(label) = &self.workspace_label else {
+            return Ok(BTreeMap::new());
+        };
+        Ok(self
+            .live_terminals(json!({"labels":{"tearoom.workspace":label}}))?
+            .iter()
+            .filter_map(|terminal| {
+                let address = terminal["address"].as_str()?;
+                if address.contains('/') || PanelStatus::reported(terminal) != PanelStatus::Blocked
+                {
+                    return None;
+                }
+                // hc stamps each transition of the terminal's reported state.
+                let episode = format!(
+                    "{address}-{}-{}",
+                    terminal["created_ms"].as_u64()?,
+                    terminal["status_ms"].as_u64()?
+                );
+                let status = &terminal["status"];
+                let reason = status["kind"].as_str().or(status["state"].as_str())?;
+                let blockage = BlockedPanel {
+                    address: address.into(),
+                    episode,
+                    reason: reason.into(),
+                };
+                Some((terminal["name"].as_str()?.to_owned(), blockage))
+            })
+            .collect())
     }
 
     fn launch(
@@ -211,24 +252,12 @@ impl Runtime for HcRuntime {
             request.directory,
         )?;
         let status = self.status(request.name)?;
-        if !matches!(status, PanelStatus::Idle | PanelStatus::Done) {
-            return Ok(SubmitResult {
-                pending: true,
-                ..Default::default()
-            });
-        }
         self.submit(request.name, request.task, status)
     }
 
     fn submit(&self, panel: &str, task: &str, mut status: PanelStatus) -> Result<SubmitResult> {
         if status == PanelStatus::Done {
             status = self.status(panel)?;
-            if !matches!(status, PanelStatus::Idle | PanelStatus::Done) {
-                return Ok(SubmitResult {
-                    pending: true,
-                    ..Default::default()
-                });
-            }
         }
         if !matches!(status, PanelStatus::Idle | PanelStatus::Done) {
             return Ok(SubmitResult {

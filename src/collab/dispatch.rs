@@ -1,8 +1,8 @@
 //! Durable Room-to-panel dispatch, serialized by the workspace lock.
+#[path = "dispatch/mediation.rs"]
+mod mediation;
 #[path = "dispatch/routing.rs"]
 mod routing;
-#[path = "dispatch/silence.rs"]
-mod silence;
 #[path = "dispatch/task.rs"]
 mod task;
 
@@ -98,9 +98,13 @@ impl<R: Runtime> Dispatcher<R> {
                 state.save(root)?;
             }
         }
-        silence::mediate(&config, &self.store, &mut state, |panel| {
-            self.runtime.status(panel)
-        })?;
+        mediation::mediate(
+            &config,
+            &self.store,
+            &mut state,
+            || self.runtime.blocked_panels(),
+            |panel| self.runtime.status(panel),
+        )?;
         state.save(root)?;
         Ok(())
     }
@@ -288,12 +292,13 @@ impl<R: Runtime> Dispatcher<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::runtime::SubmitResult;
+    use super::super::runtime::{BlockedPanel, SubmitResult};
     use super::super::state::Delivery;
     use super::super::{Message, RecordRef, Role, RoomRoles};
     use super::*;
     use crate::core::AppendRequest;
     use std::cell::{Cell, RefCell};
+    use std::collections::BTreeMap;
 
     struct Fake {
         root: PathBuf,
@@ -859,14 +864,21 @@ mod tests {
     /// A runtime whose observed panel status the test flips between pumps.
     struct Panel {
         status: Cell<PanelStatus>,
+        blocked: RefCell<BTreeMap<String, BlockedPanel>>,
         on_observe: RefCell<Option<Box<dyn FnOnce()>>>,
     }
     impl Runtime for Panel {
-        fn status(&self, _: &str) -> Result<PanelStatus> {
+        fn status(&self, panel: &str) -> Result<PanelStatus> {
+            if self.blocked.borrow().contains_key(panel) {
+                return Ok(PanelStatus::Blocked);
+            }
+            Ok(self.status.get())
+        }
+        fn blocked_panels(&self) -> Result<BTreeMap<String, BlockedPanel>> {
             if let Some(observe) = self.on_observe.borrow_mut().take() {
                 observe();
             }
-            Ok(self.status.get())
+            Ok(self.blocked.borrow().clone())
         }
         fn launch(&self, _: &str, _: &str, _: &str, _: &Role, _: &std::path::Path) -> Result<()> {
             unreachable!("the panel trace overrides ensure")
@@ -902,6 +914,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Working),
+                blocked: Default::default(),
                 on_observe: Default::default(),
             },
         };
@@ -937,6 +950,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Idle),
+                blocked: Default::default(),
                 on_observe: Default::default(),
             },
         };
@@ -973,7 +987,7 @@ mod tests {
         dispatcher.pump().unwrap();
         let records = dispatcher.store.read("project", 0).unwrap();
         assert_eq!(records.len(), 3);
-        assert_eq!(records[2].author, silence::SILENCE_AUTHOR);
+        assert_eq!(records[2].author, mediation::RUNTIME_AUTHOR);
     }
 
     #[test]
@@ -989,6 +1003,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Idle),
+                blocked: Default::default(),
                 on_observe: RefCell::new(Some(Box::new(move || {
                     append(
                         &writer,
@@ -1024,6 +1039,7 @@ mod tests {
             store: existing.store,
             runtime: Panel {
                 status: Cell::new(PanelStatus::Idle),
+                blocked: Default::default(),
                 on_observe: Default::default(),
             },
         };
@@ -1031,7 +1047,7 @@ mod tests {
         dispatcher.pump().unwrap();
         let records = dispatcher.store.read("project", 0).unwrap();
         assert_eq!(records.len(), 1);
-        assert_eq!(records[0].author, silence::SILENCE_AUTHOR);
+        assert_eq!(records[0].author, mediation::RUNTIME_AUTHOR);
         let wake: Message = serde_json::from_str(records[0].content.get()).unwrap();
         assert_eq!(wake.mentions, ["reviewer"]);
         // Simulate a crash after the first wake was appended and before its marker was saved.
@@ -1063,7 +1079,7 @@ mod tests {
         dispatcher.pump().unwrap();
         let records = dispatcher.store.read("project", 0).unwrap();
         assert_eq!(records.len(), 3);
-        assert_eq!(records[2].author, silence::SILENCE_AUTHOR);
+        assert_eq!(records[2].author, mediation::RUNTIME_AUTHOR);
         // The second wake is delivered and, with nobody new speaking, is the last.
         dispatcher.pump().unwrap();
         assert_eq!(
@@ -1073,5 +1089,104 @@ mod tests {
         dispatcher.runtime.status.set(PanelStatus::Done);
         dispatcher.pump().unwrap();
         assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn a_blocked_worker_wakes_the_mediator_without_completing_the_workers_delivery() {
+        let (_temp, existing) = setup(false);
+        let root = existing.store.root();
+        Config::update(root, |config| {
+            let worker = config.roles["reviewer"].clone();
+            config.roles.insert("worker".into(), worker);
+            let room = config.rooms.get_mut("project").unwrap();
+            room.roles.push("worker".into());
+            room.mediator = None;
+            Ok(())
+        })
+        .unwrap();
+        let worker_panel = panel_name(root, "project", "worker").unwrap();
+        let dispatcher = Dispatcher {
+            store: existing.store,
+            runtime: Panel {
+                status: Cell::new(PanelStatus::Idle),
+                blocked: Default::default(),
+                on_observe: Default::default(),
+            },
+        };
+        append(
+            &dispatcher.store,
+            "operator",
+            &Message {
+                text: "build".into(),
+                mentions: vec!["worker".into()],
+                reply_to: None,
+            },
+        );
+        dispatcher.pump().unwrap();
+
+        let block = |episode: &str| {
+            dispatcher.runtime.blocked.borrow_mut().insert(
+                worker_panel.clone(),
+                BlockedPanel {
+                    address: "t2".into(),
+                    episode: episode.into(),
+                    reason: "question".into(),
+                },
+            );
+        };
+        block("first");
+        dispatcher.pump().unwrap();
+        let records = dispatcher.store.read("project", 0).unwrap();
+        let wake: Message = serde_json::from_str(records[1].content.get()).unwrap();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[1].author, mediation::RUNTIME_AUTHOR);
+        assert_eq!(wake.mentions, ["reviewer"]);
+        assert!(wake.text.contains("role worker in Room project"));
+        assert!(wake.text.contains("terminal blockage (question)"));
+        assert!(wake.text.contains("submitted task is project#1"));
+        assert!(wake.text.contains("tearoom hc read t2 --lines 80"));
+
+        // Recover after an append whose dispatch state was not saved.
+        let root = dispatcher.store.root();
+        let mut state = DispatchState::load(root).unwrap();
+        state.attention.clear();
+        state.save(root).unwrap();
+        dispatcher.pump().unwrap();
+        assert_eq!(dispatcher.store.read("project", 0).unwrap().len(), 2);
+        let intents = dispatcher.deliveries().unwrap();
+        assert_eq!(intents.len(), 2);
+        assert_eq!(intents[0].deliveries[0].role, "worker");
+        assert_eq!(intents[0].deliveries[0].state, DeliveryState::Submitted);
+        assert_eq!(intents[1].deliveries[0].role, "reviewer");
+        assert_eq!(intents[1].deliveries[0].state, DeliveryState::Submitted);
+
+        dispatcher.runtime.status.set(PanelStatus::Done);
+        dispatcher.pump().unwrap();
+        dispatcher
+            .runtime
+            .blocked
+            .borrow_mut()
+            .get_mut(&worker_panel)
+            .unwrap()
+            .reason = "error".into();
+        let mut state = DispatchState::load(root).unwrap();
+        state.attention.clear();
+        state.save(root).unwrap();
+        dispatcher.pump().unwrap();
+        let replayed = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(replayed.len(), 2);
+        assert_eq!(replayed[1].content.get(), records[1].content.get());
+        dispatcher.runtime.status.set(PanelStatus::Idle);
+        dispatcher.runtime.blocked.borrow_mut().clear();
+        dispatcher.pump().unwrap();
+        let mut state = DispatchState::load(root).unwrap();
+        state.intents[0].deliveries[0].state = DeliveryState::Completed;
+        state.save(root).unwrap();
+        block("second");
+        dispatcher.pump().unwrap();
+        let records = dispatcher.store.read("project", 0).unwrap();
+        assert_eq!(records.len(), 3);
+        let wake: Message = serde_json::from_str(records[2].content.get()).unwrap();
+        assert!(wake.text.contains("No submitted Tearoom task"));
     }
 }

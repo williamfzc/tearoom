@@ -110,6 +110,17 @@ direct the next step, or record a blocker. The wake routes through hc like any
 addressed message, appears in `collab deliveries`, and completes on the
 mediator's turn or reply.
 
+A live roster panel that reports `blocked` or `error` can wake the mediator
+while a delivery is in flight or with no delivery at all. The runtime appends
+one addressed record per observed blockage. The wake names the Room, role,
+and terminal, includes the reported blockage type or state, and references
+the panel's submitted task when available. The mediator follows the
+[terminal inspection commands](../reference/agent-integration.md#startup-and-observed-readiness)
+to help within its authority or record the human input required. A subsequent
+blockage after the panel resumes can trigger another wake. The blocked role's deliveries
+keep their original states. A blocked mediator cannot wake itself, and an
+attention wake does not count as a silence wake.
+
 One stop is mediated once. If the Room falls quiet again after a wake, it has
 ended normally and the runtime does nothing; a new stop requires a record
 authored by someone other than the runtime and the recipient of the previous
@@ -120,8 +131,8 @@ retry-safe. Consequences of the immediate, timeout-free detection: every
 broadcast in a mediated Room is followed by one adjudication once the ledger
 settles; a service start mediates each historically quiet mediated Room once;
 and a mediator that answers without involving anyone ends the Room until a
-third party writes again. A Room recovers mid-flight (an `unknown` delivery) or
-with undeliverable work (stuck `pending`) is not quiet and is not mediated.
+third party writes again. An `unknown` delivery awaiting recovery or a stuck
+`pending` delivery prevents a silence wake.
 The guard trusts record signatures, which are unverified labels like every
 other signature in the product.
 

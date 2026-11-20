@@ -54,6 +54,9 @@ pub struct DispatchState {
     /// Room id -> sequence of the last silence-wake record the runtime appended.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub mediated: BTreeMap<String, u64>,
+    /// Panel name -> most recent reported blockage already sent to a mediator.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub attention: BTreeMap<String, String>,
 }
 
 impl Default for DispatchState {
@@ -65,6 +68,7 @@ impl Default for DispatchState {
             intents: Vec::new(),
             fresh: BTreeMap::new(),
             mediated: BTreeMap::new(),
+            attention: BTreeMap::new(),
         }
     }
 }

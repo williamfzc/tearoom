@@ -147,9 +147,10 @@ once execution of external side effects.
 
 ### S12: A quiet Room is adjudicated once per stop
 
-**When** a Room with an effective mediator goes quiet — no delivery pending,
-submitted, or awaiting inspection — **the runtime can** wake that one role to
-adjudicate the stop, through an ordinary addressed record in the Room stream.
+**When** a Room with an effective mediator
+[goes quiet](../architecture/collaboration.md#silence-mediation), **the runtime
+can** wake that role to adjudicate the stop through an ordinary addressed
+record in the Room stream.
 
 **Accept when:** the wake reaches the mediator like any addressed message; the
 mediator closes the Room, addresses the next step, or records a blocker; and a
@@ -159,6 +160,10 @@ new stop. A Room with a roster and no mediator setting uses its first role
 without a separate setup step. Silence is detected immediately, with no
 timeout. The wake uses the readiness and recovery behavior of
 [S4](#s4-a-message-reaches-its-intended-collaborator).
+
+If a role reports that its terminal needs attention, the same mediator can
+wake while work is in flight. The wake identifies the role and terminal so
+the mediator can investigate, act within its authority, or request input.
 
 ## Current design boundaries
 

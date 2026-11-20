@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tearoom::collab::runtime::{HcRuntime, PanelRequest, PanelStatus, Runtime};
 use tearoom::collab::Role;
 use tearoom::hc::{HcClient, HcError};
@@ -62,7 +62,7 @@ fn direct_rpc_and_delivery_use_an_isolated_core() {
     let runtime = HcRuntime {
         client,
         timeout,
-        workspace_label: None,
+        workspace_label: Some("isolated-rpc-test".into()),
         caller: None,
     };
     let role = Role {
@@ -93,4 +93,60 @@ fn direct_rpc_and_delivery_use_an_isolated_core() {
             timeout,
         )
         .unwrap();
+
+    let blocked = Role {
+        command: vec![
+            "sh".into(),
+            "-c".into(),
+            "printf 'Choose a release target.\\n\\033]7501;state=blocked:kind=question\\007'; sleep 30".into(),
+        ],
+        ..role
+    };
+    runtime
+        .launch(
+            "blocked-probe",
+            "project",
+            "worker",
+            &blocked,
+            Path::new("/tmp"),
+        )
+        .unwrap();
+    let deadline = Instant::now() + timeout;
+    let observation = loop {
+        if let Some(panel) = runtime.blocked_panels().unwrap().remove("blocked-probe") {
+            break panel;
+        }
+        assert!(Instant::now() < deadline, "hc blockage was not observed");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    assert_eq!(
+        runtime.status("blocked-probe").unwrap(),
+        PanelStatus::Blocked
+    );
+    let report = runtime
+        .client
+        .call(
+            "terminal.get",
+            serde_json::json!({"terminal":observation.address}),
+            timeout,
+        )
+        .unwrap();
+    assert_eq!(report["name"], "blocked-probe");
+    assert!(report["status_ms"].is_u64());
+    assert_eq!(observation.reason, "question");
+    let screen = runtime
+        .client
+        .call(
+            "terminal.read",
+            serde_json::json!({"terminal":observation.address, "lines":80}),
+            timeout,
+        )
+        .unwrap();
+    assert!(screen["text"]
+        .as_str()
+        .unwrap()
+        .contains("Choose a release target."));
+    let same = runtime.blocked_panels().unwrap();
+    assert_eq!(same["blocked-probe"].episode, observation.episode);
+    runtime.stop("blocked-probe").unwrap();
 }

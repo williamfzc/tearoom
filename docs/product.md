@@ -151,13 +151,10 @@ boundary:
   Room-scoped panel. [Agent setup](reference/agent-integration.md#startup-and-observed-readiness)
   covers readiness checks before relying on unattended wakes.
 - A Room with a roster has a default mediator and may override the
-  [selection](architecture/collaboration.md#silence-mediation). When the Room goes
-  quiet — no delivery in flight — the runtime wakes that role once per stop
-  through an ordinary addressed record, and the mediator closes the Room,
-  directs the next step, or records a blocker. A quiet Room after a wake has
-  ended; a record from someone else begins a new stop. Silence needs no
-  timeout and adds no status field: the mediator is a Role, the wake is a
-  record, and "ended" is the absence of further records.
+  [selection](architecture/collaboration.md#silence-mediation). The runtime
+  wakes the mediator through an ordinary addressed record when the Room goes
+  quiet or a role needs attention. The mediator can help resolve the blockage,
+  direct the next step, close the Room, or record a blocker.
 
 ## Command surface
 

@@ -86,6 +86,16 @@ impl ServiceSandbox {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn worker_delivery_state(&self, cwd: &Path, seq: u64) -> serde_json::Value {
+        let output = self.success(cwd, &["collab", "deliveries"]);
+        let intents: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+        intents
+            .into_iter()
+            .find(|intent| intent["room"] == "project" && intent["seq"] == seq)
+            .map(|intent| intent["deliveries"][0]["state"].clone())
+            .unwrap_or_default()
+    }
+
     fn setup_workspace(&self, path: &Path, script: &Path) {
         fs::create_dir_all(path).unwrap();
         self.success(path, &["room", "init", "--name", "project"]);
@@ -458,20 +468,7 @@ fn a_new_addressed_message_restarts_a_stopped_service() {
             .contains("before stop")
     });
     sandbox.wait_for("first delivery completion", || {
-        let output = sandbox.output(&root, &["collab", "deliveries"]);
-        serde_json::from_slice::<serde_json::Value>(&output.stdout)
-            .ok()
-            .and_then(|intents| {
-                intents.as_array().and_then(|intents| {
-                    intents
-                        .iter()
-                        .find(|intent| intent["seq"] == 1)
-                        .and_then(|intent| intent["deliveries"].as_array())
-                        .and_then(|deliveries| deliveries.first())
-                        .map(|delivery| delivery["state"] == "completed")
-                })
-            })
-            .unwrap_or(false)
+        sandbox.worker_delivery_state(&root, 1) == "completed"
     });
     sandbox.success(&root, &["service", "stop"]);
     assert_eq!(sandbox.status(&root)["running"], false);
@@ -490,12 +487,10 @@ fn a_new_addressed_message_restarts_a_stopped_service() {
             .unwrap()
             .contains("after stop")
     );
-    let deliveries: serde_json::Value =
-        serde_json::from_slice(&sandbox.success(&root, &["collab", "deliveries"]).stdout).unwrap();
-    assert_eq!(deliveries[0]["seq"], 1);
-    assert_eq!(deliveries[0]["deliveries"][0]["state"], "completed");
-    assert_eq!(deliveries[1]["seq"], 3);
-    assert_eq!(deliveries[1]["deliveries"][0]["state"], "completed");
+    sandbox.wait_for("second delivery completion", || {
+        sandbox.worker_delivery_state(&root, 3) == "completed"
+    });
+    assert_eq!(sandbox.worker_delivery_state(&root, 1), "completed");
 }
 
 #[test]
@@ -656,39 +651,128 @@ fn killing_service_terminal_kills_its_agents_but_preserves_unrelated_terminal() 
 
 #[test]
 #[ignore = "starts an isolated user service and hc server"]
-fn restart_marks_uncertain_delivery_without_replaying_it() {
+fn crashed_service_can_continue_the_room_after_reconciliation() {
     let sandbox = ServiceSandbox::new();
     let root = sandbox._temp.path().join("workspace");
     let script = sandbox._temp.path().join("agent.sh");
     let marker = sandbox._temp.path().join("seen");
-    agent_script(&script, &marker);
+    fs::write(
+        &script,
+        format!(
+            r#"#!/bin/sh
+set -e
+marker='{}'
+tearoom='{}'
+printf '\033]7501;state=idle\007'
+while IFS= read -r line; do
+    case "$line" in
+        'Room project, addressed to worker at record '*)
+            seq=${{line#* at record }}
+            seq=${{seq%%.*}}
+            printf '%s\n' "$seq" >> "$marker"
+            printf '\033]7501;state=working\007' ;;
+        '['*)
+            case "$seq:$line" in
+                1:*) receipt='saved checkpoint' ;;
+                4:*'saved checkpoint'*) receipt='continued from checkpoint' ;;
+                *) continue ;;
+            esac
+            "$tearoom" send --room project --as worker --reply-to "project#$seq" --text "$receipt"
+            printf '\033]7501;state=done\007' ;;
+    esac
+done
+"#,
+            marker.display(),
+            sandbox.binary,
+        ),
+    )
+    .unwrap();
     sandbox.setup_workspace(&root, &script);
-    sandbox.send(&root, "once only");
-    sandbox.wait_for("initial delivery", || {
-        fs::read_to_string(&marker)
-            .unwrap_or_default()
-            .contains("once only")
-    });
-    let first_count = fs::read_to_string(&marker)
-        .unwrap()
-        .matches("once only")
-        .count();
-    assert_eq!(first_count, 1);
+    let delivery_state = |seq| sandbox.worker_delivery_state(&root, seq);
+    let read_room = || {
+        sandbox
+            .success(&root, &["read", "--room", "project"])
+            .stdout
+    };
 
-    sandbox.success(&root, &["service", "stop"]);
-    sandbox.success(&root, &["collab", "run"]);
-    std::thread::sleep(Duration::from_secs(2));
-    let deliveries = sandbox.success(&root, &["collab", "deliveries"]);
-    let text = String::from_utf8_lossy(&deliveries.stdout);
-    assert!(
-        text.contains("unknown"),
-        "delivery was not marked unknown: {text}"
+    sandbox.send(&root, "save a checkpoint");
+    sandbox.wait_for("checkpoint completion", || delivery_state(1) == "completed");
+    sandbox.send(&root, "work interrupted by service crash");
+    sandbox.wait_for("interrupted task submission", || {
+        delivery_state(3) == "submitted"
+    });
+    let before_crash = read_room();
+    assert!(String::from_utf8_lossy(&before_crash).contains("saved checkpoint"));
+
+    let terminal: serde_json::Value = serde_json::from_slice(
+        &sandbox
+            .success(&root, &["hc", "get", "tearoom-service", "--json"])
+            .stdout,
+    )
+    .unwrap();
+    assert_eq!(terminal["labels"]["tearoom.service"], "global");
+    let pid = i32::try_from(terminal["pid"].as_i64().unwrap()).unwrap();
+    assert!(pid > 1);
+    assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+    let agent = tearoom::collab::panel_name(&root.join(".tearoom"), "project", "worker").unwrap();
+    sandbox.wait_for("hc to close the crashed service and its Agent", || {
+        let live = sandbox.live_terminals();
+        !live.contains(&"tearoom-service".to_owned()) && !live.contains(&agent)
+    });
+    assert_eq!(sandbox.status(&root)["running"], false);
+    assert_eq!(read_room(), before_crash);
+
+    sandbox.send(&root, "continue after crash");
+    sandbox.wait_for("post-crash task queued behind uncertain work", || {
+        delivery_state(3) == "unknown" && delivery_state(4) == "pending"
+    });
+    assert_eq!(sandbox.status(&root)["running"], true);
+    sandbox.success(
+        &root,
+        &[
+            "collab",
+            "restart",
+            "--room",
+            "project",
+            "--role",
+            "worker",
+            "--confirm",
+        ],
     );
-    let count = fs::read_to_string(&marker)
-        .unwrap()
-        .matches("once only")
-        .count();
-    assert_eq!(count, 1, "uncertain delivery was replayed");
+    sandbox.wait_for("interrupted delivery reconciled without replay", || {
+        let output = sandbox.output(
+            &root,
+            &[
+                "collab",
+                "resolve",
+                "--room",
+                "project",
+                "--seq",
+                "3",
+                "--role",
+                "worker",
+                "--outcome",
+                "skip",
+            ],
+        );
+        if output.status.success() {
+            return true;
+        }
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("another Room dispatcher holds the workspace lock"),
+            "{error}"
+        );
+        false
+    });
+    sandbox.wait_for("replacement Agent's Room receipt", || {
+        String::from_utf8_lossy(&read_room()).contains("continued from checkpoint")
+            && delivery_state(4) == "completed"
+    });
+    assert!(read_room().starts_with(&before_crash));
+    assert_eq!(delivery_state(1), "completed");
+    assert_eq!(delivery_state(3), "skipped");
+    assert_eq!(fs::read_to_string(&marker).unwrap(), "1\n3\n4\n");
 }
 
 #[test]

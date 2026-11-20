@@ -127,7 +127,18 @@ impl Store {
             .collect())
     }
     pub fn append(&self, room: &str, author: &str, request: AppendRequest<'_>) -> Result<Record> {
-        self.append_record(room, author, request, None)?
+        self.append_record(room, author, request, true, None)?
+            .context("unconditional append skipped")
+    }
+
+    /// A generated event keeps its first observation when the same event is retried.
+    pub(crate) fn append_event(
+        &self,
+        room: &str,
+        author: &str,
+        request: AppendRequest<'_>,
+    ) -> Result<Record> {
+        self.append_record(room, author, request, false, None)?
             .context("unconditional append skipped")
     }
 
@@ -139,7 +150,7 @@ impl Store {
         request: AppendRequest<'_>,
         observed: u64,
     ) -> Result<Option<Record>> {
-        self.append_record(room, author, request, Some(observed))
+        self.append_record(room, author, request, true, Some(observed))
     }
 
     fn append_record(
@@ -147,6 +158,7 @@ impl Store {
         room: &str,
         author: &str,
         request: AppendRequest<'_>,
+        require_same_content: bool,
         observed: Option<u64>,
     ) -> Result<Option<Record>> {
         let room = room.trim();
@@ -166,7 +178,7 @@ impl Store {
         }
         if !key.is_empty() {
             if let Some(entry) = ledger.iter().find(|e| e.author == author && e.key == key) {
-                if entry.fingerprint != digest {
+                if require_same_content && entry.fingerprint != digest {
                     bail!("idempotency key {key:?} already describes another record: conflict");
                 }
                 return records

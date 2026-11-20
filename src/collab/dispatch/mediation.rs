@@ -1,30 +1,29 @@
-//! Silence mediation: waking the Room's mediator when it goes quiet.
-//! The wake is an ordinary addressed record — signed by the runtime and routed
-//! by the normal pipeline — and each stop is mediated once: a new wake needs
-//! third-party records after the previous one.
-use super::super::runtime::PanelStatus;
+//! Wakes the Room's mediator for quiet stops and reported terminal blockages.
+//! Each wake is an ordinary addressed Record routed by the dispatcher.
+use super::super::runtime::{BlockedPanel, PanelStatus};
 use super::super::state::{DeliveryState, DispatchState};
 use super::super::{message_content, panel_name, Config, Message};
 use crate::core::{AppendRequest, Record};
 use crate::store::Store;
 use anyhow::Result;
+use std::collections::BTreeMap;
 
-/// Signature the runtime signs silence-wake records with.
-pub const SILENCE_AUTHOR: &str = "tearoom";
+pub const RUNTIME_AUTHOR: &str = "tearoom";
+const ATTENTION_PREFIX: &str = "Needs attention:";
 
-fn wake(record: &Record) -> Option<String> {
-    if record.author != SILENCE_AUTHOR {
+fn silence_wake_recipient(record: &Record) -> Option<String> {
+    if record.author != RUNTIME_AUTHOR {
         return None;
     }
     let mut message = serde_json::from_str::<Message>(record.content.get()).ok()?;
-    if message.mentions.len() != 1 {
+    if message.mentions.len() != 1 || message.text.starts_with(ATTENTION_PREFIX) {
         return None;
     }
     message.mentions.pop().filter(|role| !role.is_empty())
 }
 
 fn third_party(record: &Record, mediator: &str) -> bool {
-    record.author != SILENCE_AUTHOR && record.author != mediator
+    record.author != RUNTIME_AUTHOR && record.author != mediator
 }
 
 /// A stop may be mediated when the previous wake (if any) was followed by
@@ -52,7 +51,7 @@ fn quiet(state: &DispatchState, room: &str) -> bool {
         })
 }
 
-/// Append one silence-wake record for every mediated Room that went quiet.
+/// Notify the mediator of reported blockages or a quiet stop.
 /// Runs under the dispatch lock. `state.mediated` is the durable progress
 /// marker — the seq of the last known wake — so each pass reads only the
 /// records from that wake onward; a first pass without a marker scans the Room.
@@ -62,8 +61,20 @@ pub(super) fn mediate(
     config: &Config,
     store: &Store,
     state: &mut DispatchState,
+    blocked_panels: impl FnOnce() -> Result<BTreeMap<String, BlockedPanel>>,
     panel_status: impl Fn(&str) -> Result<PanelStatus>,
 ) -> Result<()> {
+    if !config
+        .rooms
+        .values()
+        .any(|room| room.effective_mediator().is_some())
+    {
+        return Ok(());
+    }
+    let blocked = blocked_panels()?;
+    state
+        .attention
+        .retain(|panel, _| blocked.contains_key(panel));
     'rooms: for card in store.rooms()? {
         let Some(binding) = config.rooms.get(&card.id) else {
             continue;
@@ -71,15 +82,38 @@ pub(super) fn mediate(
         let Some(mediator) = binding.effective_mediator() else {
             continue;
         };
-        if !quiet(state, &card.id) {
+        let mut room_blocked = false;
+        if !blocked.is_empty() {
+            for role in &binding.roles {
+                let panel = panel_name(store.root(), &card.id, role)?;
+                if let Some(blockage) = blocked.get(&panel) {
+                    room_blocked = true;
+                    if role != mediator && state.attention.get(&panel) != Some(&blockage.episode) {
+                        let task = state
+                            .intents
+                            .iter()
+                            .find(|intent| {
+                                intent.room == card.id
+                                    && intent.deliveries.iter().any(|delivery| {
+                                        delivery.panel == panel
+                                            && delivery.state == DeliveryState::Submitted
+                                    })
+                            })
+                            .map(|intent| intent.seq);
+                        request_attention(store, &card.id, role, mediator, blockage, task)?;
+                        state.attention.insert(panel, blockage.episode.clone());
+                    }
+                }
+            }
+        }
+        if room_blocked || !quiet(state, &card.id) {
             continue;
         }
         let last_wake = state.mediated.get(&card.id).copied().unwrap_or(0);
         let mut records = store.read(&card.id, last_wake.saturating_sub(1))?;
-        if records
-            .first()
-            .is_some_and(|record| record.seq == last_wake && wake(record).is_none())
-        {
+        if records.first().is_some_and(|record| {
+            record.seq == last_wake && silence_wake_recipient(record).is_none()
+        }) {
             // An older build could track a wake addressed to the empty string.
             state.mediated.remove(&card.id);
             records = store.read(&card.id, 0)?;
@@ -88,7 +122,7 @@ pub(super) fn mediate(
             .iter()
             .enumerate()
             .rev()
-            .find_map(|(at, record)| wake(record).map(|role| (at, role)));
+            .find_map(|(at, record)| silence_wake_recipient(record).map(|role| (at, role)));
         let (since_wake, previous_mediator) = match &previous {
             Some((at, role)) => {
                 state.mediated.insert(card.id.clone(), records[*at].seq);
@@ -121,7 +155,7 @@ pub(super) fn mediate(
         );
         if let Some(record) = store.append_at_tip(
             &card.id,
-            SILENCE_AUTHOR,
+            RUNTIME_AUTHOR,
             AppendRequest {
                 content: &message_content(&Message {
                     text,
@@ -135,6 +169,42 @@ pub(super) fn mediate(
             state.mediated.insert(card.id.clone(), record.seq);
         }
     }
+    Ok(())
+}
+
+fn request_attention(
+    store: &Store,
+    room: &str,
+    role: &str,
+    mediator: &str,
+    blockage: &BlockedPanel,
+    task: Option<u64>,
+) -> Result<()> {
+    let BlockedPanel {
+        address, reason, ..
+    } = blockage;
+    let task = task.map_or_else(
+        || " No submitted Tearoom task was found for this panel.".into(),
+        |seq| format!(" Its submitted task is {room}#{seq}."),
+    );
+    let text = format!(
+        "{ATTENTION_PREFIX} role {role} in Room {room} reported a terminal blockage ({reason}).{task} \
+         Inspect its status with `tearoom hc get {address}` and its current screen with `tearoom hc read {address}`. \
+         If you need recent output, request history with `tearoom hc read {address} --lines 80`. Check the task in the Room before acting. \
+         Resolve it if authorized and safe. If a person needs to act, record what they need to do in the Room."
+    );
+    store.append_event(
+        room,
+        RUNTIME_AUTHOR,
+        AppendRequest {
+            content: &message_content(&Message {
+                text,
+                mentions: vec![mediator.to_owned()],
+                reply_to: None,
+            })?,
+            idempotency_key: &format!("attention-{}-{mediator}", blockage.episode),
+        },
+    )?;
     Ok(())
 }
 
@@ -169,7 +239,7 @@ mod tests {
         assert!(!rearmed(&[], true, mediator));
         assert!(!rearmed(&[record("r", 2, mediator, &[])], true, mediator));
         assert!(!rearmed(
-            &[record("r", 2, SILENCE_AUTHOR, &[mediator])],
+            &[record("r", 2, RUNTIME_AUTHOR, &[mediator])],
             true,
             mediator
         ));
@@ -178,15 +248,26 @@ mod tests {
     }
 
     #[test]
-    fn a_wake_identifies_its_addressed_mediator() {
+    fn only_silence_wakes_identify_the_previous_mediator() {
         let mediator = "referee";
         assert_eq!(
-            wake(&record("r", 1, SILENCE_AUTHOR, &[mediator])).as_deref(),
+            silence_wake_recipient(&record("r", 1, RUNTIME_AUTHOR, &[mediator])).as_deref(),
             Some(mediator)
         );
-        assert!(wake(&record("r", 1, SILENCE_AUTHOR, &[])).is_none());
-        assert!(wake(&record("r", 1, "builder", &[mediator])).is_none());
-        assert!(wake(&record("r", 1, SILENCE_AUTHOR, &[mediator, "other"])).is_none());
+        assert!(silence_wake_recipient(&record("r", 1, RUNTIME_AUTHOR, &[])).is_none());
+        assert!(silence_wake_recipient(&record("r", 1, RUNTIME_AUTHOR, &[""])).is_none());
+        assert!(silence_wake_recipient(&record("r", 1, "builder", &[mediator])).is_none());
+        assert!(
+            silence_wake_recipient(&record("r", 1, RUNTIME_AUTHOR, &[mediator, "other"])).is_none()
+        );
+        let mut attention = record("r", 1, RUNTIME_AUTHOR, &[mediator]);
+        attention.content = serde_json::value::to_raw_value(&Message {
+            text: format!("{ATTENTION_PREFIX} role builder"),
+            mentions: vec![mediator.to_owned()],
+            reply_to: None,
+        })
+        .unwrap();
+        assert!(silence_wake_recipient(&attention).is_none());
     }
 
     #[test]
@@ -230,22 +311,23 @@ mod tests {
             },
         );
         let mut state = DispatchState::default();
+        let no_blockage = || Ok(BTreeMap::new());
         let idle = |_: &str| Ok(PanelStatus::Idle);
-        mediate(&config, &store, &mut state, idle).unwrap();
+        mediate(&config, &store, &mut state, no_blockage, idle).unwrap();
         let wake = store.read("project", 0).unwrap();
         assert_eq!(wake.len(), 1);
-        assert_eq!(wake[0].author, SILENCE_AUTHOR);
+        assert_eq!(wake[0].author, RUNTIME_AUTHOR);
         let message: Message = serde_json::from_str(wake[0].content.get()).unwrap();
         assert_eq!(message.mentions, ["referee"]);
         assert!(message.text.contains("Mediate the stop"));
         assert_eq!(state.mediated.get("project"), Some(&1));
         state.cursor.insert("project".into(), 1);
         // The same quiet state mediates nothing more.
-        mediate(&config, &store, &mut state, idle).unwrap();
+        mediate(&config, &store, &mut state, no_blockage, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 1);
         let binding = config.rooms.get_mut("project").unwrap();
         binding.roles.push("auditor".into());
-        mediate(&config, &store, &mut state, idle).unwrap();
+        mediate(&config, &store, &mut state, no_blockage, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 1);
         // A reply from the role originally woken leaves the stop closed.
         store
@@ -259,7 +341,7 @@ mod tests {
             )
             .unwrap();
         state.cursor.insert("project".into(), 2);
-        mediate(&config, &store, &mut state, idle).unwrap();
+        mediate(&config, &store, &mut state, no_blockage, idle).unwrap();
         assert_eq!(store.read("project", 0).unwrap().len(), 2);
         // A third party speaking arms the next stop.
         store
@@ -273,10 +355,10 @@ mod tests {
             )
             .unwrap();
         state.cursor.insert("project".into(), 3);
-        mediate(&config, &store, &mut state, idle).unwrap();
+        mediate(&config, &store, &mut state, no_blockage, idle).unwrap();
         let records = store.read("project", 0).unwrap();
         assert_eq!(records.len(), 4);
-        assert_eq!(records[3].author, SILENCE_AUTHOR);
+        assert_eq!(records[3].author, RUNTIME_AUTHOR);
         let message: Message = serde_json::from_str(records[3].content.get()).unwrap();
         assert_eq!(message.mentions, ["auditor"]);
         assert_eq!(state.mediated.get("project"), Some(&4));
@@ -296,17 +378,21 @@ mod tests {
             },
         );
         let mut state = DispatchState::default();
-        mediate(&config, &store, &mut state, |_| {
-            unreachable!("disabled mediator does not observe panels")
-        })
+        mediate(
+            &config,
+            &store,
+            &mut state,
+            || unreachable!("disabled mediator does not observe panels"),
+            |_| unreachable!("disabled mediator does not observe panels"),
+        )
         .unwrap();
         assert!(store.read("project", 0).unwrap().is_empty());
         store
             .append(
                 "project",
-                SILENCE_AUTHOR,
+                RUNTIME_AUTHOR,
                 AppendRequest {
-                    content: record("project", 1, SILENCE_AUTHOR, &[""]).content.get(),
+                    content: record("project", 1, RUNTIME_AUTHOR, &[""]).content.get(),
                     idempotency_key: "silence-1",
                 },
             )
@@ -314,10 +400,20 @@ mod tests {
         state.cursor.insert("project".into(), 1);
         state.mediated.insert("project".into(), 1);
         config.rooms.get_mut("project").unwrap().mediator = None;
-        mediate(&config, &store, &mut state, |_| Ok(PanelStatus::Idle)).unwrap();
+        mediate(
+            &config,
+            &store,
+            &mut state,
+            || Ok(BTreeMap::new()),
+            |_| Ok(PanelStatus::Idle),
+        )
+        .unwrap();
         let records = store.read("project", 0).unwrap();
         assert_eq!(records.len(), 2);
-        assert_eq!(wake(&records[1]).as_deref(), Some("referee"));
+        assert_eq!(
+            silence_wake_recipient(&records[1]).as_deref(),
+            Some("referee")
+        );
         assert_eq!(state.mediated.get("project"), Some(&2));
     }
 }

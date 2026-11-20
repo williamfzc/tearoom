@@ -230,6 +230,13 @@ launch command and restart its panel before sending more addressed work.
 The [CLI contract](cli.md#delivery-boundary) describes restart and recovery
 commands. Use the Room's history to coordinate supervised work.
 
+To inspect another role, use `tearoom room roles --room <room> --observe`
+to find its panel. `tearoom hc get <terminal>` shows observed status and
+`tearoom hc read <terminal>` reads the visible TUI. Add `--lines 80` for
+recent terminal history. In full-screen TUIs, hc may scroll the active
+interface or return only the current screen if scrollback is unavailable.
+Use `tearoom read --room <room>` for durable tasks, decisions, and replies.
+
 The dispatcher persists delivery intents and serializes work per Room-role.
 `tearoom collab deliveries` displays the ledger. Submitted means hc accepted
 input; completed means the Agent turn finished or a matching Room reply was observed. Inspect the record

@@ -63,13 +63,25 @@ A Room defaults to the first role listed by `tearoom room roles` for silence
 mediation. To select a different role, run
   tearoom room roles --room project --mediator referee
 Set `--mediator ""` to disable mediation.
-When every delivery of that Room is terminal, the runtime appends one
-addressed record (signed tearoom) waking the mediator to adjudicate the stop:
+When the Room goes quiet, the runtime appends one addressed record (signed
+tearoom) waking the mediator to adjudicate the stop:
 record a closing sentence, address the next step with --to, or record a
 blocker. A Room that is quiet again after a wake has ended normally and wakes
 nobody; a record from someone other than the runtime and the mediator begins
 a new stop. Choose mediator instructions accordingly; an empty Room with a
 mediator has its work started by the first wake.
+
+If another role's live terminal reports that it needs attention, the runtime
+sends a wake with the role, terminal, reported reason, and submitted task
+reference when available. Follow the inspection commands and check the Room
+task before resolving the blockage or recording the input needed.
+
+To inspect a peer without a wake, find its panel with
+  tearoom room roles --room project --observe
+  tearoom hc get <terminal>
+  tearoom hc read <terminal>
+Use `--lines N` on `hc read` to request recent terminal history, which may
+scroll a full-screen TUI. Use `tearoom read --room project` for Room history.
 
 Custom Agent TUIs: configure the interactive launch command and its arguments
 as a Role. Read `tearoom hc --skill`, then check startup, input delivery, and
@@ -134,6 +146,9 @@ only after every Room has removed it and its pending deliveries are resolved;
 deletion does not stop a running process or erase Room records.
 
 Readiness and recovery:
+- Record a checkpoint in the Room at milestones and before handing off. Include
+  the goal, completed work with evidence, any blocker, and the next action. On
+  resume, read the Room and inspect the current files or outputs before redoing work.
 - tearoom room roles --room project --observe queries hc for observed panel
   states. Unknown, blocked, idle, working, and done are observations, not task
   completion guarantees. A missing status report remains pending; do not infer
