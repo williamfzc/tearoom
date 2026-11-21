@@ -397,10 +397,16 @@ mod tests {
         );
         let value = delete_json(&root, &cli, "project", false).unwrap();
         assert_eq!(value["deleted"], true);
-        assert!(std::fs::read_to_string(root.join("args.txt")).unwrap().contains("room delete --room project"));
-        assert!(!std::fs::read_to_string(root.join("args.txt")).unwrap().contains("--confirm"));
+        assert!(std::fs::read_to_string(root.join("args.txt"))
+            .unwrap()
+            .contains("room delete --room project"));
+        assert!(!std::fs::read_to_string(root.join("args.txt"))
+            .unwrap()
+            .contains("--confirm"));
         delete_json(&root, &cli, "project", true).unwrap();
-        assert!(std::fs::read_to_string(root.join("args.txt")).unwrap().contains("--confirm"));
+        assert!(std::fs::read_to_string(root.join("args.txt"))
+            .unwrap()
+            .contains("--confirm"));
     }
 
     #[test]
